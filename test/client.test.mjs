@@ -281,7 +281,7 @@ test('渲染冒烟：流程详情整块能渲染（含内嵌会话面板），�
   assert.doesNotMatch(html, /继续开发会话/)
   assert.match(html, /重发最新上下文/)
   // 首屏进度摘要：任务、测试、还差什么一眼可见；会话动态默认收起
-  assert.match(html, /开发进度/)
+  assert.match(html, /开发任务进度/)
   assert.match(html, /开发会话动态（默认收起/)
   assert.match(html, /开发任务|开发中/)
   // 概览页变更文件自动刷新：停留时每 8 秒静默拉一次，不要求手动点刷新
@@ -1386,7 +1386,10 @@ test('流程列表：展示流程阶段进度（不是任务数），说清还�
   assert.match(pendingFlowStep({ status: 'verifying', stage: 'verify', testState: 'passed', environmentTestState: 'not_run' }), /还差环境测试/)
   assert.match(pendingFlowStep({ status: 'verifying', stage: 'verify', testState: 'not_run' }), /还差本机自测/)
   assert.match(pendingFlowStep({ status: 'verifying', stage: 'submit', testState: 'passed', environmentTestState: 'passed' }), /待提交/)
-  assert.match(pendingFlowStep({ status: 'developing', stage: 'develop' }), /开发中/)
+  assert.match(pendingFlowStep({ status: 'developing', stage: 'develop' }), /开发中，待评审/)
+  // 评审未通过时不能含糊成「开发中，未验证」：要说清卡在评审纠偏
+  assert.equal(pendingFlowStep({ status: 'developing', stage: 'develop', reviewState: 'failed' }), '评审未通过，待纠偏')
+  assert.equal(pendingFlowStep({ status: 'developing', stage: 'review', reviewState: 'pending' }), '独立评审进行中')
   assert.equal(pendingFlowStep(null), null)
 
   const html = renderToStaticMarkup(h(HomeView, {
@@ -1880,8 +1883,9 @@ test('流程详情首屏：开发进度摘要能直接看出任务/测试/还差
     session: null,
     onBack() {}, onSaved() {}, onContext() {}, onLaunch() {}, onOpenSession() {}, onUnbindSession() {},
   }))
-  assert.match(html, /开发进度/)
-  assert.match(html, /任务 1\/2 · 50%/)
+  assert.match(html, /开发任务进度/)
+  assert.match(html, /开发任务 1\/2/)
+  assert.match(html, /进度条只统计开发任务，不代表流程完成/)
   assert.match(html, /本机自测 通过/)
   assert.match(html, /环境测试 未运行/)
   assert.match(html, /验收 1\/2/)

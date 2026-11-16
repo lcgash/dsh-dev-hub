@@ -3162,10 +3162,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       style: { borderTop: `1px solid ${T.borderSoft}`, paddingTop: T.gap.xs, display: 'flex', flexDirection: 'column', gap: 6 },
     },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-        h('span', { style: styles.sectionTitle }, '开发进度'),
+        h('span', { style: styles.sectionTitle }, '开发任务进度'),
         h(Tag, { tone: draft.status === 'done' ? 'ok' : draft.status === 'blocked' ? 'danger' : 'accent' }, STAGE_LABELS[stage] ?? stage),
         h('span', { style: { ...styles.num, fontSize: T.font.sm, color: T.text2, fontWeight: 600 } },
-          tasks.length ? `任务 ${doneCount}/${tasks.length} · ${taskPct}%` : '任务清单为空'),
+          tasks.length ? `开发任务 ${doneCount}/${tasks.length}` : '任务清单为空'),
+        h('span', { style: styles.sectionHint }, '进度条只统计开发任务，不代表流程完成'),
         h(Tag, { tone: tests.local?.stale ? 'warn' : testTone(tests.local) }, `本机自测 ${tests.local?.stale ? '已过期' : testLabel(tests.local)}`),
         h(Tag, { tone: tests.environment?.stale ? 'warn' : testTone(tests.environment) }, `环境测试 ${tests.environment?.stale ? '已过期' : testLabel(tests.environment)}`),
         checks.length ? h(Tag, { tone: checksPassed === checks.length ? 'ok' : 'warn' }, `验收 ${checksPassed}/${checks.length}`) : null,
@@ -3183,8 +3184,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           lineHeight: 1.7,
         },
       }, pendingStep
-        ? `${pendingStep}${pendingTasks.length ? `；${pendingTasks.length} 个任务未完成（${pendingTasks.slice(0, 2).map((task) => task.text).join('、')}${pendingTasks.length > 2 ? ' 等' : ''}）` : ''}`
-        : '开发、验证与提交都已完成'),
+        ? `${tasks.length && doneCount >= tasks.length ? '开发任务已完成，但' : ''}流程未结束：${pendingStep}${pendingTasks.length ? `；${pendingTasks.length} 个任务未完成（${pendingTasks.slice(0, 2).map((task) => task.text).join('、')}${pendingTasks.length > 2 ? ' 等' : ''}）` : ''}`
+        : '流程已完成：开发任务、评审、测试与提交都已完成'),
     )
   }
 

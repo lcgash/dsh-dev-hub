@@ -60,7 +60,7 @@ export function pendingFlowStep(item) {
   if (stage === 'discovery' || stage === 'techdoc' || stage === 'plan') return '还没进入开发'
   if (stage === 'develop') {
     if (review === 'failed') return '评审未通过，待纠偏'
-    return isAnalysis ? '只读分析中，未出结论' : '开发中，未验证'
+    return isAnalysis ? '只读分析中，未出结论' : '开发中，待评审'
   }
   if (stage === 'review') {
     if (review === 'failed') return '评审未通过，待纠偏'
