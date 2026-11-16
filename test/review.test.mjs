@@ -196,8 +196,8 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
   const dispatch = reviewAdvancePlan(idle)
   assert.equal(dispatch.action, 'dispatch')
   assert.equal(dispatch.disabled, false)
-  assert.equal(dispatch.label, '继续推进')
-  assert.match(dispatch.hint, /继续推进即开始独立评审/)
+  assert.equal(dispatch.label, '开始独立评审')
+  assert.match(dispatch.hint, /开始独立评审/)
 
   // 不在评审这一步：仍走原来的继续推进开发会话
   assert.equal(reviewAdvancePlan(item({ stage: 'develop', review: null })).action, 'continue')
@@ -208,13 +208,13 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
   assert.equal(waiting.label, '评审中')
   assert.equal(waiting.disabled, true)
 
-  // 评审未通过：按钮保持可点，再点即重试派发，并带上次失败原因
+  // 评审未通过：先提交纠偏意见返工，而不是继续/重试评审
   const failed = reviewAdvancePlan(item({ review: normalizeReview({ round: 2, reviewers: [reviewer('reviewer-1', 'failed')] }) }))
-  assert.equal(failed.action, 'retry')
+  assert.equal(failed.action, 'rework')
   assert.equal(failed.disabled, false)
-  assert.match(failed.hint, /上次评审未通过/)
-  assert.match(failed.hint, /发现阻塞问题/)
-  assert.equal(failed.label, '继续推进')
+  assert.match(failed.hint, /评审未通过/)
+  assert.match(failed.hint, /返工/)
+  assert.equal(failed.label, '提交纠偏并返工')
 
   // 审核员异常：同样可重试，原因里带审核员会话的错误
   const errored = reviewAdvancePlan(item({
@@ -224,7 +224,11 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
   assert.equal(errored.disabled, false)
   assert.match(errored.hint, /provider down/)
 
-  // 评审通过：不再停在评审这一步
+  // 评审通过且阶段到 verify：顶栏直接去测试验证
+  assert.equal(reviewAdvancePlan(item({
+    stage: 'verify',
+    review: normalizeReview({ reviewers: [reviewer('reviewer-1', 'passed')] }),
+  })).action, 'verify')
   assert.equal(reviewAdvancePlan(item({ review: normalizeReview({ reviewers: [reviewer('reviewer-1', 'passed')] }) })).action, 'continue')
 
   // 失败原因可单独取用（按钮旁内联提示复用同一口径）
@@ -419,8 +423,9 @@ test('流程详情：阶段条/概览/页签都能看到独立评审与纠偏意
   assert.doesNotMatch(index, /'审核员数量'/)
   assert.doesNotMatch(index, /dispatchReview\(/)
   assert.match(index, /async function resetReview\(/)
-  assert.match(index, /async function markReviewerPass\(/)
-  assert.match(index, /评审不是强制门禁/)
+  assert.match(index, /async function overrideReview\(/)
+  assert.match(index, /评审调整：忽略拒绝/)
+  assert.match(index, /children: '重新评审'/)
   assert.match(index, /查看开发报告/)
 
   // 「继续推进」在评审阶段自动开始评审：走共用判定 + 复用现有 dispatch，不弹确认框
@@ -470,7 +475,7 @@ test('流程详情：评审 running 时顶栏「继续推进」禁用并显示�
   assert.match(disabledButton, /评审中/)
   assert.doesNotMatch(disabledButton, /继续推进/)
 
-  // failed：按钮不禁用（保持可点），按钮旁内联上次失败原因
+  // failed：顶栏改成「提交纠偏并返工」，不再让用户反复点评审；详细原因只放评审页
   const failedHtml = render({
     ...base,
     workflow: {
@@ -478,12 +483,12 @@ test('流程详情：评审 running 时顶栏「继续推进」禁用并显示�
       review: normalizeReview({ round: 2, reviewers: [reviewer('reviewer-1', 'failed')] }),
     },
   })
-  assert.match(failedHtml, /上次评审未通过/)
-  assert.match(failedHtml, /发现阻塞问题/)
+  assert.match(failedHtml, /提交纠偏并返工/)
+  assert.doesNotMatch(failedHtml, /上次评审未通过：/)
 
-  // idle：阶段条/提示统一为「继续推进即开始评审」，不再引导到独立评审页手工派发
+  // idle：顶栏是「开始独立评审」，不再引导到独立评审页手工派发
   const idleHtml = render({ ...base, workflow: { ...base.workflow, review: null } })
-  assert.match(idleHtml, /继续推进即开始评审/)
+  assert.match(idleHtml, /开始独立评审/)
   assert.doesNotMatch(idleHtml, /待派发评审|到「独立评审」页派/)
 })
 

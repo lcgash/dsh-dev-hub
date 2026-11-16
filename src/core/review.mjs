@@ -460,29 +460,38 @@ export function reviewAdvancePlan(item) {
   }
   if (view.status === 'failed') {
     return {
-      action: 'retry',
+      action: 'rework',
       status: view.status,
-      label: '继续推进',
+      label: '提交纠偏并返工',
       disabled: false,
-      hint: `上次评审未通过：${reviewFailureHint(view)}（再点「继续推进」重试评审）`,
+      hint: `评审未通过：把 ${view.corrections.length} 位审核员的纠偏意见发回开发会话返工；修完重跑自测再评审。若要忽略拒绝，请用评审页的「评审调整」并确认。`,
     }
   }
   if (view.status === 'error') {
     return {
       action: 'retry',
       status: view.status,
-      label: '继续推进',
+      label: '重试评审',
       disabled: false,
-      hint: `上次评审异常：${reviewFailureHint(view)}（再点「继续推进」重试评审）`,
+      hint: `上次评审异常：${reviewFailureHint(view)}（重试评审或重置本轮）`,
     }
   }
   if (view.status === 'idle' && stage === 'review') {
     return {
       action: 'dispatch',
       status: view.status,
-      label: '继续推进',
+      label: '开始独立评审',
       disabled: false,
-      hint: '继续推进即开始独立评审：自动派 1~3 位审核员复核改动与证据',
+      hint: '开始独立评审：自动派 1~3 位审核员复核改动与证据',
+    }
+  }
+  if (view.status === 'passed' && stage === 'verify') {
+    return {
+      action: 'verify',
+      status: view.status,
+      label: '去测试验证',
+      disabled: false,
+      hint: '评审已通过：去「测试与提交」跑环境测试并提交',
     }
   }
   return { action: 'continue', status: view.status, label: '继续推进', disabled: false, hint: '' }

@@ -475,15 +475,17 @@ test('独立评审：不通过退回开发并附纠偏意见；异常显式待�
     assert.equal(reread.body.item.workflow.review.reviewers[0].verdict, 'fail')
 
     // 人工记录（审核员会话不可用时的兜底）：显式标 source=manual，不伪装成自动评审
-    const recorded = await call(a.routes, API.review, {
+    // 评审是软门禁：显式 override 才能忽略拒绝并继续交付，原 findings 必须保留
+    const overridden = await call(a.routes, API.review, {
       method: 'POST',
-      body: { id: 'review-gate', action: 'record', reviewerId: 'reviewer-1', verdict: 'pass', summary: '人工复核通过', findings: [] },
+      body: { id: 'review-gate', action: 'override', summary: '确认忽略本轮拒绝' },
     })
-    assert.equal(recorded.status, 200)
-    assert.equal(recorded.body.review.status, 'passed')
-    assert.equal(recorded.body.item.workflow.stage, 'verify')
-    const manual = recorded.body.review.reviewers.find((entry) => entry.id === 'reviewer-1')
-    assert.equal(manual.source, 'manual')
+    assert.equal(overridden.status, 200)
+    assert.equal(overridden.body.review.status, 'passed')
+    assert.equal(overridden.body.item.workflow.stage, 'verify')
+    const overriddenReviewer = overridden.body.review.reviewers.find((entry) => entry.id === 'reviewer-1')
+    assert.equal(overriddenReviewer.source, 'manual')
+    assert.ok(overriddenReviewer.findings.some((finding) => /少了回滚路径/.test(finding.summary)), '人工通过不能抹掉原始审核意见')
 
     // 清空本轮：回到等待评审，历史轮次仍可追溯
     const reset = await call(a.routes, API.review, { method: 'POST', body: { id: 'review-gate', action: 'reset' } })

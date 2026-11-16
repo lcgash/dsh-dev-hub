@@ -853,7 +853,7 @@ test('回归：会话动作只保留一个（开启/继续推进），重发上�
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   // 头部只允许一个主会话按钮（按按钮文案定位，避免命中前面的 renderSession 定义）
-  const start = index.indexOf("advance.action === 'continue' ? '开启开发会话' : '继续推进'")
+  const start = index.indexOf("advance.label || '继续推进'")
   assert.ok(start > 0, '头部应有开启/继续推进按钮')
   const header = index.slice(start, start + 400)
   assert.doesNotMatch(header, /新建开发会话/)

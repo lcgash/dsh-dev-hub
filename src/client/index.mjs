@@ -917,9 +917,44 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
    * 自动创建评审轮（复用 Host 的 dispatch/runReviewRound），不再让人到独立评审页手工派发；
    * 已有 pending 评审时不重复派发；failed/error 时再点即重试（见 startReview）。
    */
+  /** 把审核员的纠偏意见发回开发会话：评审失败后的正确入口，而不是再次点评审。 */
+  async function reworkFromReview() {
+    if (busy) return
+    const view = describeReview(draft)
+    const boundId = draft.session?.id
+    if (!boundId) {
+      setError('还没有可用的开发会话：先开启开发会话，再把纠偏意见发回去返工')
+      return
+    }
+    if (session?.running) {
+      setNotice('开发会话正在工作：等它空闲后再提交纠偏意见')
+      return
+    }
+    const lines = (view.corrections ?? []).map((correction) => [
+      `【${correction.reviewerLabel}】${correction.summary || '未通过'}`,
+      ...(correction.findings ?? []).map((finding) => `- ${finding}`),
+    ].join('\n'))
+    const prompt = [
+      `独立评审未通过，请按下面的纠偏意见返工（流程：${draft.title}）。`,
+      '先说明你准备怎么改，再改代码；完成后重跑本机自测并回写台账。评审通过前不要提交。',
+      '',
+      ...(lines.length ? [lines.join('\n\n')] : ['审核员未给出具体意见，请先读取评审页的结论与发现。']),
+    ].join('\n')
+    setBusy(true); setError(''); setNotice(''); setAdvanceError('')
+    try {
+      const result = await sendToSession(ctx, boundId, prompt)
+      if (!result.sent) throw new Error(result.reason ?? '发送失败')
+      setNotice('已把纠偏意见发回开发会话；修完重跑自测后再点「继续推进」重新评审')
+    } catch (err) {
+      setError(`提交纠偏意见失败：${errorText(err)}`)
+    } finally { setBusy(false) }
+  }
+
   async function continueDev() {
     if (busy) return
     const advance = reviewAdvancePlan(draft)
+    if (advance.action === 'rework') { await reworkFromReview(); return }
+    if (advance.action === 'verify') { setTab('test'); setNotice('评审已通过：去「测试与提交」跑环境测试并提交'); return }
     if (advance.action === 'dispatch' || advance.action === 'retry') {
       await startReview()
       return
@@ -1110,33 +1145,6 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     } finally { setReviewBusy(false) }
   }
 
-  /** 评审不是强制门禁：允许对已拒绝/异常的审核员做人工通过，保留原意见并显式标 source=manual。 */
-  async function markReviewerPass(reviewer) {
-    if (!reviewer?.id || reviewBusy || busy) return
-    const existing = reviewer.summary ? `（原审核意见：${reviewer.summary}）` : ''
-    setReviewBusy(true); setError(''); setNotice(''); setAdvanceError('')
-    try {
-      const body = await postAllowingFailure(API.review, {
-        id: draft.id,
-        action: 'record',
-        reviewerId: reviewer.id,
-        verdict: 'pass',
-        summary: `人工复核后通过${existing}`,
-        findings: reviewer.findings ?? [],
-        direction: reviewer.direction ?? '',
-      })
-      if (!body.item) throw new Error(body.error || 'Host 没有返回流程')
-      setDraft(body.item)
-      onSaved?.(body.item)
-      const view = describeReview(body.item)
-      setNotice(view.status === 'passed'
-        ? '已人工通过；评审门禁已放行，可以继续测试与提交'
-        : `已人工通过 ${reviewer.label}；还有审核员未通过/未返回，继续处理或重置本轮`)
-    } catch (err) {
-      setError(`人工通过失败：${errorText(err)}`)
-    } finally { setReviewBusy(false) }
-  }
-
   /** 评审卡在 pending（常见于 DSH 重启/请求中断）：允许用户显式重置本轮后重试。 */
   async function resetReview() {
     if (reviewBusy || busy) return
@@ -1150,6 +1158,29 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       setNotice('已重置本轮评审；点「继续推进」可重新派发')
     } catch (err) {
       setError(`重置评审失败：${errorText(err)}`)
+    } finally { setReviewBusy(false) }
+  }
+
+  /** 显式评审调整：确认忽略本轮拒绝后，把所有 failed/error 审核员标为人工通过，再进入测试验证。 */
+  async function overrideReview() {
+    if (reviewBusy || busy) return
+    const view = describeReview(draft)
+    if (view.status !== 'failed' && view.status !== 'error') return
+    const count = (view.reviewers ?? []).filter((reviewer) => reviewer.status === 'failed' || reviewer.status === 'error').length
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+      && !window.confirm(`评审未通过（${count} 位拒绝/异常）。确认忽略本轮评审拒绝并继续交付？\n\n原审核意见会保留在流程历史与报告中，标记为人工通过。`)) return
+    setReviewBusy(true); setError(''); setNotice(''); setAdvanceError('')
+    try {
+      const body = await postAllowingFailure(API.review, { id: draft.id, action: 'override' })
+      if (!body.item) throw new Error(body.error || 'Host 没有返回流程')
+      setDraft(body.item)
+      onSaved?.(body.item)
+      const next = describeReview(body.item)
+      setNotice(next.status === 'passed'
+        ? '已确认忽略评审拒绝；可以去「测试与提交」继续环境测试/提交'
+        : '已记录评审调整，但仍有审核员未返回；先处理 pending/重置本轮')
+    } catch (err) {
+      setError(`评审调整失败：${errorText(err)}`)
     } finally { setReviewBusy(false) }
   }
 
@@ -2285,9 +2316,6 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         h('div', { style: styles.spacer }),
         h(Tag, { tone: reviewerStatusTone(reviewer) }, reviewerStatusText(reviewer)),
         reviewer.confidence ? h(Tag, { tone: 'neutral' }, `置信度 ${reviewer.confidence}`) : null,
-        (reviewer.status === 'failed' || reviewer.status === 'error')
-          ? h(Button, { style: mini, disabled: reviewBusy || busy, onClick: () => markReviewerPass(reviewer), children: '人工通过' })
-          : null,
       ),
       reviewer.error ? h('div', { style: { ...styles.dangerCard, marginTop: T.gap.xs } }, `审核员会话异常：${reviewer.error}`) : null,
       !reviewer.error && reviewer.status === 'pending' ? renderReviewerProgress(reviewer) : null,
@@ -2340,7 +2368,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           h('div', { style: styles.spacer }),
           view.status === 'pending'
             ? h(Button, { style: mini, disabled: reviewBusy, onClick: resetReview, children: '重置本轮' })
-            : null,
+            : (view.status === 'failed' || view.status === 'error')
+              ? h('div', { style: { display: 'flex', gap: 6 } },
+                h(Button, { style: mini, disabled: reviewBusy || busy, onClick: startReview, children: '重新评审' }),
+                h(Button, { style: mini, disabled: reviewBusy || busy, onClick: overrideReview, children: '评审调整：忽略拒绝' }))
+              : null,
           view.total ? h('span', { style: styles.sectionHint }, `${view.passed} 通过 / ${view.failed} 不通过 / ${view.errored} 异常 / ${view.pending} 待返回${reviewElapsed !== null ? ` · 已用时 ${reviewElapsed}s` : ''}`) : null,
         ),
         advanceError
@@ -2356,10 +2388,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             advance.action === 'wait'
               ? `评审进行中：${view.passed}/${view.total} 位已返回，等审核员结论（不重复派发）`
               : advance.action === 'dispatch'
-                ? '开发阶段已完成：点顶栏「继续推进」即自动开始本轮评审'
-                : advance.action === 'retry'
+                ? '开发阶段已完成：点「开始独立评审」即开始本轮评审'
+                : advance.action === 'rework'
                   ? advance.hint
-                  : '评审已结束：可以按结论继续推进流程'),
+                  : advance.action === 'verify'
+                    ? advance.hint
+                    : advance.action === 'retry'
+                      ? advance.hint
+                      : '评审已结束：可以按结论继续推进流程'),
           h('div', { style: styles.spacer }),
           h(Button, { style: mini, onClick: () => setTab('report'), children: '查看开发报告' }),
         ),
@@ -2759,6 +2795,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       setNotice('')
       if (action === 'launch') { onLaunch?.(draft.id); return }
       if (action === 'start-review') { await startReview(); return }
+      if (action === 'rework') { await reworkFromReview(); return }
       if (action === 'review') { setTab('review'); return }
       if (action === 'local-test') { runTest('local'); return }
       if (action === 'env-test') { runTest('environment'); return }
@@ -3327,6 +3364,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               disabled: busy || Boolean(launchBusy) || sessionRunning || reviewBusy || advance.disabled,
               title: sessionRunning ? '开发会话正在工作：等当前这步结束再继续推进' : (advanceHint || undefined),
               onClick: () => {
+                if (advance.action === 'rework') { runLaunch('rework', reworkFromReview); return }
+                if (advance.action === 'verify') { setTab('test'); setNotice('评审已通过：去「测试与提交」跑环境测试并提交'); return }
                 if (advance.action === 'dispatch' || advance.action === 'retry') {
                   if (draft.session?.id) runLaunch('continue', continueDev)
                   else runLaunch('review', startReview)
@@ -3346,7 +3385,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                       ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '正在开启开发会话…']
                       : sessionRunning
                         ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '正在开发…']
-                        : (!draft.session?.id && advance.action === 'continue' ? '开启开发会话' : '继续推进'),
+                        : advance.action === 'wait'
+                      ? '评审中'
+                      : (!draft.session?.id && advance.action === 'continue' ? '开启开发会话' : (advance.label || '继续推进')),
             }),
           // 开发前同步：独立工作区从最新 HEAD 创建，减少后续合并工作量
           (!draft.session?.id && draft.status !== 'done' && stage !== 'done' && draft.workflow?.gitRepo !== false)
