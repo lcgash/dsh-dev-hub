@@ -497,4 +497,6 @@ test('评审可观测性：派发时落 sessionId，pending 轮询 /review，并
   assert.match(index, /API\.review\}\?id=/)
   assert.match(index, /setInterval\(load, 3000\)/)
   assert.match(index, /重置本轮/)
+  assert.match(index, /API\.sessionLog\}\?itemId=.*sessionId=/)
+  assert.match(index, /renderReviewerProgress/)
 })

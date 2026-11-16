@@ -541,6 +541,11 @@ test('内嵌会话内容：session-log 返回状态与最近消息；未绑定�
     assert.equal(bound.body.alive, false)
     assert.match(bound.body.reason, /不在当前进程中/)
 
+    // 审核员等子会话不属于 item.session：允许显式指定 sessionId 读取
+    const reviewer = await call(routes, API.sessionLog, { queryParams: { itemId: 'log-check', sessionId: 'reviewer-child-1' } })
+    assert.equal(reviewer.status, 200)
+    assert.equal(reviewer.body.sessionId, 'reviewer-child-1')
+
     const missing = await call(routes, API.sessionLog, { queryParams: { itemId: 'nope' } })
     assert.equal(missing.status, 400)
     assert.match(missing.body.error, /开发项不存在/)

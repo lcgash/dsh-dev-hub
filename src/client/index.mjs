@@ -626,6 +626,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 独立评审：派发中（审核会话要跑几十秒到几分钟，期间按钮必须锁住）；
   // advanceError 保存「自动开始评审失败」的原因，按钮旁内联展示，直到下次推进成功。
   const [reviewBusy, setReviewBusy] = useState(false)
+  // reviewerId -> { alive, items, reason }：审核员子会话的最新动态（轮询，不跳会话也能看进度）
+  const [reviewerProgress, setReviewerProgress] = useState({})
   const [advanceError, setAdvanceError] = useState('')
   // 变更预览：这个流程改了哪些文件、每个文件改了什么
   const [filesInfo, setFilesInfo] = useState(null)
@@ -1043,6 +1045,34 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     load()
     return () => { stop = true; clearInterval(timer) }
   }, [draft?.id, draft?.workflow?.review?.status, reviewBusy])
+
+  // 审核员子会话的最新动态：不等结论落盘，直接把最近 assistant/tool 事件拉回来展示。
+  // 只轮询当前轮仍在 pending 的 reviewer，避免无意义请求。
+  const reviewerSessionsKey = (draft?.workflow?.review?.reviewers ?? []).map((reviewer) => reviewer.sessionId ?? '').join(',')
+  useEffect(() => {
+    const active = reviewBusy || draft?.workflow?.review?.status === 'pending'
+    const reviewers = (draft?.workflow?.review?.reviewers ?? []).filter((reviewer) => reviewer.sessionId)
+    if (!active || !draft?.id || !reviewers.length) {
+      setReviewerProgress({})
+      return undefined
+    }
+    let stop = false
+    const load = async () => {
+      const next = {}
+      await Promise.all(reviewers.map(async (reviewer) => {
+        try {
+          const body = await api(`${API.sessionLog}?itemId=${encodeURIComponent(draft.id)}&sessionId=${encodeURIComponent(reviewer.sessionId)}&limit=16`)
+          if (!stop) next[reviewer.id] = { alive: body.alive, items: body.items ?? [], reason: body.reason ?? null }
+        } catch (err) {
+          if (!stop) next[reviewer.id] = { alive: null, items: [], reason: errorText(err) }
+        }
+      }))
+      if (!stop) setReviewerProgress(next)
+    }
+    load()
+    const timer = setInterval(load, 3000)
+    return () => { stop = true; clearInterval(timer) }
+  }, [draft?.id, draft?.workflow?.review?.status, reviewBusy, reviewerSessionsKey])
 
   /**
    * 「继续推进」在评审这一步＝开始评审：复用 Host 现有 dispatch/runReviewRound。
@@ -2189,6 +2219,36 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     )
   }
 
+  /** 审核员卡片里的“实时动态”：最新回复 + 正在执行的工具，不要求用户跳会话。 */
+  function renderReviewerProgress(reviewer) {
+    if (!reviewer?.sessionId) return null
+    const progress = reviewerProgress[reviewer.id]
+    if (!progress) return null
+    const items = (progress.items ?? []).filter((item) => item && (item.kind === 'assistant' || item.kind === 'tool'))
+    const lastAssistant = [...items].reverse().find((item) => item.kind === 'assistant')
+    const runningTool = [...items].reverse().find((item) => item.kind === 'tool' && item.status === 'running')
+    const statusText = progress.reason
+      ? `读取审核会话失败：${progress.reason}`
+      : progress.alive === false
+        ? '审核会话已结束；如果结论没有回写，可重置本轮后重试'
+        : runningTool
+          ? `正在执行：${runningTool.name || 'tool'}${runningTool.brief ? ` · ${runningTool.brief}` : ''}`
+          : lastAssistant
+            ? '已收到审核员的最新输出'
+            : '审核会话已启动，等待第一条输出…'
+    return h('div', { style: { ...styles.infoCard, marginTop: 6 } },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 } },
+        h(Spinner, { size: 10, tone: 'accent' }),
+        h('span', { style: { fontSize: T.font.xs, fontWeight: 600, color: T.brand } }, '审核会话动态'),
+        h('span', { style: { ...styles.sectionHint, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, statusText),
+      ),
+      lastAssistant?.text
+        ? h('div', { style: { fontSize: T.font.xs, color: T.text2, lineHeight: 1.6, whiteSpace: 'pre-wrap', maxHeight: 92, overflow: 'hidden' } },
+          `${String(lastAssistant.text).slice(0, 320)}${String(lastAssistant.text).length > 320 ? '…' : ''}`)
+        : null,
+    )
+  }
+
   function renderReviewerCard(reviewer) {
     return h('div', { key: reviewer.id, style: sectionBox },
       h('div', { style: styles.row },
@@ -2199,6 +2259,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         reviewer.confidence ? h(Tag, { tone: 'neutral' }, `置信度 ${reviewer.confidence}`) : null,
       ),
       reviewer.error ? h('div', { style: { ...styles.dangerCard, marginTop: T.gap.xs } }, `审核员会话异常：${reviewer.error}`) : null,
+      !reviewer.error && reviewer.status === 'pending' ? renderReviewerProgress(reviewer) : null,
       reviewer.summary
         ? h('div', { style: { whiteSpace: 'pre-wrap', color: T.text2, fontSize: T.font.base, lineHeight: T.line, marginTop: 6 } }, reviewer.summary)
         : (!reviewer.error && reviewer.status === 'pending' ? h('div', { style: styles.sectionHint }, '等待审核员返回结论…') : null),

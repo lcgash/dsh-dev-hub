@@ -4841,7 +4841,8 @@ export function apply(ctx) {
           if (!item) throw new Error('开发项不存在')
           const limitRaw = Number(query(req.url, 'limit'))
           const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 30
-          const sessionId = item.session?.id
+          // 审核员等子会话不属于 item.session：允许显式指定 sessionId 读取它的只读动态。
+          const sessionId = String(query(req.url, 'sessionId') ?? '').trim() || item.session?.id
           sendJson(res, 200, {
             ok: true,
             itemId: item.id,
