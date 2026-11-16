@@ -2,7 +2,8 @@
  * 渲染兜底：任何工作站子组件抛错，都显示一张可读的错误卡，
  * 而不是让整个 Web GUI 白屏（白屏时用户拿不到任何信息）。
  */
-import { Component, createElement as h } from 'react'
+import { Component } from 'react'
+import { h } from './i18n.mjs'
 import { T, styles } from './common.mjs'
 
 export class DevHubBoundary extends Component {

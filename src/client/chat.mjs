@@ -17,7 +17,8 @@
  *
  * 失败一律落成一条 tone:'danger' 的工作站消息（中文原因），不静默。
  */
-import { createElement as h, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { h } from './i18n.mjs'
 
 const MAX_CLARIFY_ROUNDS = 4
 import { API } from '../shared/api.mjs'

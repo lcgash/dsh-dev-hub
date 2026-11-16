@@ -8,7 +8,8 @@
  * 所以这里只读 Host 的 state + sessions（不新增接口），下拉里给出进行中的流程，
  * 点流程直接 openSession 切换；没有会话的流程则回工作站开。
  */
-import { createElement as h, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { h } from './i18n.mjs'
 import { API } from '../shared/api.mjs'
 import { Button, IconSeat, Pill, Tag, T, api, errorText, styles, fmtTime } from './common.mjs'
 

@@ -14,7 +14,8 @@
  * 会话状态由 Panel 每 5 秒 GET API.sessions 后按 itemId 建 Map 下发（本文件只做展示，不请求）。
  * 点击一行由 index.mjs 打开详情。
  */
-import { createElement as h, useState } from 'react'
+import { useState } from 'react'
+import { h } from './i18n.mjs'
 import { API, STATUS_LABELS } from '../shared/api.mjs'
 import { STAGE_LABELS, WORKFLOW_STAGES } from '../shared/workflow.mjs'
 import {

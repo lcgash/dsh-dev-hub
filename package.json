@@ -7,7 +7,8 @@
   "exports": {
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./locale/*.json": "./locale/*.json"
   },
   "dsh": {
     "manifestVersion": 1,
@@ -51,5 +52,15 @@
     "code-review",
     "git-worktree",
     "context-pack"
+  ],
+  "files": [
+    "lib",
+    "src",
+    "locale",
+    "docs",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE",
+    "cordis.patch.yml"
   ]
 }

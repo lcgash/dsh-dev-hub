@@ -8,7 +8,8 @@
  * 全部数据走 src/shared/api.mjs 的 API.wizard / API.modules 契约；Host 路由由
  * Lead 并行实现，这里只按契约调用，不做任何本地 mock。
  */
-import { createElement as h, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import { h } from './i18n.mjs'
 import { API } from '../shared/api.mjs'
 import { suggestFlowTitle } from '../shared/requirement.mjs'
 import { WIZARD_STEP_LABELS, WIZARD_STEPS } from '../shared/wizard.mjs'

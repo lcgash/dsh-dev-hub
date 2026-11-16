@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Development Workstation",
+    "description": "Chat-first development flows for DeepSeek Harness: scan a repository, clarify the requirement, plan the change, isolate worktrees, run independent review, verify tests and generate a scope-aware report."
+  }
+}

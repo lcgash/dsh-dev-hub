@@ -10,7 +10,8 @@
  * 与 DSH 外壳的关系：**表面与文字优先用 DSH 主题变量**（跟随亮/暗主题），
  * 家族色只用于本工作站自己的强调与语义（按钮、状态、选中态）。
  */
-import { createElement as h } from 'react'
+import {  } from 'react'
+import { h } from './i18n.mjs'
 import { STATUS_LABELS } from '../shared/api.mjs'
 
 /* ------------------------------------------------------------------ tokens */

@@ -5,7 +5,8 @@
  * 数据：GET /api/dev-hub/session-log（Host 只读投影）。
  * 发送：客户端会话控制器 `sessions.retain(id).binding.session.prompt(...)`。
  */
-import { createElement as h, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { h } from './i18n.mjs'
 import { API } from '../shared/api.mjs'
 import { Button, C, T, api, errorText, styles } from './common.mjs'
 

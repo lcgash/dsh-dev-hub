@@ -112,6 +112,13 @@ Every finished flow can produce a read-only report: goal, scope, review verdicts
   - timeline;
   - evidence boundary.
 
+### Localization
+
+- UI copy is registered through DSH's client locale service as the `dev-hub` namespace.
+- The plugin ships `zh` and `en` dictionaries and localized plugin metadata; switch the language under **Settings → General → Language**.
+- Workbench chrome, navigation, chat controls, review labels and report controls follow the active locale. Host-generated prose, repository names and user-authored report content keep their original language.
+- New UI strings should be added to both dictionaries in `src/client/i18n.mjs`.
+
 ### Local-first
 
 - Developer identity and environment probes live in `~/.dsh/dev-hub/profile.json`.
@@ -212,7 +219,7 @@ The repository is intentionally small and dependency-light. Core modules should 
 
 ## Limitations
 
-- The UI is Chinese-first; English localization is not complete yet.
+- English coverage focuses on the primary workbench/chat/report chrome; some dynamic Host-generated text remains in its authored language.
 - Virtual workspaces are a local composition, not a remote repository service.
 - Worktree isolation applies to Git repositories, not to virtual workspace local ledgers.
 - Test and review quality still depends on the configured model and the repository's own commands.

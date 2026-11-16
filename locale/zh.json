@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "开发工作站",
+    "description": "面向 DeepSeek Harness 的对话式开发流程：扫描仓库、澄清需求、生成计划、隔离 worktree、独立评审、测试验证，并生成按 scope 统计的开发报告。"
+  }
+}

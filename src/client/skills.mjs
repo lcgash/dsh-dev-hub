@@ -11,7 +11,8 @@
  * 取舍：所有写操作成功后统一再 GET 一次（Host 对 add/update/remove 只回约束数组），
  * 保证「已安装 / 技能库 / 约束明细」三块永远同源、不会出现半更新。
  */
-import { createElement as h, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
+import { h } from './i18n.mjs'
 import { API } from '../shared/api.mjs'
 import {
   Button,

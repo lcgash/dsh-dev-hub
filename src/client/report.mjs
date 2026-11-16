@@ -11,7 +11,8 @@
  * 组件分两层：ReportView 负责取数与工具栏（loading/error/data 三态），
  * ReportSections/ReportBlock 是纯渲染组件，方便 SSR 冒烟测试。
  */
-import { createElement as h, useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { h } from './i18n.mjs'
 import { API } from '../shared/api.mjs'
 import {
   Button,
