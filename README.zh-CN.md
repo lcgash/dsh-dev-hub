@@ -114,10 +114,40 @@
 
 ### 本地化
 
-- 界面文案通过 DSH 的客户端 locale 服务注册为 `dev-hub` 命名空间；
-- 插件提供 `zh` / `en` 字典和本地化的插件元数据，可在 **设置 → 通用 → 语言** 中切换；
+- 界面文案通过 DSH 客户端 locale 服务的 `dev-hub` 命名空间渲染，语言仍由 **设置 → 通用 → 语言** 统一切换；
+- 语言资源是可插拔的：每种语言一个 `locale/<id>.json`，同一个文件同时承载插件元数据（`meta.title` / `meta.description`）、语言定义（`language.label` / `language.fallback`）、界面词典（`messages`，中文原文作 key）和动态模板（`templates` / `templateValues`）；
+- `messages` 已覆盖 `src/client` 静态中文字面量，以及客户端渲染的 shared 标签/状态/门禁文案（约 1080 条）；`templates` 覆盖 `src/client` 中全部含中文插值的模板字面量（约 330 条）。`npm test` 会扫描源码静态中文字面量与模板字面量、断言 shared 标签表在词典里，并渲染首页/详情/向导/状态胶囊校验英文下不残留界面中文；
+- Host 在运行时读取 `locale/*.json`，通过 loopback 的 `GET /api/dev-hub/locales` 下发给浏览器；客户端再注册到 DSH locale。新增语言不需要改 `src/client` 组件代码，也不需要重新构建 `lib/client.js`；
+- 客户端按 DSH 实际 catalog 识别已注册语言：宿主已经注册的 `ja` / `es` / `fr` 等不会被重复 `addLanguage`，只补 `dev-hub` 命名空间字典（本机 DSH 0.2.0-rc.2 仅内置 `zh`/`en`，其他版本可能更多）；`fr-CA` 这类变体可以 `fallback` 到已注册的 `fr`；
 - 工作台框架、导航、聊天操作、评审标签与报告控件会跟随当前语言；Host 生成的过程文案、仓库名与用户写的内容保持原语言；
-- 新增界面文案应同时补到 `src/client/i18n.mjs` 的中英文字典。
+- 新增界面文案：在 `locale/zh.json` 与 `locale/en.json` 的 `messages` 里同时补 key，两边 key 必须完整对齐（`npm test` 会检查）；
+- 新增语言：复制 `locale/en.json` 为 `locale/<id>.json`，保留并按需修改 `meta`、把 `language.label` 改成该语言的自称（如 `日本語`），按需设置 `language.fallback`（默认 `en`，整条回退链必须终止于 `en`），再翻译 `messages`。`templates` / `templateValues` 可选；不写时动态计数/状态文案回退英文模板。刷新页面后即可在语言设置里选择。
+
+词典文件结构：
+
+```json
+{
+  "meta": { "title": "开发工作站", "description": "..." },
+  "language": { "label": "中文" },
+  "messages": { "开发工作站": "开发工作站", "独立评审": "独立评审" },
+  "templates": { "任务 {done}/{total}": "任务 {done}/{total}" },
+  "templateValues": { "通过": "通过" }
+}
+```
+
+第三方语言（`meta` 仍必填，缺 `meta` 会被整体丢弃）：
+
+```json
+{
+  "meta": { "title": "開発ワークステーション", "description": "..." },
+  "language": { "label": "日本語", "fallback": "en" },
+  "messages": { "开发工作站": "開発ワークステーション" },
+  "templates": { "任务 {done}/{total}": "タスク {done}/{total}" },
+  "templateValues": { "通过": "合格" }
+}
+```
+
+词典文件解析失败、`zh`/`en` key 或模板未对齐、语言 id 非法或 fallback 链非法时，Host 会在下发结果里带上 `errors`，客户端用真实 catalog 复核后在控制台显式告警；其余有效语言照常加载，界面退回中文原文而不是白屏。
 
 ### 本机优先
 
@@ -219,7 +249,8 @@ npm test            # node:test 测试
 
 ## 当前限制
 
-- 英文覆盖集中在工作台/聊天/报告的主要界面；部分 Host 动态文案仍保持原文语言。
+- `src/client` 的静态中文字面量与含中文插值的模板字面量已全部进入词典/模板；第三方语言不提供模板时回退英文模板；Host 生成的正文、仓库名与用户内容仍保持原文语言。
+- 第三方语言的词条由词典文件维护者负责，缺失 key 会回退到英文；词典在页面加载时异步下发，首帧可能短暂显示中文原文。
 - 虚拟库是本机组合，不是远程仓库服务；
 - Worktree 隔离适用于 Git 仓库，不适用于虚拟库本机台账；
 - 测试和评审质量仍取决于配置的模型与仓库自身的命令。

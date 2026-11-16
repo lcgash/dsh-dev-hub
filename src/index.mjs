@@ -38,6 +38,7 @@ import { answerPendingQuestion, readPendingApprovals, readPendingQuestions } fro
 import { ASSIST_SCHEMA, applyAssistUpdates, buildAssistPrompt } from './core/assist.mjs'
 import { sessionState, sessionStates } from './host/session-state.mjs'
 import { sessionLog, sessionTimeline } from './host/session-log.mjs'
+import { loadLocaleBundle } from './host/locales.mjs'
 import { addCustomConstraint, installSkill, regenerateConventions, removeConstraint, uninstallSkill, updateConstraint } from './core/conventions.mjs'
 import { PROMPT_VERSION, hashOf, inputHash, normalizeAnswers, planHash, pluginVersion, recordProvenance, specHash } from './core/provenance.mjs'
 import { reproPlan } from './core/repro.mjs'
@@ -2488,6 +2489,24 @@ function sendText(res, status, contentType, body) {
 
 export function apply(ctx) {
   const routes = [
+    // 多语言词典：运行时读取 locale/*.json 下发给浏览器；新增语言 = 新增文件。
+    {
+      kind: 'exact',
+      path: API.locales,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'GET only' })
+        try {
+          const bundle = await loadLocaleBundle()
+          // 不返回本机绝对路径；errors 只带文件名与原因，便于定位坏词典。
+          sendJson(res, 200, { ok: bundle.ok, locales: bundle.locales, errors: bundle.errors })
+        } catch (error) {
+          // 详细原因（可能含本机候选目录）只进日志；浏览器侧只拿固定文案。
+          try { console.warn('[dev-hub] locale bundle load failed:', error) } catch { /* ignore */ }
+          sendJson(res, 500, { ok: false, error: '语言词典加载失败，请查看 Host 日志' })
+        }
+      },
+    },
     {
       kind: 'exact',
       path: API.state,
