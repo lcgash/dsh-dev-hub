@@ -59,6 +59,8 @@ export function describeFlow(item, session) {
       status: review.status,
       verdict: review.verdict,
       round: review.round,
+      maxRounds: review.maxRounds,
+      exhausted: review.exhausted,
       total: review.total,
       passed: review.passed,
       failed: review.failed,
@@ -145,7 +147,9 @@ export function suggestNextSteps(item, session) {
   const review = summary.review
   if (summary.session.bound && !summary.session.running) {
     if (review.status === 'failed') {
-      if (review.reworkAt) {
+      if (review.exhausted) {
+        push('review', '评审已达自动轮次上限，人工决定', `已自动进行 ${review.round}/${review.maxRounds} 轮评审；系统不再自动返工/复审，请到评审页选择人工通过、重置或手工重试`)
+      } else if (review.reworkAt) {
         push('start-review', '重新评审', '纠偏意见已发回开发；完成修改并重跑自测后点它重新评审')
       } else {
         push('rework', '提交纠偏意见，重新进入开发', `独立评审未通过：${review.failed} 位审核员给出 ${review.corrections.reduce((sum, entry) => sum + entry.findings.length, 0)} 条意见；把意见发回开发会话返工，修完重跑自测再评审`)

@@ -18,6 +18,9 @@ export const STAGE_LABELS = Object.fromEntries(WORKFLOW_STAGES.map((stage) => [s
  */
 export const REVIEW_MAX_REVIEWERS = 3
 export const REVIEW_DEFAULT_REVIEWERS = 2
+// 自动返工/复审最多几轮；达到后把选择权交还用户，不再自动建议继续纠偏
+// （评审总能挑出 minor，无限自动循环没有意义）。
+export const REVIEW_MAX_AUTO_ROUNDS = 3
 
 /**
  * 审核视角：同一份证据换不同角度审，避免 3 个审核员给出同一段结论。

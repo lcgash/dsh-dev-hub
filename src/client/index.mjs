@@ -958,6 +958,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   async function continueDev() {
     if (busy) return
     const advance = reviewAdvancePlan(draft)
+    if (advance.action === 'manual') { setTab('review'); setNotice(advance.hint); return }
     if (advance.action === 'rework') { await reworkFromReview(); return }
     if (advance.action === 'verify') { setTab('test'); setNotice('评审已通过：去「测试与提交」跑环境测试并提交'); return }
     if (advance.action === 'dispatch' || advance.action === 'retry') {
@@ -2384,12 +2385,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           ? h('div', { style: { ...styles.dangerCard, marginTop: T.gap.xs } }, advanceError)
           : null,
         view.status === 'failed'
-          ? (view.reworkAt
+          ? (view.reworkAt && !view.exhausted
             ? h('div', { style: { ...styles.infoCard, marginTop: T.gap.xs } },
               '纠偏意见已发回开发会话返工。完成修改并重跑本机自测后点「重新评审」；本轮不再提供人工通过，避免返工中绕回评审门禁。')
             : h('div', { style: { ...styles.warnCard, marginTop: T.gap.xs, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
               h('span', { style: { fontSize: T.font.sm, color: T.warnText, flex: '1 1 360px' } },
-                '评审未通过。默认应把纠偏意见发回开发会话返工；如果确认这次拒绝可以忽略，点右侧「人工通过本轮」放行到测试/提交，原意见会保留。'),
+                view.exhausted
+                  ? `已自动评审/返工 ${view.round}/${view.maxRounds} 轮，达到上限；系统不再自动继续纠偏。请人工决定：人工通过本轮，或重置后手工重试。`
+                  : '评审未通过。默认应把纠偏意见发回开发会话返工；如果确认这次拒绝可以忽略，点右侧「人工通过本轮」放行到测试/提交，原意见会保留。'),
               h(Button, {
                 style: { height: 30, padding: '0 12px', fontSize: T.font.sm, fontWeight: 600, color: T.warnText, background: T.warnSoft, borderColor: T.warn },
                 disabled: reviewBusy || busy,
@@ -2401,6 +2404,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           '本页只读：不再提供手工派发入口。「继续推进」即开始评审——自动起 1~3 位只读审核员会话，'
           + '他们自己读目标/验收/scope/改动/自测结果/开发报告，各自给结论。'
           + '评审不是强制门禁：确认拒绝可忽略时点「人工通过本轮」，保留原意见并继续测试/提交；'
+          + `自动返工/复审最多 ${view.maxRounds ?? 3} 轮，达到后不再自动继续，由你人工决定。`
           + '不通过时也会展示纠偏意见，异常或未返回不会被伪装成自动通过。'),
         h('div', { style: { ...styles.row, marginTop: T.gap.xs, flexWrap: 'wrap' } },
           h('span', { style: styles.sectionHint },
@@ -3388,6 +3392,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               disabled: busy || Boolean(launchBusy) || sessionRunning || reviewBusy || advance.disabled,
               title: sessionRunning ? '开发会话正在工作：等当前这步结束再继续推进' : (advanceHint || undefined),
               onClick: () => {
+                if (advance.action === 'manual') { setTab('review'); setNotice(advance.hint); return }
                 if (advance.action === 'rework') { runLaunch('rework', reworkFromReview); return }
                 if (advance.action === 'verify') { setTab('test'); setNotice('评审已通过：去「测试与提交」跑环境测试并提交'); return }
                 if (advance.action === 'dispatch' || advance.action === 'retry') {

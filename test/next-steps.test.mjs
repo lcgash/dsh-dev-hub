@@ -113,6 +113,24 @@ test('suggestNextSteps：评审是测试验证的门禁', () => {
   assert.ok(reworking.steps.some((step) => step.action === 'start-review'))
   assert.ok(!reworking.steps.some((step) => step.action === 'rework'))
 
+  // 达到自动轮次上限：不再自动返工/复审，给人工决定入口
+  const exhausted = suggestNextSteps(
+    flow({
+      workflow: {
+        stage: 'develop',
+        review: {
+          status: 'failed',
+          round: 3,
+          reviewers: [{ id: 'reviewer-1', role: 'direction', status: 'failed', verdict: 'fail', summary: '方向不对', findings: [] }],
+        },
+        tests: { local: { status: 'passed' }, environment: { status: 'not_run' } },
+      },
+    }),
+    { sessionId: 's1', running: false },
+  )
+  assert.ok(exhausted.steps.some((step) => step.action === 'review'))
+  assert.ok(!exhausted.steps.some((step) => step.action === 'rework' || step.action === 'start-review'))
+
   const envPassed = suggestNextSteps(
     flow({ workflow: { stage: 'submit', review: reviewPassed, tests: { local: { status: 'passed' }, environment: { status: 'passed' } } } }),
     { sessionId: 's1', running: false },

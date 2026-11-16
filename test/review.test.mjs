@@ -224,6 +224,14 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
   assert.equal(reworking.label, '重新评审')
   assert.match(reworking.hint, /不再允许本轮人工通过/)
 
+  // 自动评审达到 3 轮上限：不再自动返工/复审，把选择权交给用户
+  const exhausted = reviewAdvancePlan(item({
+    review: normalizeReview({ round: 3, reviewers: [reviewer('reviewer-1', 'failed')] }),
+  }))
+  assert.equal(exhausted.action, 'manual')
+  assert.equal(exhausted.label, '人工决定评审')
+  assert.match(exhausted.hint, /3 轮上限/)
+
   // 审核员异常：同样可重试，原因里带审核员会话的错误
   const errored = reviewAdvancePlan(item({
     review: normalizeReview({ round: 1, reviewers: [reviewer('reviewer-1', 'error', { error: 'provider down' })] }),
@@ -433,6 +441,7 @@ test('流程详情：阶段条/概览/页签都能看到独立评审与纠偏意
   assert.match(index, /async function resetReview\(/)
   assert.match(index, /async function overrideReview\(/)
   assert.match(index, /人工通过本轮/)
+  assert.match(index, /view\.exhausted/)
   assert.match(index, /children: '重新评审'/)
   assert.match(index, /查看开发报告/)
 

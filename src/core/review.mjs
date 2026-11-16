@@ -25,6 +25,7 @@ import {
   REVIEWER_ROLES,
   REVIEW_DEFAULT_REVIEWERS,
   REVIEW_MAX_REVIEWERS,
+  REVIEW_MAX_AUTO_ROUNDS,
   REVIEW_ROLE_BY_ID,
   REVIEW_VERDICTS,
 } from '../shared/workflow.mjs'
@@ -404,6 +405,9 @@ export function describeReview(item) {
     status: review?.status ?? 'idle',
     verdict: review?.status === 'passed' ? 'pass' : review?.status === 'failed' ? 'fail' : null,
     round: review?.round ?? 0,
+    maxRounds: REVIEW_MAX_AUTO_ROUNDS,
+    // 自动轮次用尽：不再自动返工/复审，把决定权交给用户
+    exhausted: Boolean(review && ['failed', 'error'].includes(review.status) && (review.round ?? 0) >= REVIEW_MAX_AUTO_ROUNDS),
     dispatchedAt: review?.dispatchedAt ?? null,
     decidedAt: review?.decidedAt ?? null,
     reworkAt: review?.reworkAt ?? null,
@@ -463,6 +467,15 @@ export function reviewAdvancePlan(item) {
     }
   }
   if (view.status === 'failed') {
+    if (view.exhausted) {
+      return {
+        action: 'manual',
+        status: view.status,
+        label: '人工决定评审',
+        disabled: false,
+        hint: `自动返工/评审已达到 ${view.maxRounds} 轮上限：不再自动继续纠偏。请人工选择「人工通过本轮」或「重置本轮」后手工重试。`,
+      }
+    }
     if (view.reworkAt) {
       return {
         action: 'retry',
@@ -481,6 +494,15 @@ export function reviewAdvancePlan(item) {
     }
   }
   if (view.status === 'error') {
+    if (view.exhausted) {
+      return {
+        action: 'manual',
+        status: view.status,
+        label: '人工决定评审',
+        disabled: false,
+        hint: `自动返工/评审已达到 ${view.maxRounds} 轮上限：请人工决定重试、重置或人工通过。`,
+      }
+    }
     return {
       action: 'retry',
       status: view.status,

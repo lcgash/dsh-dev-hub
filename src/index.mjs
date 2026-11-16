@@ -2323,7 +2323,7 @@ function recordReviewOutcome(item, body = {}) {
 function overrideReviewRejections(item, body = {}) {
   const view = describeReview(item)
   if (view.status !== 'failed' && view.status !== 'error') throw new Error('当前评审没有可忽略的拒绝')
-  if (view.reworkAt) throw new Error('纠偏意见已发回开发返工：本轮不再允许人工通过，请完成修改后重新评审')
+  if (view.reworkAt && !view.exhausted) throw new Error('纠偏意见已发回开发返工：本轮不再允许人工通过，请完成修改后重新评审')
   if (view.pending > 0) throw new Error('还有审核员未返回结论：先等结论或重置本轮，不能忽略')
   const targets = (view.reviewers ?? []).filter((reviewer) => reviewer.status === 'failed' || reviewer.status === 'error')
   if (!targets.length) throw new Error('当前评审没有 failed/error 审核员')
