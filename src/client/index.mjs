@@ -3571,6 +3571,8 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
   const [detailEditing, setDetailEditing] = useState(false)
   // 最近一次写进 state 的详情 JSON：自动刷新只在内容真变化时 setState（避免无意义重渲染/重置草稿）
   const detailJsonRef = useRef('')
+  // 切流程时丢弃过期详情响应：A→B 快速切换，A 的响应不能覆盖 B 的内容
+  const selectedLoadSeqRef = useRef(0)
   // 从右上角抽屉跳进来：切到这条流程的详情
   useEffect(() => {
     if (openFlowId) setSelected(openFlowId)
@@ -3744,10 +3746,19 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
     // 等首屏 /state 就位再拉详情：否则详情响应可能先到、setState 时 state 还是 null 被丢掉，
     // 之后 reload 完成也不会再触发（selected 没变），表现为一直「正在加载流程详情…」。
     if (!state?.repo) return
+    const seq = selectedLoadSeqRef.current + 1
+    selectedLoadSeqRef.current = seq
+    // 先清掉上一条流程的详情：否则切流程期间会把旧流程的变更/测试内容顶在新流程位置渲染
+    setState((current) => current && current.selectedItem && current.selectedItem.id !== selected
+      ? { ...current, selectedItem: null }
+      : current)
     api(`${API.item}?id=${encodeURIComponent(selected)}`).then((body) => {
+      if (seq !== selectedLoadSeqRef.current) return
       detailJsonRef.current = JSON.stringify(body.item)
       setSelectedItem(body.item)
-    }).catch((err) => setError(errorText(err)))
+    }).catch((err) => {
+      if (seq === selectedLoadSeqRef.current) setError(errorText(err))
+    })
     loadPending(selected)
   // openFlowNonce：每次从抽屉/聊天跳转都强制重拉一次，避免同 id 情况下详情为旧值或空
   }, [selected, state?.repo?.path, openFlowNonce])
@@ -3758,8 +3769,11 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
     if (!selected || !state?.repo || detailEditing) return undefined
     const timer = setInterval(async () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+      const seq = selectedLoadSeqRef.current
       try {
         const body = await api(`${API.item}?id=${encodeURIComponent(selected)}`)
+        // 请求飞在路上时已经切到别的流程：这份结果不能写进当前详情
+        if (seq !== selectedLoadSeqRef.current) return
         const json = JSON.stringify(body.item)
         if (json === detailJsonRef.current) return
         detailJsonRef.current = json
@@ -4214,7 +4228,8 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
   }
 
   const items = state.items ?? []
-  const detail = state.selectedItem ?? null
+  // 只渲染与当前 selected 匹配的详情：切流程的同一帧里也不会把上一条流程的内容顶上来
+  const detail = state.selectedItem && state.selectedItem.id === selected ? state.selectedItem : null
   // 编辑时把当前成员也列出来（即使路径已失效），否则用户无法移除失效成员；
   // 新建时只列路径存在的已登记代码库。
   const editingWorkspace = wsEditId ? (state.workspaces ?? []).find((entry) => entry.id === wsEditId) ?? null : null
@@ -4261,6 +4276,8 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
     selected
       ? (detail
         ? h(ItemEditor, {
+          // 每条流程独立一份组件状态：切流程会重建，文件清单/关键改动/diff 不串到下一条
+          key: detail.id,
           item: detail,
           ctx,
           pendingQuestions,

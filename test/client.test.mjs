@@ -1895,6 +1895,20 @@ test('流程详情首屏：开发进度摘要能直接看出任务/测试/还差
   assert.match(html, /开发会话动态（默认收起/)
 })
 
+test('回归：右上角切流程会先清旧详情、丢弃过期响应，变更内容不串到下一条', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  // 切到另一条流程时立即清掉上一条 selectedItem（否则旧流程的变更/测试内容会顶着新流程渲染）
+  assert.match(index, /current\.selectedItem\.id !== selected/)
+  // 同一帧渲染也只认匹配 selected 的详情，避免一次闪烁
+  assert.match(index, /state\.selectedItem\.id === selected \? state\.selectedItem : null/)
+  // 快速切换时，晚到的旧详情响应不能覆盖当前流程
+  assert.match(index, /selectedLoadSeqRef/)
+  assert.match(index, /if \(seq !== selectedLoadSeqRef\.current\) return/)
+  // ItemEditor 按流程 id 重建：文件清单 / 关键改动 diff 不残留上一条流程
+  assert.match(index, /key: detail\.id,/)
+})
+
 test('抽屉进详情：先等 /state 就位再拉 item，reload 不会清空已加载详情', async () => {
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
