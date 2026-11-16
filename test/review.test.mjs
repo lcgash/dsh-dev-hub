@@ -415,9 +415,10 @@ test('流程详情：阶段条/概览/页签都能看到独立评审与纠偏意
   // 「继续推进」复用现有 dispatch（幂等、审核员数量沿用默认配置）
   assert.match(index, /API\.review, \{ id: draft\.id, action: 'dispatch', count \}/)
   assert.match(index, /退回开发的纠偏意见/)
-  // 独立评审页只读：不再有审核员数量选择、手工派发/清空按钮
+  // 独立评审页不提供审核员数量选择/手工派发；但卡在 pending 时允许显式重置本轮
   assert.doesNotMatch(index, /'审核员数量'/)
-  assert.doesNotMatch(index, /dispatchReview\(|resetReview\(/)
+  assert.doesNotMatch(index, /dispatchReview\(/)
+  assert.match(index, /async function resetReview\(/)
   assert.match(index, /查看开发报告/)
 
   // 「继续推进」在评审阶段自动开始评审：走共用判定 + 复用现有 dispatch，不弹确认框
@@ -482,4 +483,18 @@ test('流程详情：评审 running 时顶栏「继续推进」禁用并显示�
   const idleHtml = render({ ...base, workflow: { ...base.workflow, review: null } })
   assert.match(idleHtml, /继续推进即开始评审/)
   assert.doesNotMatch(idleHtml, /待派发评审|到「独立评审」页派/)
+})
+
+
+test('评审可观测性：派发时落 sessionId，pending 轮询 /review，并有卡死重置入口', async () => {
+  const fs = await import('node:fs/promises')
+  const host = await fs.readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  const run = await fs.readFile(new URL('../src/host/agent-run.mjs', import.meta.url), 'utf8')
+  const index = await fs.readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(run, /onStarted/)
+  assert.match(host, /onStarted: async \(\{ sessionId \}\) =>/)
+  assert.match(host, /reconcileStaleReview/)
+  assert.match(index, /API\.review\}\?id=/)
+  assert.match(index, /setInterval\(load, 3000\)/)
+  assert.match(index, /重置本轮/)
 })

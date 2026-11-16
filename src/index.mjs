@@ -2190,7 +2190,35 @@ function reviewHistoryMessage(view) {
  * 幂等约定：已有 pending 评审时直接返回当前台账，不再起新轮次——「继续推进」连点、
  * 或多开一个页面重复触发，都不会重复消耗审核员。
  */
+
+const REVIEW_STALE_MS = 4 * 60 * 1000
+
+/**
+ * 评审协程不是持久任务：DSH 重启/浏览器断开时，台账可能永远停在 pending。
+ * 超过审核员超时窗口后，如果没有活着的审核 agent，就把 pending 标成异常，
+ * 让「重置本轮」/重试评审有明确入口，而不是让用户一直等。
+ */
+async function reconcileStaleReview(ctx, repo, item) {
+  const view = describeReview(item)
+  if (view.status !== 'pending') return item
+  const dispatchedAt = Date.parse(view.dispatchedAt ?? '')
+  if (!Number.isFinite(dispatchedAt) || Date.now() - dispatchedAt < REVIEW_STALE_MS) return item
+  const agents = ctx.get('agents')
+  // sessions.get 可能仍能读到已结束的持久会话；判断“还在跑”必须看 live agent registry。
+  const live = (view.reviewers ?? []).some((reviewer) => reviewer.sessionId && agents?.get?.(reviewer.sessionId))
+  if (live) return item
+  for (const reviewer of view.reviewers ?? []) {
+    if (reviewer.status !== 'pending') continue
+    item.workflow.review = applyReviewerOutput(item.workflow.review, reviewer.id, {
+      error: '评审会话超过 4 分钟未返回，可能已随 DSH 重启中断；请重置本轮后重试',
+    })
+  }
+  const saved = await saveItem(repo, appendHistory(item, 'review', '评审会话超时/中断，已标记为异常'))
+  return saved
+}
+
 async function runReviewRound({ ctx, repo, item, profile, count }) {
+  item = await reconcileStaleReview(ctx, repo, item)
   const before = describeReview(item)
   if (before.status === 'pending') return item
   const evidence = await reviewEvidenceOf({ repo, item, profile })
@@ -2199,7 +2227,7 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
   appendHistory(item, 'review', `继续推进：自动开始独立评审（第 ${started.round} 轮 · ${started.reviewers.length} 位审核员：${started.reviewers.map((reviewer) => reviewer.role).join(' / ')}）`)
   let saved = await saveItem(repo, item)
 
-  const outcomes = await Promise.allSettled(started.reviewers.map(async (reviewer) => {
+  const outcomes = await Promise.allSettled(started.reviewers.map(async (reviewer, index) => {
     const prompt = reviewerPrompt({
       item: saved,
       reviewer,
@@ -2217,6 +2245,18 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
       schema: REVIEW_SCHEMA,
       label: `devhub-${reviewer.id}`,
       timeoutMs: 150000,
+      onStarted: async ({ sessionId }) => {
+        // 先落 sessionId，UI 轮询时立刻能看到“审核会话已启动”，而不是永远显示 —
+        const current = saved.workflow?.review
+        if (!current || !Array.isArray(current.reviewers)) return
+        saved.workflow.review = {
+          ...current,
+          reviewers: current.reviewers.map((entry, position) => (position === index
+            ? { ...entry, sessionId, dispatchedAt: new Date().toISOString() }
+            : entry)),
+        }
+        await saveItem(repo, saved)
+      },
     })
     const normalized = normalizeReviewerVerdict(result.value)
     if (!normalized.verdict) {
@@ -3090,14 +3130,16 @@ export function apply(ctx) {
           const repo = await activeRepo(profile)
           if (!repo) throw new Error('尚未选择代码库')
           if (req.method === 'GET') {
-            const item = await readItemLocal(profile, repo, query(req.url, 'id'))
-            if (!item) throw new Error('开发项不存在')
+            const found = await readItemLocal(profile, repo, query(req.url, 'id'))
+            if (!found) throw new Error('开发项不存在')
+            const item = await reconcileStaleReview(ctx, repo, found)
             return sendJson(res, 200, { ok: true, item, review: describeReview(item) })
           }
           if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'GET/POST only' })
           const body = await readBody(req)
-          const item = await readItemLocal(profile, repo, body.id)
+          let item = await readItemLocal(profile, repo, body.id)
           if (!item) throw new Error(`开发项不存在：${body.id}`)
+          item = await reconcileStaleReview(ctx, repo, item)
           const action = String(body.action ?? 'dispatch')
           let saved
           if (action === 'dispatch') {

@@ -720,6 +720,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const estimate = plan.estimate ?? {}
   const stage = workflow.stage ?? 'discovery'
   const reviewView = describeReview(draft)
+  const reviewStartedAt = reviewView.dispatchedAt ? new Date(reviewView.dispatchedAt).getTime() : NaN
+  const reviewElapsed = reviewView.status === 'pending' && Number.isFinite(reviewStartedAt)
+    ? Math.max(0, Math.round((Date.now() - reviewStartedAt) / 1000))
+    : null
   // 「继续推进」在评审这一步的去向（自动开始/评审中禁用/失败重试）：与 core/next-steps 同一口径
   const advance = reviewAdvancePlan(draft)
   const advanceHint = advanceError || (advance.action === 'retry' ? advance.hint : '')
@@ -1020,6 +1024,26 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     }
   }
 
+  // 评审是异步子代理：只靠一次 POST 返回时看不到中间态。pending 时轮询 /review，
+  // 让审核员 sessionId、异常与最新结论能进界面；完成后自动停。
+  useEffect(() => {
+    const pending = draft?.workflow?.review?.status === 'pending' || reviewBusy
+    if (!pending || !draft?.id) return undefined
+    let stop = false
+    const load = async () => {
+      if (stop) return
+      try {
+        const body = await api(`${API.review}?id=${encodeURIComponent(draft.id)}`)
+        if (stop || !body.item) return
+        setDraft(body.item)
+        onSaved?.(body.item)
+      } catch { /* 下一轮继续；不覆盖当前界面 */ }
+    }
+    const timer = setInterval(load, 3000)
+    load()
+    return () => { stop = true; clearInterval(timer) }
+  }, [draft?.id, draft?.workflow?.review?.status, reviewBusy])
+
   /**
    * 「继续推进」在评审这一步＝开始评审：复用 Host 现有 dispatch/runReviewRound。
    *
@@ -1052,6 +1076,22 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       }
     } catch (err) {
       setAdvanceError(`自动开始评审失败：${errorText(err)}（再点「继续推进」重试）`)
+    } finally { setReviewBusy(false) }
+  }
+
+  /** 评审卡在 pending（常见于 DSH 重启/请求中断）：允许用户显式重置本轮后重试。 */
+  async function resetReview() {
+    if (reviewBusy || busy) return
+    if (typeof window !== 'undefined' && typeof window.confirm === 'function'
+      && !window.confirm('重置本轮独立评审？当前 pending 的审核员会话会停止；历史轮次仍保留。')) return
+    setReviewBusy(true); setError(''); setNotice(''); setAdvanceError('')
+    try {
+      const body = await postAllowingFailure(API.review, { id: draft.id, action: 'reset' })
+      if (!body.ok && body.error) throw new Error(body.error)
+      if (body.item) { setDraft(body.item); onSaved?.(body.item) }
+      setNotice('已重置本轮评审；点「继续推进」可重新派发')
+    } catch (err) {
+      setError(`重置评审失败：${errorText(err)}`)
     } finally { setReviewBusy(false) }
   }
 
@@ -2177,7 +2217,18 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           )))
         : null,
       h('div', { style: { ...styles.sectionHint, marginTop: 6, display: 'flex', gap: 10, flexWrap: 'wrap' } },
-        reviewer.source === 'manual' ? '结论来源：人工记录' : (reviewer.sessionId ? `审核会话：${reviewer.sessionId}` : '审核会话：—'),
+        reviewer.source === 'manual'
+          ? '结论来源：人工记录'
+          : (reviewer.sessionId
+            ? (reviewer.status === 'pending'
+              ? h('span', null, '审核会话：', h('span', {
+                role: 'button',
+                title: '打开审核员子会话（运行中可查看它的实际读代码过程）',
+                style: { color: T.brand, cursor: 'pointer' },
+                onClick: () => onOpenSession?.(reviewer.sessionId),
+              }, reviewer.sessionId))
+              : `审核会话：${reviewer.sessionId}（已结束）`)
+            : '审核会话：—'),
         reviewer.elapsedMs ? `耗时 ${Math.round(reviewer.elapsedMs / 1000)}s` : null,
         reviewer.finishedAt ? `返回于 ${fmtTime(reviewer.finishedAt)}` : null,
       ),
@@ -2195,7 +2246,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           h(Tag, { tone }, REVIEW_STATUS_LABELS[view.status] ?? view.status),
           view.round ? h(Tag, { tone: 'neutral' }, `第 ${view.round} 轮`) : null,
           h('div', { style: styles.spacer }),
-          view.total ? h('span', { style: styles.sectionHint }, `${view.passed} 通过 / ${view.failed} 不通过 / ${view.errored} 异常 / ${view.pending} 待返回`) : null,
+          view.status === 'pending'
+            ? h(Button, { style: mini, disabled: reviewBusy, onClick: resetReview, children: '重置本轮' })
+            : null,
+          view.total ? h('span', { style: styles.sectionHint }, `${view.passed} 通过 / ${view.failed} 不通过 / ${view.errored} 异常 / ${view.pending} 待返回${reviewElapsed !== null ? ` · 已用时 ${reviewElapsed}s` : ''}`) : null,
         ),
         h('div', { style: { ...styles.sectionHint, marginTop: 4 } },
           '本页只读：不再提供手工派发入口。「继续推进」即开始评审——自动起 1~3 位只读审核员会话，'

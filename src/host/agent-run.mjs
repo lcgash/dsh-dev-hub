@@ -36,7 +36,7 @@ function textOf(output) {
  * }} input
  * @returns {Promise<{ value: any, sessionId: string, elapsedMs: number, provider: string }>}
  */
-export async function runAgentJson(ctx, { cwd, prompt, schema, label = 'devhub-agent', timeoutMs = DEFAULT_TIMEOUT_MS }) {
+export async function runAgentJson(ctx, { cwd, prompt, schema, label = 'devhub-agent', timeoutMs = DEFAULT_TIMEOUT_MS, onStarted = null }) {
   const agents = ctx.get('agents')
   const subagents = ctx.get('subagents')
   if (!agents?.create) throw new Error('当前 DSH 不支持创建工作 agent')
@@ -108,6 +108,10 @@ export async function runAgentJson(ctx, { cwd, prompt, schema, label = 'devhub-a
       prompt: [{ type: 'text', text: prompt }],
       outputSchema: schema,
     })
+    // 审核员等长任务需要让调用方立刻拿到 child sessionId，才能把“审核会话”写进台账供 UI 追踪。
+    if (typeof onStarted === 'function') {
+      try { await onStarted({ sessionId, provider }) } catch { /* 进度记录失败不影响任务本身 */ }
+    }
     const result = await activation.result
     if (result?.stopReason && result.stopReason !== 'completed') {
       throw new Error([
