@@ -1216,7 +1216,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         ? '生成开发计划'
         : '扫描仓库'
     setProgress({
-      label: `${kindLabel}：正在恢复任务状态，等待工作站继续…`,
+      label: `${kindLabel}：已恢复任务，正在等待工作站继续…`,
       startedAt,
       seconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
     })
@@ -1288,7 +1288,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     if (job.kind !== 'plan' && isConversationRunning(state.repo.path, scope, activeChatIdRef.current, resumeKind)) {
       // 旧组件可能已卸载，但它收尾时会把结果写回 chat store；这里轮询等它落盘后再载入，
       // 否则切走再回来会一直停在旧消息上，看起来"agent 不响应"。
-      setProgress({ label: '等待上一次扫描/澄清收尾…', startedAt: Date.now() })
+      setProgress({ label: '当前扫描/澄清还在处理，结束后会自动继续…', startedAt: Date.now() })
       const repoPath = state.repo.path
       let ticks = 0
       const timer = setInterval(() => {
@@ -1300,10 +1300,17 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         clearInterval(timer)
         applyConversation(origin)
         setChats(listChats(repoPath, scope))
-        setJob(origin.job ?? null)
-        setProgress(null)
         if (stillRunning) {
-          push(stationMessage('上一次请求长时间没有收尾；结果可能已部分写入，可重新发一句继续。', { tone: 'warn' }))
+          // 旧请求已经超过 2 分钟没有收尾：不能把“等待”永久留在界面上。
+          // 清掉进程内标记与持久化 job，恢复可交互状态；用户可决定是否重发。
+          endRun(runKey(repoPath, scope, activeChatIdRef.current, resumeKind))
+          clearConversationJob(repoPath, activeChatIdRef.current, scope)
+          setJob(null)
+          setProgress(null)
+          push(stationMessage('上一轮请求超过 2 分钟没有收尾，已停止等待；如果结果没出来，请重新发一句。', { tone: 'warn' }))
+        } else {
+          setJob(origin.job ?? null)
+          setProgress(null)
         }
       }, 1200)
       return () => {

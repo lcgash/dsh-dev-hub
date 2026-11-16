@@ -983,7 +983,7 @@ test('聊天恢复：确认/计划阶段没有可操作卡片时解锁输入，�
   assert.doesNotMatch(chat, /onStateLoaded/)
   // 旧组件请求还在飞时，新组件轮询 chat store，收尾后自动载入结果而不是永远空白
   assert.match(chat, /isConversationRunning\(state\.repo\.path, scope, activeChatIdRef\.current, resumeKind\)\) \{/)
-  assert.match(chat, /等待上一次扫描\/澄清收尾/)
+  assert.match(chat, /当前扫描\/澄清还在处理，结束后会自动继续…/)
   assert.match(chat, /const stillRunning = isConversationRunning\(repoPath, scope, activeChatIdRef\.current, resumeKind\)/)
 })
 
@@ -2004,7 +2004,7 @@ test('聊天任务恢复：切页/刷新回来 job 与进度可见，不会静�
   const { readFile } = await import('node:fs/promises')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   assert.match(chat, /setJob\(conversation\?\.job \?\? null\)/)
-  assert.match(chat, /正在恢复任务状态，等待工作站继续/)
+  assert.match(chat, /已恢复任务，正在等待工作站继续/)
   assert.match(chat, /setJob\(conversation\?\.job \?\? null\)/)
   assert.match(chat, /resumeTriedRef\.current = false/)
 })
