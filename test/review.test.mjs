@@ -419,6 +419,8 @@ test('流程详情：阶段条/概览/页签都能看到独立评审与纠偏意
   assert.doesNotMatch(index, /'审核员数量'/)
   assert.doesNotMatch(index, /dispatchReview\(/)
   assert.match(index, /async function resetReview\(/)
+  assert.match(index, /async function markReviewerPass\(/)
+  assert.match(index, /评审不是强制门禁/)
   assert.match(index, /查看开发报告/)
 
   // 「继续推进」在评审阶段自动开始评审：走共用判定 + 复用现有 dispatch，不弹确认框

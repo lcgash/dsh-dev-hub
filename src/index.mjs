@@ -2299,11 +2299,13 @@ function recordReviewOutcome(item, body = {}) {
   if (!reviewerId) throw new Error('缺少 reviewerId')
   const verdict = body.verdict === 'pass' || body.verdict === 'fail' ? body.verdict : null
   if (!verdict) throw new Error('人工结论必须是 pass 或 fail')
+  const existing = (item.workflow.review.reviewers ?? []).find((entry) => entry.id === reviewerId)
   item.workflow.review = applyReviewerOutput(item.workflow.review, reviewerId, {
     verdict,
     summary: String(body.summary ?? '').trim() || '人工记录的审核结论',
-    findings: Array.isArray(body.findings) ? body.findings : [],
-    direction: String(body.direction ?? '').trim(),
+    // 人工通过不改写原始证据：没显式传 findings 时保留审核员原来的意见，方便追溯
+    findings: Array.isArray(body.findings) ? body.findings : (existing?.findings ?? []),
+    direction: String(body.direction ?? existing?.direction ?? '').trim(),
     source: 'manual',
     error: '',
   })
