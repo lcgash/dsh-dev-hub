@@ -6,7 +6,7 @@
  * The browser half only talks to the loopback /api/dev-hub/* routes.
  */
 import { exec, execFile } from 'node:child_process'
-import { access, mkdir, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { promisify } from 'node:util'
@@ -17,7 +17,7 @@ import { deriveAttention } from './core/attention.mjs'
 import { buildContext } from './core/context.mjs'
 import { detectEnvironment } from './core/detect.mjs'
 import { changesSince, git, gitInfo, hasCommit, isGitRepo, startBaseline, syncRepo } from './core/git.mjs'
-import { canonical, exists, findRepoRoot, repoRelative, safeId } from './core/paths.mjs'
+import { canonical, exists, findRepoRoot, isUnder, repoRelative, safeId } from './core/paths.mjs'
 import { scanCandidates } from './core/scan.mjs'
 import { appendHistory, buildDesignDoc, missingForChatStart, missingForStart } from './core/workflow.mjs'
 import { run, which } from './core/detect.mjs'
@@ -4086,6 +4086,33 @@ export function apply(ctx) {
       },
     },
     // 附件上传：粘贴的截图/文件先落到本机附件目录，再把路径注入提示词（read_image / read）
+    // 附件预览：只服务本机附件目录内的文件（浏览器不能直接读 file:// 绝对路径）
+    {
+      kind: 'exact',
+      path: API.attachment,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'GET only' })
+        try {
+          const target = resolve(String(query(req.url, 'path') ?? '').trim())
+          const dir = attachmentDir()
+          if (!target || !isUnder(target, dir)) throw new Error('附件路径不在本机附件目录内')
+          const info = await stat(target)
+          if (!info.isFile()) throw new Error('不是文件')
+          const ext = target.split('.').pop()?.toLowerCase() ?? ''
+          const type = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif', pdf: 'application/pdf' }[ext] ?? 'application/octet-stream'
+          const data = await readFile(target)
+          res.writeHead(200, {
+            'content-type': type,
+            'content-length': String(data.length),
+            'cache-control': 'private, max-age=3600',
+          })
+          res.end(data)
+        } catch (error) {
+          sendJson(res, 404, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
     {
       kind: 'exact',
       path: API.attach,

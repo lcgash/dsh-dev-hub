@@ -57,3 +57,11 @@ test('userMessage 带上附件元信息，供历史消息渲染', () => {
   assert.equal(msg.attachments.length, 1)
   assert.equal(chatFlow.userMessage('纯文字').attachments, undefined)
 })
+
+test('聊天附件：发送后清空输入区，图片可点击预览', async () => {
+  const chat = await read('chat.mjs')
+  assert.match(chat, /API\.attachment\}\?path=/)
+  assert.match(chat, /function AttachmentPreview/)
+  assert.match(chat, /onPreviewAttachment: setPreviewAttachment/)
+  assert.match(chat, /const pendingAttachments = attachments\n    setAttachments\(\[\]\)/)
+})

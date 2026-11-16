@@ -43,6 +43,7 @@ export const API = {
   clarify: '/api/dev-hub/clarify',
   requirement: '/api/dev-hub/requirement',
   attach: '/api/dev-hub/attach',
+  attachment: '/api/dev-hub/attachment',
   capabilities: '/api/dev-hub/capabilities',
   removeRepo: '/api/dev-hub/repo/remove',
   genFileNotes: '/api/dev-hub/file-notes/generate',

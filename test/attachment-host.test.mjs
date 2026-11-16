@@ -178,3 +178,35 @@ test('建流程带附件：附件入库，Context Pack 注入路径与 read_imag
     await rm(repo, { recursive: true, force: true })
   }
 })
+
+test('附件预览：只读本机附件目录，返回正确 content-type；目录外路径不服务', async () => {
+  const repo = await tempRepo()
+  const { ctx, routes } = fakeContext(repo, { llm: { resolveModelInfo: async () => ({ inputModalities: ['text', 'image'] }) } })
+  try {
+    apply(ctx)
+    const uploaded = await call(routes, API.attach, {
+      method: 'POST',
+      body: { name: 'shot.png', mediaType: 'image/png', data: PNG_BASE64 },
+    })
+    const path = uploaded.body.attachment.path
+    const route = routes.get(API.attachment)
+    const get = async (target) => {
+      const req = Readable.from([])
+      req.method = 'GET'
+      req.url = `${API.attachment}?path=${encodeURIComponent(target)}`
+      req.socket = { remoteAddress: '127.0.0.1' }
+      const res = { status: 0, headers: {}, body: Buffer.alloc(0), writeHead(status, headers) { this.status = status; this.headers = headers ?? {} }, end(value) { this.body = Buffer.isBuffer(value) ? value : Buffer.from(String(value ?? '')) } }
+      await route.handler(req, res)
+      return res
+    }
+    const served = await get(path)
+    assert.equal(served.status, 200)
+    assert.equal(served.headers['content-type'], 'image/png')
+    assert.deepEqual(served.body, await readFile(path))
+
+    const denied = await get(join(repo, 'package.json'))
+    assert.equal(denied.status, 404)
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+  }
+})

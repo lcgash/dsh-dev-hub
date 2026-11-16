@@ -244,6 +244,85 @@ const S = {
   stepList: { margin: '6px 0 0', paddingLeft: 20, color: T.text, lineHeight: T.line },
 }
 
+/** 本机附件 URL：Host 只服务附件目录内的文件，浏览器不能直接读 file://。 */
+function attachmentUrl(entry) {
+  return `${API.attachment}?path=${encodeURIComponent(String(entry?.path ?? ''))}`
+}
+
+/** 附件 chip：图片显示缩略图，点名称/缩略图打开预览；可选的移除按钮保留在右侧。 */
+function AttachmentChip({ entry, onPreview, onRemove }) {
+  const image = isImageAttachment(entry)
+  return h('span', {
+    title: entry?.path ?? attachmentLabel(entry),
+    onClick: () => onPreview?.(entry),
+    style: {
+      ...styles.pill,
+      display: 'inline-flex',
+      alignItems: 'center',
+      gap: 6,
+      maxWidth: '100%',
+      overflow: 'hidden',
+      whiteSpace: 'nowrap',
+      cursor: 'pointer',
+    },
+  },
+    image
+      ? h('img', {
+        src: attachmentUrl(entry),
+        alt: attachmentLabel(entry),
+        style: { width: 24, height: 24, objectFit: 'cover', borderRadius: 4, flex: '0 0 auto' },
+      })
+      : '📄',
+    h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis' } }, attachmentLabel(entry)),
+    onRemove
+      ? h('span', {
+        style: { cursor: 'pointer', color: T.text4, flex: '0 0 auto' },
+        onClick: (event) => { event.stopPropagation(); onRemove(entry.id) },
+        title: '移除',
+      }, '×')
+      : null,
+  )
+}
+
+/** 聊天内图片预览：点击遮罩/Esc 关闭，不打开新标签。 */
+function AttachmentPreview({ entry, onClose }) {
+  useEffect(() => {
+    const onKey = (event) => { if (event.key === 'Escape') onClose?.() }
+    if (typeof document !== 'undefined') document.addEventListener('keydown', onKey)
+    return () => { if (typeof document !== 'undefined') document.removeEventListener('keydown', onKey) }
+  }, [onClose])
+  if (!entry) return null
+  const image = isImageAttachment(entry)
+  return h('div', {
+    style: {
+      position: 'fixed',
+      inset: 0,
+      zIndex: 12000,
+      background: 'rgba(10, 16, 30, 0.72)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 24,
+    },
+    onClick: onClose,
+  }, h('div', {
+    style: { maxWidth: '92vw', maxHeight: '90vh', display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center' },
+    onClick: (event) => event.stopPropagation(),
+  },
+    h('div', { style: { color: '#fff', fontSize: T.font.sm, display: 'flex', alignItems: 'center', gap: 10, maxWidth: '90vw' } },
+      h('span', { style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, attachmentLabel(entry)),
+      h('span', { style: { cursor: 'pointer', opacity: 0.8 } , onClick: onClose }, '关闭'),
+    ),
+    image
+      ? h('img', {
+        src: attachmentUrl(entry),
+        alt: attachmentLabel(entry),
+        style: { maxWidth: '90vw', maxHeight: '82vh', objectFit: 'contain', borderRadius: 8, background: '#fff' },
+      })
+      : h('div', { style: { color: '#fff', fontSize: T.font.sm } }, '该附件不是图片，暂不支持预览。'),
+  ))
+}
+
 /** 探测结果里可用的范围建议：suggestedScope + 命中模块（去重）。 */
 function scopeSuggestions(recon) {
   const suggested = Array.isArray(recon?.suggestedScope) ? recon.suggestedScope : []
@@ -326,6 +405,7 @@ function MessageRow({
   syncBeforeStart = true,
   onSyncBeforeStartChange,
   clarifyBusy = false,
+  onPreviewAttachment = null,
   onClarifyPick,
   onClarifySubmit,
   onClarifyContinue,
@@ -339,21 +419,11 @@ function MessageRow({
         msg.text || null,
         (msg.attachments ?? []).length
           ? h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: msg.text ? 6 : 0 } },
-            msg.attachments.map((entry) => h('span', {
+            msg.attachments.map((entry) => h(AttachmentChip, {
               key: entry.id ?? entry.path,
-              title: entry.path,
-              style: {
-                ...styles.pill,
-                fontSize: T.font.xs,
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                maxWidth: '100%',
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-              },
-            }, `${isImageAttachment(entry) ? '🖼' : '📄'} ${entry.name ?? attachmentLabel(entry)}`)),
+              entry,
+              onPreview: onPreviewAttachment,
+            })),
           )
           : null,
       ),
@@ -1044,6 +1114,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   const resumeTriedRef = useRef(false)
   // 图片粘贴 / 文件引用：只存元信息，二进制由 Host 落到本机附件目录
   const [attachments, setAttachments] = useState([])
+  const [previewAttachment, setPreviewAttachment] = useState(null)
   const [attachBusy, setAttachBusy] = useState(false)
   const [attachError, setAttachError] = useState('')
   const [capabilities, setCapabilities] = useState(null)
@@ -1595,8 +1666,11 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       return
     }
     setInput('')
+    // 发出后输入区不再保留图片；消息气泡里仍保留可点击预览的附件
+    const pendingAttachments = attachments
+    setAttachments([])
     stickRef.current = true
-    await analyze(text)
+    await analyze(text, { extraAttachments: pendingAttachments })
   }
 
   const currentTitle = () => clarifyTitle || clarify?.title || ''
@@ -2031,6 +2105,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
             syncBeforeStart,
             onSyncBeforeStartChange: setSyncBeforeStart,
             clarifyBusy,
+            onPreviewAttachment: setPreviewAttachment,
             // 流程标题是受控输入：漏传这两个 prop 会让输入框永远回到空值（打字被“冲掉”）
             clarifyTitle,
             onClarifyTitleChange: (value) => {
@@ -2175,27 +2250,12 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
           ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 6 } },
             attachments.length
               ? h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
-                attachments.map((entry) => h('span', {
+                attachments.map((entry) => h(AttachmentChip, {
                   key: entry.id,
-                  title: entry.path,
-                  style: {
-                    ...styles.pill,
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    maxWidth: '100%',
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  },
-                },
-                  `${isImageAttachment(entry) ? '🖼' : '📄'} ${attachmentLabel(entry)}`,
-                  h('span', {
-                    style: { cursor: 'pointer', color: T.text4, flex: '0 0 auto' },
-                    onClick: () => removeAttachment(entry.id),
-                    title: '移除',
-                  }, '×'),
-                )))
+                  entry,
+                  onPreview: setPreviewAttachment,
+                  onRemove: removeAttachment,
+                })))
               : null,
             attachments.length
               ? h('div', { style: styles.sectionHint },
