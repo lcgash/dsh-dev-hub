@@ -1106,6 +1106,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       }
     } catch (err) {
       setAdvanceError(`自动开始评审失败：${errorText(err)}（再点「继续推进」重试）`)
+      setTab('review')
     } finally { setReviewBusy(false) }
   }
 
@@ -2312,6 +2313,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             : null,
           view.total ? h('span', { style: styles.sectionHint }, `${view.passed} 通过 / ${view.failed} 不通过 / ${view.errored} 异常 / ${view.pending} 待返回${reviewElapsed !== null ? ` · 已用时 ${reviewElapsed}s` : ''}`) : null,
         ),
+        advanceError
+          ? h('div', { style: { ...styles.dangerCard, marginTop: T.gap.xs } }, advanceError)
+          : null,
         h('div', { style: { ...styles.sectionHint, marginTop: 4 } },
           '本页只读：不再提供手工派发入口。「继续推进」即开始评审——自动起 1~3 位只读审核员会话，'
           + '他们自己读目标/验收/scope/改动/自测结果/开发报告，各自给结论。'
@@ -3313,14 +3317,6 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                         ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '正在开发…']
                         : (!draft.session?.id && advance.action === 'continue' ? '开启开发会话' : '继续推进'),
             }),
-          // 失败原因内联在按钮旁：直到下次推进成功才消失（不用翻页签找错误）
-          advanceHint
-            ? h('span', {
-              key: 'advance-hint',
-              role: 'status',
-              style: { maxWidth: 360, fontSize: T.font.xs, lineHeight: 1.5, color: T.danger },
-            }, advanceHint)
-            : null,
           // 开发前同步：独立工作区从最新 HEAD 创建，减少后续合并工作量
           (!draft.session?.id && draft.status !== 'done' && stage !== 'done' && draft.workflow?.gitRepo !== false)
             ? h(Button, {

@@ -144,7 +144,7 @@ export function suggestNextSteps(item, session) {
   const review = summary.review
   if (summary.session.bound && !summary.session.running) {
     if (review.status === 'failed') {
-      push('review', '按审核意见纠偏后重新评审', `独立评审未通过：${review.failed} 位审核员给出 ${review.corrections.reduce((sum, entry) => sum + entry.findings.length, 0)} 条意见；改完点顶栏「继续推进」重试评审`)
+      push('start-review', '按审核意见纠偏后重新评审', `独立评审未通过：${review.failed} 位审核员给出 ${review.corrections.reduce((sum, entry) => sum + entry.findings.length, 0)} 条意见；改完后点这里直接重试评审`)
     } else if (review.status === 'error') {
       push('start-review', '重试评审', '有审核员未返回结论：点它重试派发（流程标记为待处理，不能当成通过）')
     } else if (review.status === 'pending') {

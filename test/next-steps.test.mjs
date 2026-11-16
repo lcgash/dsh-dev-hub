@@ -89,10 +89,10 @@ test('suggestNextSteps：评审是测试验证的门禁', () => {
     }),
     { sessionId: 's1', running: false },
   )
-  assert.ok(failed.steps.some((step) => step.action === 'review'))
+  assert.ok(failed.steps.some((step) => step.action === 'start-review'))
   assert.ok(!failed.steps.some((step) => step.action === 'submit'))
-  assert.match(failed.steps.find((step) => step.action === 'review').hint, /1 条意见/)
-  assert.match(failed.steps.find((step) => step.action === 'review').hint, /继续推进/)
+  assert.match(failed.steps.find((step) => step.action === 'start-review').hint, /1 条意见/)
+  assert.match(failed.steps.find((step) => step.action === 'start-review').hint, /重试评审/)
 
   const envPassed = suggestNextSteps(
     flow({ workflow: { stage: 'submit', review: reviewPassed, tests: { local: { status: 'passed' }, environment: { status: 'passed' } } } }),
