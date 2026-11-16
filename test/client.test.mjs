@@ -2026,3 +2026,14 @@ test('聊天任务恢复：切页/刷新回来 job 与进度可见，不会静�
   assert.match(chat, /setJob\(conversation\?\.job \?\? null\)/)
   assert.match(chat, /resumeTriedRef\.current = false/)
 })
+
+test('点代码库卡片只切换目标，不自动跳进该库上次打开的流程', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const start = index.indexOf('async function selectRepo(repoPath)')
+  assert.ok(start > 0)
+  const body = index.slice(start, index.indexOf('async function', start + 10))
+  assert.match(body, /setSelected\(null\)/)
+  assert.doesNotMatch(body, /loadPanelState\(targetRepo\)/)
+  assert.match(body, /点代码库卡片是“切换目标”/)
+})

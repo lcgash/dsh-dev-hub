@@ -3860,15 +3860,11 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
       onScopeChanged?.()
       setSessionStates(sessionMapFrom(next.sessionStates))
       setParallel(next.parallel ?? null)
-      // 目标仓库也有自己的"上次打开的流程"：能恢复就恢复，否则停在列表
+      // 点代码库卡片是“切换目标”，不是“继续上次的流程”：清掉旧详情并停在流程列表。
+      // 抽屉/聊天里明确点了某条流程时由 openFlow 负责打开，两者不能混在一起。
       const targetRepo = next?.repo?.path
-      if (targetRepo) {
-        restoredPanelRef.current = targetRepo
-        const saved = loadPanelState(targetRepo)
-        setSelected(saved.selectedId && (next.items ?? []).some((item) => item.id === saved.selectedId)
-          ? saved.selectedId
-          : null)
-      }
+      if (targetRepo) restoredPanelRef.current = targetRepo
+      setSelected(null)
     } catch (err) {
       if (seq === switchSeq.current) setError(errorText(err))
     } finally {
