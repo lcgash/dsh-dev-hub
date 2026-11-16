@@ -58,6 +58,16 @@ test('deriveStage：开发 → 独立评审 → 测试验证 → 提交 → 完�
   assert.equal(deriveStage(reviewedNoTest).stage, 'verify')
   assert.match(deriveStage(reviewedNoTest).reason, /评审通过/)
 
+  // 人工通过后即使还有旧的测试 rework 标记，也应进入评审之后的路线（去测试/提交），
+  // 不能因为“测试曾过期”看起来又退回开发。
+  const manual = base()
+  manual.workflow.tests = { local: { status: 'passed' } }
+  manual.workflow.review = review()
+  manual.workflow.rework = { at: 'x', reason: '旧的测试 rework' }
+  assert.equal(deriveStage(manual).stage, 'verify')
+  manual.workflow.tests.environment = { status: 'passed' }
+  assert.equal(deriveStage(manual).stage, 'submit')
+
   // 评审进行中 / 异常：停在评审，不能静默通过
   const pending = base()
   pending.workflow.tests = { local: { status: 'passed' } }

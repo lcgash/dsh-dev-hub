@@ -58,14 +58,20 @@ export function deriveStage(item) {
   const gate = reviewGate(item)
 
   if (submitted) return { stage: 'done', reason: '已提交代码' }
-  // 测试/评审通过后又检测到新改动：流程回到开发中，旧结论等重跑（不能停在验证中）
-  if (workflow.rework?.at) {
-    return { stage: 'develop', reason: workflow.rework.reason || '测试通过后又有新改动：已回到开发中，请重跑本机自测' }
-  }
   // 评审被否/未完成时，测试通过也不能把流程往前推：先纠偏或先把评审结论拿回来
   if (review?.status === 'failed') return { stage: 'develop', reason: gate.reason }
   if (review?.status === 'pending') return { stage: 'review', reason: gate.reason }
   if (review?.status === 'error') return { stage: 'review', reason: gate.reason }
+  // 评审通过（包括人工确认忽略）后，直接进入评审之后的路线；即使之前有测试 rework 标记，
+  // 也应该去测试验证重跑，而不是退回开发。后续新代码改动会由 invalidateReview 重新打开评审。
+  if (review?.status === 'passed') {
+    if (envPassed) return { stage: 'submit', reason: '评审通过，环境测试已通过，等待提交' }
+    return { stage: 'verify', reason: localPassed ? '评审通过，本机自测已通过' : '评审通过，允许进入测试验证' }
+  }
+  // 测试/评审通过后又检测到新改动：流程回到开发中，旧结论等重跑（不能停在验证中）
+  if (workflow.rework?.at) {
+    return { stage: 'develop', reason: workflow.rework.reason || '测试通过后又有新改动：已回到开发中，请重跑本机自测' }
+  }
   // 分析流程没有提交环节：本机自测（只读证据）与环境测试通过即结束，阶段绝不进入 submit
   if (isAnalysis && (localPassed || envPassed)) {
     return { stage: 'done', reason: '分析流程：只读结论已产出，不进入提交' }
@@ -73,12 +79,6 @@ export function deriveStage(item) {
   // 非 git 仓库没有提交/推送环节：两项测试通过就是终点
   if (envPassed && !isGit) return { stage: 'done', reason: '非 git 仓库：测试通过即完成' }
   if (envPassed) return { stage: 'submit', reason: '环境验证通过，等待提交' }
-  if (review?.status === 'passed') {
-    return {
-      stage: 'verify',
-      reason: localPassed ? '评审通过，本机自测已通过' : '评审通过，允许进入测试验证',
-    }
-  }
   // 老数据没有评审事实：保持原行为（自测通过即进入测试验证），不因为新阶段卡住旧流程
   if ((review?.status ?? 'idle') === 'idle' && localPassed) {
     return { stage: 'review', reason: '本机自测通过：点「继续推进」即开始独立评审' }
