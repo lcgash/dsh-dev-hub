@@ -108,9 +108,11 @@ export async function runAgentJson(ctx, { cwd, prompt, schema, label = 'devhub-a
       prompt: [{ type: 'text', text: prompt }],
       outputSchema: schema,
     })
-    // 审核员等长任务需要让调用方立刻拿到 child sessionId，才能把“审核会话”写进台账供 UI 追踪。
+    // 审核员等长任务需要让调用方拿到真正在跑的 child sessionId（不是外层空白 root），
+    // 才能把“审核会话”写进台账；外层 sessionId 只是 runAgentJson 自己的临时 root。
+    const childSessionId = activation?.childId ?? sessionId
     if (typeof onStarted === 'function') {
-      try { await onStarted({ sessionId, provider }) } catch { /* 进度记录失败不影响任务本身 */ }
+      try { await onStarted({ sessionId: childSessionId, parentSessionId: sessionId, provider }) } catch { /* 进度记录失败不影响任务本身 */ }
     }
     const result = await activation.result
     if (result?.stopReason && result.stopReason !== 'completed') {
@@ -122,7 +124,7 @@ export async function runAgentJson(ctx, { cwd, prompt, schema, label = 'devhub-a
     }
     const value = result?.structured ?? extractJson(textOf(result?.output))
     if (!value) throw new Error('agent 输出不是可解析的 JSON')
-    return { value, sessionId, elapsedMs: Date.now() - startedAt, provider }
+    return { value, sessionId: childSessionId, parentSessionId: sessionId, elapsedMs: Date.now() - startedAt, provider }
   } finally {
     timer.dispose()
     try { await activation?.dispose?.() } catch { /* 清理失败不影响结果 */ }

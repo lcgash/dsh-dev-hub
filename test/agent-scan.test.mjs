@@ -243,13 +243,17 @@ test('runAgentJson：startActivation 用平铺 spec（parent 在顶层），不�
       return undefined
     },
   }
+  let startedId = null
   const result = await runAgentJson(ctx, {
     cwd: '/repo',
     prompt: '读一下仓库',
     schema: { type: 'object', properties: { command: { type: 'string' } }, required: ['command'], additionalProperties: false },
     label: 'devhub-agent',
+    onStarted: ({ sessionId }) => { startedId = sessionId },
   })
   assert.equal(result.value.command, 'echo ok')
+  assert.equal(startedId, 'child-1', '回调必须给出真正在跑的 child session')
+  assert.equal(result.sessionId, 'child-1')
   assert.equal(seen.provider, 'spawn')
   assert.equal(seen.request, undefined)
   assert.equal(seen.cwd, '/repo')
