@@ -67,6 +67,7 @@ export function describeFlow(item, session) {
       allowed: review.allowed,
       label: REVIEW_STATUS_LABELS[review.status] ?? review.status,
       corrections: review.corrections,
+      reworkAt: review.reworkAt ?? null,
     },
     risks: risks.filter((text) => !acknowledged.has(text)).length,
     risksTotal: risks.length,
@@ -144,7 +145,11 @@ export function suggestNextSteps(item, session) {
   const review = summary.review
   if (summary.session.bound && !summary.session.running) {
     if (review.status === 'failed') {
-      push('rework', '提交纠偏意见，重新进入开发', `独立评审未通过：${review.failed} 位审核员给出 ${review.corrections.reduce((sum, entry) => sum + entry.findings.length, 0)} 条意见；把意见发回开发会话返工，修完重跑自测再评审`)
+      if (review.reworkAt) {
+        push('start-review', '重新评审', '纠偏意见已发回开发；完成修改并重跑自测后点它重新评审')
+      } else {
+        push('rework', '提交纠偏意见，重新进入开发', `独立评审未通过：${review.failed} 位审核员给出 ${review.corrections.reduce((sum, entry) => sum + entry.findings.length, 0)} 条意见；把意见发回开发会话返工，修完重跑自测再评审`)
+      }
     } else if (review.status === 'error') {
       push('start-review', '重试评审', '有审核员未返回结论：点它重试派发（流程标记为待处理，不能当成通过）')
     } else if (review.status === 'pending') {

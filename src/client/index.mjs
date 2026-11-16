@@ -944,7 +944,12 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     try {
       const result = await sendToSession(ctx, boundId, prompt)
       if (!result.sent) throw new Error(result.reason ?? '发送失败')
-      setNotice('已把纠偏意见发回开发会话；修完重跑自测后再点「继续推进」重新评审')
+      // 台账记下“已进入纠偏返工”：本轮不再展示人工通过，避免返工中绕回评审门禁
+      try {
+        const body = await postAllowingFailure(API.review, { id: draft.id, action: 'rework' })
+        if (body.item) { setDraft(body.item); onSaved?.(body.item) }
+      } catch { /* 消息已发出；台账记录失败只提示，不谎报 */ }
+      setNotice('已把纠偏意见发回开发会话；修完重跑自测后点「重新评审」')
     } catch (err) {
       setError(`提交纠偏意见失败：${errorText(err)}`)
     } finally { setBusy(false) }
@@ -1708,6 +1713,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             stage,
             testState: tests.local?.status,
             environmentTestState: tests.environment?.status,
+            reviewState: workflow.review?.status ?? 'idle',
+            intent: workflow.intent,
           }) ?? '还差测试/提交'}`),
         isEditing('tasks')
           ? h('div', null,
@@ -2377,15 +2384,18 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           ? h('div', { style: { ...styles.dangerCard, marginTop: T.gap.xs } }, advanceError)
           : null,
         view.status === 'failed'
-          ? h('div', { style: { ...styles.warnCard, marginTop: T.gap.xs, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
-            h('span', { style: { fontSize: T.font.sm, color: T.warnText, flex: '1 1 360px' } },
-              '评审未通过。默认应把纠偏意见发回开发会话返工；如果确认这次拒绝可以忽略，点右侧「人工通过本轮」放行到测试/提交，原意见会保留。'),
-            h(Button, {
-              style: { height: 30, padding: '0 12px', fontSize: T.font.sm, fontWeight: 600, color: T.warnText, background: T.warnSoft, borderColor: T.warn },
-              disabled: reviewBusy || busy,
-              onClick: overrideReview,
-              children: '人工通过本轮',
-            }))
+          ? (view.reworkAt
+            ? h('div', { style: { ...styles.infoCard, marginTop: T.gap.xs } },
+              '纠偏意见已发回开发会话返工。完成修改并重跑本机自测后点「重新评审」；本轮不再提供人工通过，避免返工中绕回评审门禁。')
+            : h('div', { style: { ...styles.warnCard, marginTop: T.gap.xs, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
+              h('span', { style: { fontSize: T.font.sm, color: T.warnText, flex: '1 1 360px' } },
+                '评审未通过。默认应把纠偏意见发回开发会话返工；如果确认这次拒绝可以忽略，点右侧「人工通过本轮」放行到测试/提交，原意见会保留。'),
+              h(Button, {
+                style: { height: 30, padding: '0 12px', fontSize: T.font.sm, fontWeight: 600, color: T.warnText, background: T.warnSoft, borderColor: T.warn },
+                disabled: reviewBusy || busy,
+                onClick: overrideReview,
+                children: '人工通过本轮',
+              })))
           : null,
         h('div', { style: { ...styles.sectionHint, marginTop: 4 } },
           '本页只读：不再提供手工派发入口。「继续推进」即开始评审——自动起 1~3 位只读审核员会话，'
@@ -2771,6 +2781,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       stage: summary.stage,
       testState: summary.localTest,
       environmentTestState: summary.environmentTest,
+      reviewState: summary.review?.status ?? 'idle',
+      intent: summary.intent,
     })
     const tasksAllDone = summary.tasks.total > 0 && summary.tasks.done >= summary.tasks.total
     // 流程已完成：隐藏「继续推进」输入区与待处理审批，只留结果入口
@@ -3139,6 +3151,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       stage,
       testState: tests.local?.status,
       environmentTestState: tests.environment?.status,
+      reviewState: workflow.review?.status ?? 'idle',
+      intent: workflow.intent,
     })
     const testTone = (test) => (test?.status === 'passed' ? 'ok' : test?.status === 'failed' ? 'danger' : test?.status === 'running' ? 'info' : 'neutral')
     const testLabel = (test) => TEST_TEXT[test?.status] ?? '未运行'

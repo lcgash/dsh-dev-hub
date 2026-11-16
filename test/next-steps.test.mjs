@@ -94,6 +94,25 @@ test('suggestNextSteps：评审是测试验证的门禁', () => {
   assert.match(failed.steps.find((step) => step.action === 'rework').hint, /1 条意见/)
   assert.match(failed.steps.find((step) => step.action === 'rework').hint, /返工/)
 
+  // 已经发回返工：下一步改成重新评审，不再出现人工通过/返工入口
+  const reworking = suggestNextSteps(
+    flow({
+      workflow: {
+        stage: 'develop',
+        review: {
+          status: 'failed',
+          round: 1,
+          reworkAt: '2026-11-16T00:00:00.000Z',
+          reviewers: [{ id: 'reviewer-1', role: 'direction', status: 'failed', verdict: 'fail', summary: '方向不对', findings: [] }],
+        },
+        tests: { local: { status: 'passed' }, environment: { status: 'not_run' } },
+      },
+    }),
+    { sessionId: 's1', running: false },
+  )
+  assert.ok(reworking.steps.some((step) => step.action === 'start-review'))
+  assert.ok(!reworking.steps.some((step) => step.action === 'rework'))
+
   const envPassed = suggestNextSteps(
     flow({ workflow: { stage: 'submit', review: reviewPassed, tests: { local: { status: 'passed' }, environment: { status: 'passed' } } } }),
     { sessionId: 's1', running: false },

@@ -150,6 +150,8 @@ export function normalizeReview(raw) {
     round: Number.isFinite(Number(raw.round)) && Number(raw.round) > 0 ? Number(raw.round) : 1,
     dispatchedAt: raw.dispatchedAt || null,
     decidedAt: raw.decidedAt || null,
+    // 纠偏意见已发回开发：此时不允许人工通过，等重新评审后再决定
+    reworkAt: raw.reworkAt || null,
     basis: normalizeBasis(raw.basis),
     // 代码/诉求在评审后有改动 → 结论作废（历史轮次保留，谁在什么结论上被作废可追溯）
     invalidatedAt: raw.invalidatedAt || null,
@@ -201,6 +203,7 @@ export function startReviewRound(review, { count, at = new Date().toISOString(),
     round: (previous?.round ?? 0) + 1,
     dispatchedAt: at,
     decidedAt: null,
+    reworkAt: null,
     basis: normalizeBasis(basis) ?? previous?.basis ?? null,
     reviewers: slots.map((slot) => ({
       ...slot,
@@ -403,6 +406,7 @@ export function describeReview(item) {
     round: review?.round ?? 0,
     dispatchedAt: review?.dispatchedAt ?? null,
     decidedAt: review?.decidedAt ?? null,
+    reworkAt: review?.reworkAt ?? null,
     basis: review?.basis ?? null,
     total: reviewers.length,
     passed,
@@ -459,12 +463,21 @@ export function reviewAdvancePlan(item) {
     }
   }
   if (view.status === 'failed') {
+    if (view.reworkAt) {
+      return {
+        action: 'retry',
+        status: view.status,
+        label: '重新评审',
+        disabled: false,
+        hint: '纠偏意见已发回开发会话；完成修改并重跑本机自测后，点它重新评审（不再允许本轮人工通过）',
+      }
+    }
     return {
       action: 'rework',
       status: view.status,
       label: '提交纠偏并返工',
       disabled: false,
-      hint: `评审未通过：把 ${view.corrections.length} 位审核员的纠偏意见发回开发会话返工；修完重跑自测再评审。若要忽略拒绝，请用评审页的「评审调整」并确认。`,
+      hint: `评审未通过：把 ${view.corrections.length} 位审核员的纠偏意见发回开发会话返工；修完重跑自测再评审。若要忽略拒绝，请用评审页的「人工通过本轮」并确认。`,
     }
   }
   if (view.status === 'error') {

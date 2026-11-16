@@ -216,6 +216,14 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
   assert.match(failed.hint, /返工/)
   assert.equal(failed.label, '提交纠偏并返工')
 
+  // 已把纠偏意见发回开发：本轮不再给人工通过，顶栏改为重新评审
+  const reworking = reviewAdvancePlan(item({
+    review: normalizeReview({ round: 2, reworkAt: AT, reviewers: [reviewer('reviewer-1', 'failed')] }),
+  }))
+  assert.equal(reworking.action, 'retry')
+  assert.equal(reworking.label, '重新评审')
+  assert.match(reworking.hint, /不再允许本轮人工通过/)
+
   // 审核员异常：同样可重试，原因里带审核员会话的错误
   const errored = reviewAdvancePlan(item({
     review: normalizeReview({ round: 1, reviewers: [reviewer('reviewer-1', 'error', { error: 'provider down' })] }),

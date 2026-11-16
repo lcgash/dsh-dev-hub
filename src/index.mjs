@@ -1822,7 +1822,7 @@ function registerTools(ctx) {
       description: '独立评审：派发 1~3 位 dsh 审核员会话复核本流程的改动与证据（只读），全部通过才允许进入测试验证；不通过退回开发并附纠偏意见，异常/未返回显式标记待处理。正常入口是「继续推进」自动开始评审；dispatch 用于重试/显式派发，已有 pending 评审时幂等不重复派发；action=status 只读当前结论。',
       parameters: {
         id: { type: 'string', required: true, description: '开发项 id' },
-        action: { type: 'string', enum: ['status', 'dispatch', 'record', 'override', 'reset'], description: '默认 status；dispatch 开始/重试一轮审核员评审（已有 pending 时幂等不重复）；record 记录单个审核员人工结论；override 确认忽略本轮拒绝（标记 failed/error 为人工通过）；reset 清空本轮' },
+        action: { type: 'string', enum: ['status', 'dispatch', 'rework', 'record', 'override', 'reset'], description: '默认 status；dispatch 开始/重试一轮审核员评审；rework 记录纠偏意见已发回开发；record 记录单个审核员人工结论；override 确认忽略本轮拒绝；reset 清空本轮' },
         count: { type: 'number', description: 'dispatch 时派几位审核员（1~3，默认 2）' },
         reviewerId: { type: 'string', description: 'record 时的审核员 id，例如 reviewer-1' },
         verdict: { type: 'string', enum: ['pass', 'fail'], description: 'record 时的人工结论' },
@@ -1841,6 +1841,11 @@ function registerTools(ctx) {
         if (action === 'dispatch') {
           if (item.status === 'done') throw new Error('流程已完成：不需要再评审')
           saved = await runReviewRound({ ctx, repo, item, profile, count: args.count })
+        } else if (action === 'rework') {
+          const view = describeReview(item)
+          if (view.status !== 'failed' && view.status !== 'error') throw new Error('当前评审不需要返工')
+          item.workflow.review = { ...item.workflow.review, reworkAt: new Date().toISOString() }
+          saved = await saveItem(repo, appendHistory(item, 'review', '评审纠偏意见已发回开发会话返工；本轮不再允许人工通过'))
         } else if (action === 'record') {
           recordReviewOutcome(item, args)
           saved = await saveItem(repo, appendHistory(item, 'review', `人工记录审核结论：${args.reviewerId} → ${args.verdict}`))
@@ -2318,6 +2323,7 @@ function recordReviewOutcome(item, body = {}) {
 function overrideReviewRejections(item, body = {}) {
   const view = describeReview(item)
   if (view.status !== 'failed' && view.status !== 'error') throw new Error('当前评审没有可忽略的拒绝')
+  if (view.reworkAt) throw new Error('纠偏意见已发回开发返工：本轮不再允许人工通过，请完成修改后重新评审')
   if (view.pending > 0) throw new Error('还有审核员未返回结论：先等结论或重置本轮，不能忽略')
   const targets = (view.reviewers ?? []).filter((reviewer) => reviewer.status === 'failed' || reviewer.status === 'error')
   if (!targets.length) throw new Error('当前评审没有 failed/error 审核员')
@@ -3171,6 +3177,11 @@ export function apply(ctx) {
           if (action === 'dispatch') {
             if (item.status === 'done') throw new Error('流程已完成：不需要再评审')
             saved = await runReviewRound({ ctx, repo, item, profile, count: body.count })
+          } else if (action === 'rework') {
+            const view = describeReview(item)
+            if (view.status !== 'failed' && view.status !== 'error') throw new Error('当前评审不需要返工')
+            item.workflow.review = { ...item.workflow.review, reworkAt: new Date().toISOString() }
+            saved = await saveItem(repo, appendHistory(item, 'review', '评审纠偏意见已发回开发会话返工；本轮不再允许人工通过'))
           } else if (action === 'record') {
             recordReviewOutcome(item, body)
             saved = await saveItem(repo, appendHistory(item, 'review', `人工记录审核结论：${body.reviewerId} → ${body.verdict}`))
