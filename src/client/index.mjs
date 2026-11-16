@@ -4748,14 +4748,20 @@ export function apply(ctx) {
   // 本地化字典：与 DSH 设置里的语言选择共用 ctx.locale；语言切换后 Provider 会重建子树，
   // 让 h 工厂重新翻译静态文案。
   if (typeof ctx.locale?.register === 'function') {
-    ctx.effect(
-      () => ctx.locale.register(LOCALE_NAMESPACE, { zh, en }),
-      'dev-hub: locale dictionaries',
-    )
+    ctx.effect(() => {
+      try {
+        return ctx.locale.register(LOCALE_NAMESPACE, { zh, en })
+      } catch (error) {
+        // 字典注册失败不应让整个工作站白屏；退回原文继续渲染。
+        try { console.warn('[dev-hub] locale registration failed:', error) } catch { /* ignore */ }
+        return () => {}
+      }
+    }, 'dev-hub: locale dictionaries')
   }
-  const translate = typeof ctx.locale?.bind === 'function'
-    ? ctx.locale.bind(LOCALE_NAMESPACE)
-    : (key) => key
+  let translate = (key) => key
+  try {
+    if (typeof ctx.locale?.bind === 'function') translate = ctx.locale.bind(LOCALE_NAMESPACE)
+  } catch { /* 语言服务还没就绪时不能拖垮整个插件 */ }
   // 入口：左上角面板列表（插件 / 自动化任务 同一排），点开即 main 大页面。
   ctx.slots.inject('sidebar.panellist', () => {
     const dispose = ctx.slots.register({
@@ -4774,7 +4780,7 @@ export function apply(ctx) {
       id: 'dev-hub-session',
       order: 15,
       label: () => translate('开发流程'),
-    }, (props) => h(LocaleProvider, { ctx }, h(DevHubBoundary, null, h(DevHubSessionQuick, { sessionId: props?.sessionId, ctx }))))
+    }, (props) => h(DevHubBoundary, null, h(LocaleProvider, { ctx }, h(DevHubSessionQuick, { sessionId: props?.sessionId, ctx }))))
     return () => dispose()
   })
 
@@ -4784,7 +4790,7 @@ export function apply(ctx) {
     const dispose = ctx.slots.register({
       name: 'main',
       key: 'dev-hub',
-    }, (props) => h(LocaleProvider, { ctx }, h(DevHubBoundary, null, h(DevHubPage, { ...props, ctx }))))
+    }, (props) => h(DevHubBoundary, null, h(LocaleProvider, { ctx }, h(DevHubPage, { ...props, ctx }))))
     return () => dispose()
   })
 }

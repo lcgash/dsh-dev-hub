@@ -65,3 +65,16 @@ test('DSH 接入：client 注入 locale、注册字典，并提供中英文插�
   assert.equal(localeEn.meta.title, 'Development Workstation')
   assert.equal(localeZh.meta.title, '开发工作站')
 })
+
+test('DSH 接入：字典重复注册/HMR 失败不能拖垮整个插件', async () => {
+  const client = await import('../src/client/index.mjs')
+  const slots = { inject() {}, register() { return () => {} } }
+  const locale = {
+    register() { throw new Error('locale namespace already registered') },
+    bind() { return (key) => key },
+    subscribe() { return () => {} },
+    getLocale() { return { active: 'zh' } },
+  }
+  const ctx = { slots, locale, effect(fn) { return fn() || (() => {}) }, on() { return () => {} }, get() { return undefined } }
+  assert.doesNotThrow(() => client.apply(ctx))
+})

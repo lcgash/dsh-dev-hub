@@ -273,18 +273,6 @@ function localizeProps(props) {
     if (typeof next[key] === 'string') next[key] = translateText(next[key])
   }
   if (typeof next.label === 'string') next.label = translateText(next.label)
-  for (const key of ['options', 'items']) {
-    if (Array.isArray(next[key])) {
-      next[key] = next[key].map((entry) => {
-        if (!entry || typeof entry !== 'object') return entry
-        return {
-          ...entry,
-          ...(typeof entry.label === 'string' ? { label: translateText(entry.label) } : {}),
-          ...(typeof entry.hint === 'string' ? { hint: translateText(entry.hint) } : {}),
-        }
-      })
-    }
-  }
   return next
 }
 
@@ -301,14 +289,25 @@ export function h(type, props, ...children) {
 export function LocaleProvider({ ctx, children }) {
   const [, setRevision] = useState(0)
   useEffect(() => {
-    const subscribe = ctx?.locale?.subscribe
-    if (typeof subscribe !== 'function') return undefined
-    return subscribe(() => setRevision((value) => value + 1))
+    try {
+      const subscribe = ctx?.locale?.subscribe
+      if (typeof subscribe !== 'function') return undefined
+      return subscribe(() => setRevision((value) => value + 1))
+    } catch {
+      // 语言服务不可用时保留中文原文，不影响工作站主体
+      return undefined
+    }
   }, [ctx])
 
-  const locale = ctx?.locale?.getLocale?.().active ?? 'zh'
-  activeLocale = locale
-  activeT = typeof ctx?.locale?.bind === 'function' ? ctx.locale.bind(LOCALE_NAMESPACE) : (key) => key
+  let locale = 'zh'
+  try {
+    locale = ctx?.locale?.getLocale?.().active ?? 'zh'
+    activeLocale = locale
+    activeT = typeof ctx?.locale?.bind === 'function' ? ctx.locale.bind(LOCALE_NAMESPACE) : (key) => key
+  } catch {
+    activeLocale = 'zh'
+    activeT = (key) => key
+  }
   const child = Array.isArray(children) ? children[0] : children
   if (!child) return null
   // 重新克隆但不换 key：保留当前页签/流程状态，只让子树重新经过 h 工厂翻译
