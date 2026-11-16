@@ -1,0 +1,6 @@
+# dsh-dev-hub bundle patch: inserts the dual-face plugin row into the web
+# profile roster. Install with:
+#   dsh plugin --profile web add link:$(pwd)
+- insert:
+    - id: dev-hub
+      name: 'dsh-dev-hub'
