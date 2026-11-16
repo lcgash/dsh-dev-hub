@@ -424,7 +424,7 @@ test('流程详情：阶段条/概览/页签都能看到独立评审与纠偏意
   assert.doesNotMatch(index, /dispatchReview\(/)
   assert.match(index, /async function resetReview\(/)
   assert.match(index, /async function overrideReview\(/)
-  assert.match(index, /评审调整：忽略拒绝/)
+  assert.match(index, /人工通过本轮/)
   assert.match(index, /children: '重新评审'/)
   assert.match(index, /查看开发报告/)
 
