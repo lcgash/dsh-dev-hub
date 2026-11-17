@@ -1969,8 +1969,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       push(...(result.messages ?? []))
       if (result.item?.requirement?.needsReview) {
         push(stationMessage(
-          '提醒：这次没拿到工作站总结后的需求（目标/根因还是客户原话，已标记待规范化）。'
-          + '到「流程」详情页点「让工作站规范化」再开工，效果更稳。',
+          '提醒：这次没拿到工作站总结后的需求（目标/根因还是客户原话，已标记待规范化）。到「流程」详情页点「让工作站规范化」再开工，效果更稳。',
           { tone: 'warn' },
         ))
       }

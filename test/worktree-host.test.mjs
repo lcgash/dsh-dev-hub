@@ -139,3 +139,46 @@ test('worktree host：所有 git 开发流程默认独立工作区，变更互�
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('worktree 提交：默认推送到开工分支，而不是 devhub/*，无需用户手工合并', async () => {
+  const repo = await tempRepo()
+  const remote = await mkdtemp(join(tmpdir(), 'devhub-wt-remote-'))
+  try {
+    execFileSync('git', ['init', '--bare', '-q', remote])
+    execFileSync('git', ['remote', 'add', 'origin', remote], { cwd: repo })
+    const branch = execFileSync('git', ['branch', '--show-current'], { cwd: repo }).toString().trim()
+    execFileSync('git', ['push', '-q', '-u', 'origin', branch], { cwd: repo })
+
+    const { ctx, routes } = fakeContext(repo)
+    apply(ctx)
+    await call(routes, API.setup, { method: 'POST', body: { repoPath: repo, name: '张三' } })
+    await call(routes, API.items, { method: 'POST', body: flowBody('flow-push', '流程推送') })
+    const started = await call(routes, API.start, { method: 'POST', body: { id: 'flow-push' } })
+    assert.equal(started.status, 200, JSON.stringify(started.json).slice(0, 300))
+    assert.equal(started.json.worktree.branch, 'devhub/flow-push')
+    assert.equal(started.json.item.baseline.branch, branch, 'baseline 必须记开工分支，不能记 devhub 分支')
+    const workRoot = started.json.workRoot
+    await writeFile(join(workRoot, 'pushed.txt'), 'from worktree\n', 'utf8')
+
+    const local = await call(routes, API.test, { method: 'POST', body: { id: 'flow-push', phase: 'local', command: 'true' } })
+    assert.equal(local.json.result.status, 'passed')
+    const submitted = await call(routes, API.submit, {
+      method: 'POST',
+      body: { id: 'flow-push', paths: ['pushed.txt'], message: 'feat: worktree push', branchMode: 'current' },
+    })
+    assert.equal(submitted.status, 200, JSON.stringify(submitted.json).slice(0, 500))
+    assert.equal(submitted.json.ok, true, JSON.stringify(submitted.json).slice(0, 500))
+    assert.equal(submitted.json.branch, branch, '台账应显示目标分支，而不是 devhub/flow-push')
+
+    const remoteHead = execFileSync('git', ['--git-dir', remote, 'rev-parse', `refs/heads/${branch}`]).toString().trim()
+    const worktreeHead = execFileSync('git', ['-C', workRoot, 'rev-parse', 'HEAD']).toString().trim()
+    assert.equal(remoteHead, worktreeHead, '远端目标分支必须包含 worktree 的提交')
+    assert.ok(String(submitted.json.commit).length > 0)
+    assert.equal(submitted.json.item.workflow.submission.branch, branch)
+    assert.throws(() => execFileSync('git', ['--git-dir', remote, 'show-ref', '--verify', 'refs/heads/devhub/flow-push'], { stdio: 'ignore' }), '不能把 devhub 分支当成结果推上去')
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+    await rm(remote, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true })
+  }
+})

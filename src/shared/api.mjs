@@ -1,6 +1,7 @@
 /** Shared wire surface between the Host and the browser half. */
 export const API = {
   state: '/api/dev-hub/state',
+  locales: '/api/dev-hub/locales',
   overview: '/api/dev-hub/overview',
   setup: '/api/dev-hub/setup',
   detect: '/api/dev-hub/detect',

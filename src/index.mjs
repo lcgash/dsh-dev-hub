@@ -38,6 +38,7 @@ import { answerPendingQuestion, readPendingApprovals, readPendingQuestions } fro
 import { ASSIST_SCHEMA, applyAssistUpdates, buildAssistPrompt } from './core/assist.mjs'
 import { sessionState, sessionStates } from './host/session-state.mjs'
 import { sessionLog, sessionTimeline } from './host/session-log.mjs'
+import { loadLocaleBundle } from './host/locales.mjs'
 import { addCustomConstraint, installSkill, regenerateConventions, removeConstraint, uninstallSkill, updateConstraint } from './core/conventions.mjs'
 import { PROMPT_VERSION, hashOf, inputHash, normalizeAnswers, planHash, pluginVersion, recordProvenance, specHash } from './core/provenance.mjs'
 import { reproPlan } from './core/repro.mjs'
@@ -1037,17 +1038,23 @@ async function submitWorkspace({ target, ledgerRepo, item, paths, message, branc
       const existsBranch = await git(root, ['rev-parse', '--verify', '--quiet', `refs/heads/${branchName}`])
       if (existsBranch.ok) throw new Error(`成员库 ${member.name} 已存在分支 ${branchName}（换一个名字，或改用当前分支）`)
     }
-    preflight.push({ member, remote, root })
+    const baseline = baselineForMember(target.baseline ?? item.baseline, member)
+    const previous = (item.workflow.submission?.repos ?? []).find((entry) => entry.path === member.path || entry.name === member.name)
+    const targetBranch = branchMode === 'new' && !pushOnly
+      ? branchName
+      : await targetBranchForRepo(member.path, pushOnly ? (previous?.branch || baseline?.branch) : baseline?.branch)
+    preflight.push({ member, remote, root, targetBranch, isWorktree: Boolean(member.workRoot && member.workRoot !== member.path) })
   }
 
   const results = []
-  for (const { member, remote, root } of preflight) {
+  for (const { member, remote, root, targetBranch, isWorktree } of preflight) {
     const group = groups.get(member.path)
     const row = {
       path: member.path,
       workRoot: root,
       name: member.name,
-      branch: (await git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim(),
+      branch: targetBranch || (await git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim(),
+      ...(isWorktree ? { worktreeBranch: (await git(root, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim() } : {}),
       commit: '',
       pushed: false,
       status: 'failed',
@@ -1072,14 +1079,21 @@ async function submitWorkspace({ target, ledgerRepo, item, paths, message, branc
         row.commit = (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
         row.status = 'committed'
       }
-      const hasUpstream = (await git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])).ok
-      const pushArgs = hasUpstream && branchMode !== 'new' && !pushOnly
-        ? ['push', remote]
-        : ['push', '-u', remote, row.branch]
-      const push = await git(root, pushArgs, { timeout: 120000 })
+      let push
+      if (isWorktree && branchMode !== 'new') {
+        push = await pushWorktreeToTarget(root, { remote, targetBranch: row.branch })
+      } else {
+        const hasUpstream = (await git(root, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])).ok
+        const pushArgs = hasUpstream && branchMode !== 'new' && !pushOnly
+          ? ['push', remote]
+          : ['push', '-u', remote, row.branch]
+        push = await git(root, pushArgs, { timeout: 120000 })
+      }
       row.pushed = push.ok
       row.status = push.ok ? 'pushed' : 'push-failed'
       row.pushOutput = (push.stdout || push.stderr).slice(-4000)
+      // 自动 rebase 后 HEAD 变了：以实际 HEAD 记录提交
+      row.commit = (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim() || row.commit
       if (!push.ok) row.error = `push 失败：${row.pushOutput.slice(-500)}`
     } catch (error) {
       row.error = String(error?.message ?? error)
@@ -1113,6 +1127,41 @@ async function detectAndSave(repo) {
   await setProfileForRepo(profile, repo, { ...entry, environment: env })
   await saveProfile(profile)
   return env
+}
+
+/** 目标分支：baseline 记录的是开工分支；旧台账可能误记成 devhub/<flow>，回退到主仓库当前分支。 */
+async function targetBranchForRepo(repo, branch) {
+  const value = String(branch ?? '').trim()
+  if (value && !value.startsWith('devhub/')) return value
+  const current = (await git(repo, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()
+  return current && current !== 'HEAD' ? current : (value || '')
+}
+
+/**
+ * 把 worktree 里的提交直接推到目标分支，而不是 devhub/<flow>。
+ * - 目标分支在远端前进时先 fetch + rebase，尽量让用户不用手工合并；
+ * - rebase 冲突则 abort 并保留 worktree，要求人工处理；
+ * - 不更新本地主工作区的目标分支（避免覆盖用户正在编辑的工作区），远端已更新。
+ */
+async function pushWorktreeToTarget(root, { remote, targetBranch }) {
+  if (!targetBranch) throw new Error('缺少目标分支：请重新开工或指定分支')
+  // 先同步远端目标分支；fetch 失败不阻断首次创建分支的 push
+  const fetched = await git(root, ['fetch', remote, targetBranch], { timeout: 120000 })
+  if (fetched.ok) {
+    const remoteRef = `refs/remotes/${remote}/${targetBranch}`
+    const exists = await git(root, ['rev-parse', '--verify', '--quiet', remoteRef])
+    if (exists.ok) {
+      const ancestor = await git(root, ['merge-base', '--is-ancestor', remoteRef, 'HEAD'])
+      if (!ancestor.ok) {
+        const rebased = await git(root, ['rebase', remoteRef], { timeout: 120000 })
+        if (!rebased.ok) {
+          await git(root, ['rebase', '--abort'])
+          throw new Error(`目标分支 ${targetBranch} 已有新提交，自动 rebase 发生冲突；请在独立工作区解决后重试`)
+        }
+      }
+    }
+  }
+  return git(root, ['push', remote, `HEAD:refs/heads/${targetBranch}`], { timeout: 120000 })
 }
 
 /** 台账里的 worktree 元数据 + 本机推导出的绝对路径。 */
@@ -2560,6 +2609,24 @@ function sendText(res, status, contentType, body) {
 
 export function apply(ctx) {
   const routes = [
+    // 多语言词典：运行时读取 locale/*.json 下发给浏览器；新增语言 = 新增文件。
+    {
+      kind: 'exact',
+      path: API.locales,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'GET only' })
+        try {
+          const bundle = await loadLocaleBundle()
+          // 不返回本机绝对路径；errors 只带文件名与原因，便于定位坏词典。
+          sendJson(res, 200, { ok: bundle.ok, locales: bundle.locales, errors: bundle.errors })
+        } catch (error) {
+          // 详细原因（可能含本机候选目录）只进日志；浏览器侧只拿固定文案。
+          try { console.warn('[dev-hub] locale bundle load failed:', error) } catch { /* ignore */ }
+          sendJson(res, 500, { ok: false, error: '语言词典加载失败，请查看 Host 日志' })
+        }
+      },
+    },
     {
       kind: 'exact',
       path: API.state,
@@ -2803,6 +2870,11 @@ export function apply(ctx) {
           const isAnalysis = item.workflow?.intent === 'analysis'
           let worktree = null
           let workspaceWorktrees = []
+          // 开工 baseline 必须在主工作区/成员库本身上取：workRoot 是 devhub/<flow>，
+          // 从它取 branch 会让提交误推到 worktree 分支。这里先记下真正的目标分支。
+          const baselineBefore = !item.baseline
+            ? (target ? await workspaceBaseline(target.members) : await startBaseline(repo))
+            : null
           // 单库和虚拟库的每个 git 成员库都使用独立 worktree：主工作区可能有人的未提交改动、
           // 构建产物或其他流程的提交，变更捕获/测试/提交都会被污染。分析流程只读不建。
           if (!isAnalysis && item.workflow?.gitRepo !== false) {
@@ -2823,7 +2895,7 @@ export function apply(ctx) {
               }
               if (workspaceWorktrees.length) {
                 item.workflow.worktrees = workspaceWorktrees
-                if (createdAny) item.baseline = null
+                if (!item.baseline && baselineBefore) item.baseline = baselineBefore
                 // 重新解析 target，让 members 带上 workRoot 再记 baseline
                 target = workspaceTarget(profile, item, repo)
               }
@@ -2834,8 +2906,9 @@ export function apply(ctx) {
                 baseCommit: worktree.baseCommit,
                 createdAt: worktree.createdAt,
               }
-              // 新工作区从当前 HEAD 开出：重置 baseline，避免把主工作区里别的流程的改动算进来
-              if (worktree.created) item.baseline = null
+              // 新工作区从当前 HEAD 开出：baseline 用主仓库的原始 branch/commit，
+              // 不能把它记成 devhub/<flow>，否则提交会推错分支。
+              if (!item.baseline && baselineBefore) item.baseline = baselineBefore
             }
           }
           const workRoot = target
@@ -3404,6 +3477,7 @@ export function apply(ctx) {
           sendJson(res, 200, {
             ok: true,
             branch: info.branch,
+            targetBranch: await targetBranchForRepo(repo, item.baseline?.branch),
             changes: info.changes,
             suggestedPaths: [...suggested].sort(),
             workRoot,
@@ -3502,8 +3576,15 @@ export function apply(ctx) {
           if (!remoteList.length) throw new Error('这个仓库没有配置 git remote，无法 push；请先 git remote add origin <url>')
           const remote = remoteList.includes('origin') ? 'origin' : remoteList[0]
           const currentBranch = (await git(workRoot, ['rev-parse', '--abbrev-ref', 'HEAD'])).stdout.trim()
+          const baselineBranch = await targetBranchForRepo(repo, item.baseline?.branch)
+          const submittedBranch = await targetBranchForRepo(repo, item.workflow.submission?.branch)
+          // 工作流的目标是开工时所在的分支（baseline），不是 worktree 的 devhub/<flow>。
+          // 用户显式选择「新分支」时才推新分支。
+          const targetBranch = branchMode === 'new' && !pushOnly
+            ? branchName
+            : (pushOnly ? (submittedBranch || baselineBranch) : baselineBranch) || currentBranch
 
-          let branch = currentBranch
+          let branch = targetBranch
           if (!pushOnly && branchMode === 'new') {
             const exists = await git(workRoot, ['rev-parse', '--verify', '--quiet', `refs/heads/${branchName}`])
             if (exists.ok) throw new Error(`分支已存在：${branchName}（换一个名字，或改用当前分支）`)
@@ -3521,17 +3602,26 @@ export function apply(ctx) {
             commitHash = (await git(workRoot, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
           }
 
-          // 真的 push：新分支或没有 upstream 时用 -u 建立跟踪
-          const hasUpstream = (await git(workRoot, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])).ok
-          const pushArgs = hasUpstream && branchMode !== 'new' && !pushOnly
-            ? ['push', remote]
-            : ['push', '-u', remote, branch]
-          const push = await git(workRoot, pushArgs, { timeout: 120000 })
+          // worktree 的 current 模式：把 HEAD 推到开工分支（必要时 rebase 远端新提交）。
+          // 非 worktree / 新分支模式：沿用原 push 语义。
+          let push
+          if (worktree && branchMode !== 'new') {
+            push = await pushWorktreeToTarget(workRoot, { remote, targetBranch })
+          } else {
+            const hasUpstream = (await git(workRoot, ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'])).ok
+            const pushArgs = hasUpstream && branchMode !== 'new' && !pushOnly
+              ? ['push', remote]
+              : ['push', '-u', remote, branch]
+            push = await git(workRoot, pushArgs, { timeout: 120000 })
+          }
           const pushed = push.ok
+          // rebase 到远端目标分支后 HEAD 会变：台账记录实际推送的提交，而不是 rebase 前的
+          commitHash = (await git(workRoot, ['rev-parse', '--short', 'HEAD'])).stdout.trim() || commitHash
           const pushOutput = (push.stdout || push.stderr).slice(-4000)
           item.workflow.submission = {
             status: pushed ? 'pushed' : 'committed',
             branch,
+            ...(worktree ? { worktreeBranch: worktree.branch } : {}),
             commit: commitHash,
             pushed,
             pushOutput,

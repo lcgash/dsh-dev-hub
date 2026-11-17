@@ -100,10 +100,12 @@ export function summarizeRecon(recon) {
       : `扫描了 ${recon.scanned} 个文件，没找到明确相关的位置。可以补充关键词，或直接指定目录。`
   }
   const modules = (recon.modules ?? []).map((entry) => entry.name).filter(Boolean).slice(0, 4)
-  return [
-    `扫了 ${recon.scanned} 个文件，命中 ${files} 个候选${modules.length ? `，集中在 ${modules.join('、')}` : ''}。`,
-    '下面是可能要改的文件与命中行，确认后我再建流程并开启开发会话。',
-  ].join('')
+  const summary = [
+    `扫了 ${recon.scanned} 个文件`,
+    `命中 ${files} 个候选`,
+    modules.length ? `集中在 ${modules.join('、')}` : '',
+  ].filter(Boolean).join('，') + '。'
+  return summary + '下面是可能要改的文件与命中行，确认后我再建流程并开启开发会话。'
 }
 
 /** 探测：只调一个接口，失败向上抛，由界面渲染成工作站消息。 */

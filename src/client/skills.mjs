@@ -12,7 +12,7 @@
  * 保证「已安装 / 技能库 / 约束明细」三块永远同源、不会出现半更新。
  */
 import { useEffect, useState } from 'react'
-import { h } from './i18n.mjs'
+import { h, confirmText } from './i18n.mjs'
 import { API } from '../shared/api.mjs'
 import {
   Button,
@@ -168,7 +168,7 @@ export function SkillsPanel({ initialView = null, initialRepo = null, initialWor
   }
 
   async function uninstall(skill) {
-    if (!window.confirm(`卸载「${skill.name}」？\n\n只移除该技能带来的约束，不改自定义项。`)) return
+    if (!confirmText(`卸载「${skill.name}」？\n\n只移除该技能带来的约束，不改自定义项。`)) return
     const removed = Number(skill?.constraints ?? 0)
     await runPost({ action: 'uninstall', skillId: skill.id }, (body) => (
       body?.changed === false ? `${skill.name} 未安装` : `已卸载 ${skill.name}（-${removed} 条约束）`
@@ -176,7 +176,7 @@ export function SkillsPanel({ initialView = null, initialRepo = null, initialWor
   }
 
   async function regenerate() {
-    if (!window.confirm('按当前已安装技能重建约束？\n\n自定义约束会保留；内置约束的手工改动会被覆盖。')) return
+    if (!confirmText('按当前已安装技能重建约束？\n\n自定义约束会保留；内置约束的手工改动会被覆盖。')) return
     await runPost({ action: 'regenerate' }, '已按当前安装集合重建默认规范')
   }
 
@@ -196,7 +196,7 @@ export function SkillsPanel({ initialView = null, initialRepo = null, initialWor
   }
 
   async function removeConstraint(constraint) {
-    if (!window.confirm(`删除自定义约束「${constraint.title}」？`)) return
+    if (!confirmText(`删除自定义约束「${constraint.title}」？`)) return
     await runPost({ action: 'removeConstraint', id: constraint.id }, `已删除约束「${constraint.title}」`)
   }
 

@@ -88,6 +88,7 @@ Every finished flow can produce a read-only report: goal, scope, review verdicts
   - branch: `devhub/<flow-id>`
   - directory: `~/.dsh/dev-hub/worktrees/<repo-hash>/<flow-id>`
 - The ledger stays in the main repository; code changes stay isolated.
+- On submission, the workstation pushes the worktree commit back to the **branch the flow started from** (or a new branch if explicitly selected), rebasing onto the latest remote tip when needed. Users do not have to merge `devhub/<flow-id>` by hand.
 
 ### Review before verification
 
@@ -114,10 +115,40 @@ Every finished flow can produce a read-only report: goal, scope, review verdicts
 
 ### Localization
 
-- UI copy is registered through DSH's client locale service as the `dev-hub` namespace.
-- The plugin ships `zh` and `en` dictionaries and localized plugin metadata; switch the language under **Settings → General → Language**.
+- UI copy is rendered through DSH's client locale service as the `dev-hub` namespace; the language is still switched under **Settings → General → Language**.
+- Language resources are pluggable: one `locale/<id>.json` per language carries plugin metadata (`meta.title` / `meta.description`), the language definition (`language.label` / `language.fallback`), the UI dictionary (`messages`, keyed by the Chinese source text) and dynamic templates (`templates` / `templateValues`).
+- `messages` now covers static Chinese literals in `src/client` plus the shared labels/status/gate copy rendered by the client (about 1,080 entries); `templates` covers every Chinese-interpolating template literal in `src/client` (about 330 entries). `npm test` scans source literals and template literals, asserts shared label tables are in the dictionary, and renders the home/detail/wizard/status pill to check no Chinese interface copy remains under `en`.
+- The Host reads `locale/*.json` at runtime and serves it over the loopback `GET /api/dev-hub/locales` route; the browser then registers it with DSH locale. Adding a language needs no change to `src/client` components and no rebuild of `lib/client.js`.
+- The browser reads DSH's actual locale catalog: languages already registered by the Host are not passed to `addLanguage` again; only the `dev-hub` namespace dictionary is added (this machine's DSH 0.2.0-rc.2 ships only `zh`/`en`; other versions may register more). Variants such as `fr-CA` may fall back to an already-registered `fr`.
 - Workbench chrome, navigation, chat controls, review labels and report controls follow the active locale. Host-generated prose, repository names and user-authored report content keep their original language.
-- New UI strings should be added to both dictionaries in `src/client/i18n.mjs`.
+- New UI strings: add the key to `messages` in both `locale/zh.json` and `locale/en.json`; the key sets must stay complete and aligned (`npm test` enforces it).
+- New language: copy `locale/en.json` to `locale/<id>.json`, keep/adjust `meta`, set `language.label` to the language's own name (e.g. `日本語`), optionally set `language.fallback` (defaults to `en`, and the whole chain must terminate at `en`), then translate `messages`. `templates` / `templateValues` are optional; without them, dynamic counters/status copy falls back to the English templates. Refresh the page and pick the language in Settings.
+
+Dictionary shape:
+
+```json
+{
+  "meta": { "title": "开发工作站", "description": "..." },
+  "language": { "label": "中文" },
+  "messages": { "开发工作站": "开发工作站", "独立评审": "独立评审" },
+  "templates": { "任务 {done}/{total}": "任务 {done}/{total}" },
+  "templateValues": { "通过": "通过" }
+}
+```
+
+A third-party language still requires `meta` (a file without it is discarded), plus its own messages:
+
+```json
+{
+  "meta": { "title": "開発ワークステーション", "description": "..." },
+  "language": { "label": "日本語", "fallback": "en" },
+  "messages": { "开发工作站": "開発ワークステーション" },
+  "templates": { "任务 {done}/{total}": "タスク {done}/{total}" },
+  "templateValues": { "通过": "合格" }
+}
+```
+
+If a dictionary fails to parse, `zh`/`en` keys or templates drift apart, or a language id/fallback chain is invalid, the Host returns `errors` in the payload and the browser re-checks it against the real catalog and logs an explicit warning. The remaining valid languages still load and the UI falls back to the Chinese source text instead of blanking out.
 
 ### Local-first
 
@@ -219,7 +250,8 @@ The repository is intentionally small and dependency-light. Core modules should 
 
 ## Limitations
 
-- English coverage focuses on the primary workbench/chat/report chrome; some dynamic Host-generated text remains in its authored language.
+- Every static Chinese literal and Chinese-interpolating template literal in `src/client` is dictionary/template-backed; a language pack that omits templates falls back to the English ones. Host-generated prose, repository names and user content stay in their authored language.
+- Third-party language copy is maintained by the dictionary author; missing keys fall back to English. Dictionaries are fetched asynchronously on page load, so the first frame may briefly show the Chinese source text.
 - Virtual workspaces are a local composition, not a remote repository service.
 - Worktree isolation applies to Git repositories, not to virtual workspace local ledgers.
 - Test and review quality still depends on the configured model and the repository's own commands.

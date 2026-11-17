@@ -11,7 +11,7 @@
  * 流程台账与详情、环境探测、测试与提交等既有功能。
  */
 import { useEffect, useRef, useState } from 'react'
-import { h, LocaleProvider, LOCALE_NAMESPACE, en, zh } from './i18n.mjs'
+import { h, confirmText, LocaleProvider, LOCALE_NAMESPACE, installLocaleDictionaries, loadLocaleDictionaries } from './i18n.mjs'
 import { API, STATUS_LABELS } from '../shared/api.mjs'
 import { REVIEWER_ROLES, REVIEW_STATUS_LABELS, REVIEW_STATUS_TONES, STAGE_LABELS, WORKFLOW_STAGES } from '../shared/workflow.mjs'
 import { describeReview, reviewAdvancePlan, reviewFailureHint } from '../core/review.mjs'
@@ -871,7 +871,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       if (body.item) { setDraft(body.item); onSaved(body.item) }
       setNotice(body.degraded
         ? `工作站暂时不可用：只生成了本地草稿（${body.reason || 'agent 不可用'}），目标和根因仍需人工确认`
-        : '已把客户原话整理成目标/根因' + (body.requirement?.acceptance?.length ? '，并补了验收标准' : ''))
+        : (body.requirement?.acceptance?.length
+          ? '已把客户原话整理成目标/根因，并补了验收标准'
+          : '已把客户原话整理成目标/根因'))
     } catch (err) {
       setError(`需求规范化失败：${errorText(err)}`)
     } finally { setRequirementBusy(false) }
@@ -1024,7 +1026,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
 
   async function runTest(phase) {
     const command = tests[phase]?.command || (phase === 'local' ? '项目配置的 localTest' : '项目配置的 environmentTest')
-    if (!window.confirm(`执行${phase === 'local' ? '本机自测' : '环境测试'}？\n\n${command}`)) return
+    if (!confirmText(`执行${phase === 'local' ? '本机自测' : '环境测试'}？\n\n${command}`)) return
     setBusy(true); setError(''); setNotice('')
     try {
       await persistDraft()
@@ -1036,7 +1038,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       const failed = rows.filter((entry) => entry?.status && entry.status !== 'passed')
       const suffix = rows.length ? `（${rows.length - failed.length}/${rows.length} 个成员库通过）` : ''
       if (body.ok === false) {
-        setError(`${label}未通过：${body.error ?? (failed.length ? failed.map(repoDisplayName).join('、') : (body.result?.status ?? '失败'))}${suffix}`)
+        setError(`${label}未通过：${[body.error ?? (failed.length ? failed.map(repoDisplayName).join('、') : (body.result?.status ?? '失败')), suffix].filter(Boolean).join('')}`)
       } else {
         setNotice(`${label}：${body.result?.status ?? '通过'}${suffix}`)
       }
@@ -1045,7 +1047,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
 
   /** 开发前同步：fetch + ff-only 合并；不自动 rebase/reset，冲突/分叉明确报错。 */
   async function syncCode() {
-    if (!window.confirm('拉取最新代码？\n\n会对当前流程涉及的仓库执行 git fetch + merge --ff-only。\n有本地未提交改动或分支分叉时不会强推/回滚，失败原因会显示在页面上。')) return
+    if (!confirmText('拉取最新代码？\n\n会对当前流程涉及的仓库执行 git fetch + merge --ff-only。\n有本地未提交改动或分支分叉时不会强推/回滚，失败原因会显示在页面上。')) return
     setSyncBusy(true)
     setError('')
     setNotice('')
@@ -1223,13 +1225,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     if (!pushOnly && !selectedPaths.length) { setError('请选择要提交的文件'); return }
     if (!pushOnly && !commitMessage.trim()) { setError('请填写提交信息'); return }
     if (branchMode === 'new' && !pushOnly && !branchName.trim()) { setError('请填写新分支名'); return }
-    const target = branchMode === 'new' && !pushOnly ? `新分支 ${branchName.trim()}` : `当前分支（${changes?.branch ?? '当前'}）`
+    const submitTargetBranch = changes?.targetBranch || draft.baseline?.branch || changes?.branch || '当前分支'
+    const target = branchMode === 'new' && !pushOnly ? `新分支 ${branchName.trim()}` : `当前分支（${submitTargetBranch}）`
     // 多成员库时确认框按库分组列文件，避免一长串路径看不出跨了哪些库
     const groups = changesByRepo().filter(([, list]) => list.some((change) => selectedPaths.includes(change.path)))
     const pathLines = groups.length > 1
       ? groups.map(([repo, list]) => `【${repo || '成员库'}】\n${list.filter((change) => selectedPaths.includes(change.path)).map((change) => change.path).join('\n')}`).join('\n\n')
       : selectedPaths.join('\n')
-    if (!window.confirm(pushOnly
+    if (!confirmText(pushOnly
       ? '上次提交没推送成功：现在重试 git push？'
       : `确认提交 ${selectedPaths.length} 个文件到「${target}」，并立即 git push？\n\n${pathLines}`)) return
     setBusy(true); setError(''); setNotice('')
@@ -2547,7 +2550,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               type: 'radio', name: 'branchMode', checked: branchMode === 'current',
               onChange: () => setBranchMode('current'),
             }),
-            `基于当前分支推送（${changes?.branch ?? '当前分支'}）`),
+            `基于当前分支推送（${changes?.targetBranch || draft.baseline?.branch || changes?.branch || '当前分支'}）`),
           h('label', { style: { display: 'flex', alignItems: 'center', gap: 6, fontSize: T.font.sm, cursor: 'pointer' } },
             h('input', {
               type: 'radio', name: 'branchMode', checked: branchMode === 'new',
@@ -2745,7 +2748,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               },
               disabled: busy,
               onClick: async () => {
-                const ok = typeof window !== 'undefined' && window.confirm(
+                const ok = typeof window !== 'undefined' && confirmText(
                   `删除流程「${draft.title || draft.id}」？\n\n只删台账；代码不回滚、DSH 会话不删除。这个操作不可撤销。`,
                 )
                 if (!ok) return
@@ -3188,7 +3191,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           lineHeight: 1.7,
         },
       }, pendingStep
-        ? `${tasks.length && doneCount >= tasks.length ? '开发任务已完成，但' : ''}流程未结束：${pendingStep}${pendingTasks.length ? `；${pendingTasks.length} 个任务未完成（${pendingTasks.slice(0, 2).map((task) => task.text).join('、')}${pendingTasks.length > 2 ? ' 等' : ''}）` : ''}`
+        ? `开发任务${tasks.length && doneCount >= tasks.length ? '已完成' : '进行中'}，流程未结束：${pendingStep}${pendingTasks.length ? `；${pendingTasks.length} 个任务未完成（${pendingTasks.slice(0, 2).map((task) => task.text).join('、')}${pendingTasks.length > 2 ? ' 等' : ''}）` : ''}`
         : '流程已完成：开发任务、评审、测试与提交都已完成'),
     )
   }
@@ -3352,7 +3355,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                   : nextIntent === 'analysis'
                     ? '分析流程只读：不建 worktree、不产生提交，只产出结论与补丁建议。'
                     : 'feature 先对齐范围与验收，再改代码。'
-                if (!window.confirm(`把流程类型改成「${INTENT_LABEL[nextIntent]}」？\n\n${hint}`)) return
+                if (!confirmText(`把流程类型改成「${INTENT_LABEL[nextIntent]}」？\n\n${hint}`)) return
                 commit({ ...draft, workflow: { ...workflow, intent: nextIntent } }, '已更新流程类型')
               },
             }, INTENT_LABEL[intentOf(workflow.intent)]),
@@ -3950,7 +3953,7 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
 
   /** 解绑：只断开追踪，不删流程、不动历史；确认后执行。 */
   async function unbindSession(itemId) {
-    if (!window.confirm('解绑当前开发会话？流程内容与历史不受影响，只是不再追踪该会话。')) return
+    if (!confirmText('解绑当前开发会话？流程内容与历史不受影响，只是不再追踪该会话。')) return
     setBusy(true); setError(''); setNotice('')
     try {
       const body = await api(API.session, {
@@ -3979,7 +3982,7 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
     const previous = item?.session?.id
     const continueExisting = Boolean(previous) && !fresh
     // resync 来自「更多」里的显式低频按钮，标签已说明后果，不再弹确认。
-    if (!resync && !window.confirm(continueExisting
+    if (!resync && !confirmText(continueExisting
       ? `把「${title}」的最新 Context Pack 重发到 ${previous}？（之前聊过的内容、决定与工具结果都还在）\n\n日常推进用「继续推进」就够了；要开新的，请在「更多 → 换一条开发会话」里新建。`
       : `开启新的开发会话？\n\n将新建一个 DSH 会话，并把「${title}」的约束与 Context Pack 作为首条消息发送。`)) return
     setBusy(true); setError(''); setNotice('')
@@ -4153,7 +4156,7 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
    */
   async function removeWorkspace(workspace) {
     const name = workspace?.name ?? workspace?.id ?? '未命名'
-    const ok = typeof window !== 'undefined' && window.confirm(
+    const ok = typeof window !== 'undefined' && confirmText(
       `从本机移除虚拟库「${name}」？\n\n只删本机的分组登记，不会删除或修改任何成员库的代码与 .dev-hub；成员库本身仍保留在代码库列表里。\n\n虚拟库自己的台账/规范/上下文/证据仍留在本机 ~/.dev-hub/workspaces/${workspace?.id ?? '<id>'}/（不删数据）。`,
     )
     if (!ok) return
@@ -4177,7 +4180,7 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
 
   async function removeRepo(repoPath) {
     const name = repoPath.split('/').filter(Boolean).pop() || repoPath
-    const ok = typeof window !== 'undefined' && window.confirm(
+    const ok = typeof window !== 'undefined' && confirmText(
       `从列表移除代码库「${name}」？\n\n只删本机列表登记，不会删除磁盘上的代码/流程台账；以后还能重新添加。`,
     )
     if (!ok) return
@@ -4970,16 +4973,27 @@ function DevHubPage({ ctx }) {
 export const inject = ['slots', 'locale']
 
 export function apply(ctx) {
-  // 本地化字典：与 DSH 设置里的语言选择共用 ctx.locale；语言切换后 Provider 会重建子树，
-  // 让 h 工厂重新翻译静态文案。
+  // 本地化词典：Host 在运行时读取 locale/*.json 下发，新增语言 = 新增词典文件。
+  // 注册完成后 DSH locale 会推进 revision，LocaleProvider 重新渲染子树；
+  // 加载失败只退回中文原文并打日志，不让工作站白屏。
   if (typeof ctx.locale?.register === 'function') {
     ctx.effect(() => {
-      try {
-        return ctx.locale.register(LOCALE_NAMESPACE, { zh, en })
-      } catch (error) {
-        // 字典注册失败不应让整个工作站白屏；退回原文继续渲染。
-        try { console.warn('[dev-hub] locale registration failed:', error) } catch { /* ignore */ }
-        return () => {}
+      let active = true
+      let installed = null
+      const controller = typeof AbortController === 'function' ? new AbortController() : null
+      loadLocaleDictionaries({ signal: controller?.signal })
+        .then((bundle) => {
+          if (!active) return
+          installed = installLocaleDictionaries(ctx, bundle)
+        })
+        .catch((error) => {
+          if (!active) return
+          try { console.warn('[dev-hub] locale dictionaries unavailable:', error) } catch { /* ignore */ }
+        })
+      return () => {
+        active = false
+        try { controller?.abort() } catch { /* ignore */ }
+        try { installed?.dispose() } catch { /* ignore */ }
       }
     }, 'dev-hub: locale dictionaries')
   }
