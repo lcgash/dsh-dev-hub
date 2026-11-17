@@ -223,7 +223,7 @@ function AddTargetCard({ busy, onAddRepo, onAddWorkspace }) {
   )
 }
 
-function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, branch, head, initialized, workspaces, onSelect, onRemove }) {
+function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, branch, head, initialized, workspaces, onSelect, onRemove, tabAttached = false }) {
   const name = givenName || String(path ?? '').split('/').filter(Boolean).pop() || path
   const [hovered, setHovered] = useState(false)
   // 虚拟库归属只放 tooltip：footer 再挂一个「虚拟库 · xxx」会让代码库卡看起来像虚拟库卡
@@ -275,7 +275,8 @@ function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, 
         padding: '10px 12px',
         textAlign: 'left',
         border: `1px solid ${!exists ? T.danger : active ? T.brandBorder : T.borderSoft}`,
-        // 选中卡是「项目管理」的当前 tab：下沿收方，和下面的流程面板用连通线连起来
+        // 选中卡是当前 tab：贴着流程面板时下边框透明，让卡片的底色一直延到分隔线上
+        ...(active && tabAttached ? { borderBottomColor: 'transparent' } : {}),
         borderRadius: active ? '12px 12px 4px 4px' : T.rLg,
         background: !exists ? T.dangerSoft : active ? T.brandSoft : T.surface,
         boxShadow: active ? `0 0 0 2px rgba(96,73,231,.10)` : T.shadowCard,
@@ -423,7 +424,7 @@ export function workspaceMembersView(workspace) {
 const chipTruncate = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
 /** 一张虚拟库卡：和代码库卡同高同结构，用 ▣ 图标区分；hover 右上角 × 只从本机移除。 */
-function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove }) {
+function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, tabAttached = false }) {
   const [hovered, setHovered] = useState(false)
   const members = workspaceMembersView(workspace)
   const missing = members.filter((member) => !member.exists)
@@ -468,6 +469,7 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove }) 
         padding: '10px 12px',
         textAlign: 'left',
         border: `1px solid ${active ? T.brandBorder : T.borderSoft}`,
+        ...(active && tabAttached ? { borderBottomColor: 'transparent' } : {}),
         borderRadius: active ? '12px 12px 4px 4px' : T.rLg,
         // 非激活态也用浅灰底 + 品牌色 ▣，和白色代码库卡一眼区分开
         background: active ? T.brandSoft : T.surface2,
@@ -612,7 +614,7 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove }) 
 }
 
 /** 顶部项目条：当前库 + 成员 + 全局动作；下方是虚拟库/代码库卡片，点卡片即切换。 */
-function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchingRepo, onRefresh, onSelectRepo, onAddRepo, onScan, onNewFlow, onRemoveRepo, onSelectWorkspace, onEditWorkspace, onRemoveWorkspace, onNewWorkspace, tabbed = false }) {
+function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchingRepo, onRefresh, onSelectRepo, onAddRepo, onScan, onNewFlow, onRemoveRepo, onSelectWorkspace, onEditWorkspace, onRemoveWorkspace, onNewWorkspace, tabbed = false, tabAttached = false }) {
   const members = workspaceMembersView(activeWorkspace)
   const memberCount = activeWorkspace ? members.length : 0
   const localPath = activeWorkspace?.path ?? activeWorkspace?.localPath ?? null
@@ -701,6 +703,7 @@ function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchin
             key: workspace.id,
             workspace,
             active: activeWorkspace?.id === workspace.id,
+            tabAttached,
             busy: Boolean(switchingRepo),
             onSelect: onSelectWorkspace,
             onEdit: onEditWorkspace,
@@ -718,6 +721,7 @@ function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchin
             workspaces: typeof entry === 'string' ? [] : entry.workspaces,
             // 激活虚拟库时不再把某个成员库的代码卡片标成选中：选中的是虚拟库，代码库只是成员
             active: !activeWorkspace && (typeof entry === 'string' ? entry : entry.path) === repo?.path,
+            tabAttached,
             busy: (typeof entry === 'string' ? entry : entry.path) === switchingRepo,
             onSelect: onSelectRepo,
             onRemove: onRemoveRepo,
@@ -1034,8 +1038,9 @@ export function HomeView(props) {
   const repo = state?.repo ?? null
   const list = items ?? state?.items ?? []
   const wrapRef = useRef(null)
-  // 选中目标卡 → 下方「开发流程」的连通线（tab 式）：用真实布局测量，窗口换行/切目标都不会错位
-  const [tabLink, setTabLink] = useState(null)
+  // 选中目标卡贴着下方「开发流程」时，把卡底和面板顶线之间“打通”成 tab：
+  // 卡片底边框透明 + 用一小段卡片底色盖住分隔线；不画长线条，也不穿卡。
+  const [tabPatch, setTabPatch] = useState(null)
   useEffect(() => {
     if (typeof document === 'undefined') return undefined
     const measure = () => {
@@ -1043,37 +1048,25 @@ export function HomeView(props) {
       const card = document.getElementById('devhub-active-target')
       const listNode = document.getElementById('devhub-flow-list')
       if (!wrap || !card || !listNode) {
-        setTabLink((current) => (current ? null : current))
+        setTabPatch((current) => (current ? null : current))
         return
       }
       const wrapRect = wrap.getBoundingClientRect()
       const cardRect = card.getBoundingClientRect()
       const listRect = listNode.getBoundingClientRect()
-      const height = Math.round(listRect.top - cardRect.bottom + 2)
-      if (height < 2) {
-        setTabLink((current) => (current ? null : current))
-        return
-      }
-      // 目标卡换行时，选中卡下面可能压着别的卡：线不穿卡，宁可不画
-      const centerX = cardRect.left + cardRect.width / 2
-      const blocked = [...document.querySelectorAll('[data-devhub-target-card]')].some((node) => {
-        if (node === card) return false
-        const rect = node.getBoundingClientRect()
-        return rect.top >= cardRect.bottom - 2
-          && rect.top < listRect.top
-          && rect.left <= centerX
-          && rect.right >= centerX
-      })
-      if (blocked) {
-        setTabLink((current) => (current ? null : current))
+      // 只有选中卡正好在最后一行、紧贴流程面板时才做 tab 打通；
+      // 换行后卡下面还有内容时，保持普通分隔线，不能从别的卡上穿过去。
+      const gap = Math.round(listRect.top - cardRect.bottom)
+      if (Math.abs(gap) > 2) {
+        setTabPatch((current) => (current ? null : current))
         return
       }
       const next = {
-        left: Math.round(cardRect.left - wrapRect.left + cardRect.width / 2 - 1),
-        top: Math.round(cardRect.bottom - wrapRect.top - 1),
-        height,
+        left: Math.round(cardRect.left - wrapRect.left + 1),
+        top: Math.round(listRect.top - wrapRect.top - 1),
+        width: Math.max(0, Math.round(cardRect.width - 2)),
       }
-      setTabLink((current) => (current && current.left === next.left && current.top === next.top && current.height === next.height
+      setTabPatch((current) => (current && current.left === next.left && current.top === next.top && current.width === next.width
         ? current
         : next))
     }
@@ -1086,84 +1079,71 @@ export function HomeView(props) {
       observer?.disconnect()
     }
   })
-  return h('div', { ref: wrapRef, style: { position: 'relative', display: 'flex', flexDirection: 'column', gap: T.gap.sm } },
-    // tab 连通线：从选中目标卡底部中央连到「开发流程」顶边
-    tabLink
-      ? h('span', {
-        'aria-hidden': true,
-        style: {
-          position: 'absolute',
-          left: tabLink.left,
-          top: tabLink.top,
-          width: 2,
-          height: tabLink.height,
-          borderRadius: 2,
-          background: T.brand,
-          zIndex: 5,
-          pointerEvents: 'none',
-        },
-      })
-      : null,
-    h(ProjectBar, {
-      repo,
-      member: state?.profile?.member,
-      // 优先用带 exists 的卡片数据；旧数据回退到路径数组
-      repos: state?.profile?.repoCards ?? state?.profile?.repos,
-      onRefresh,
-      onSelectRepo,
-      switchingRepo,
-      onAddRepo,
-      onScan,
-      onNewFlow,
-      onRemoveRepo,
-      workspaces: state?.workspaces,
-      activeWorkspace: state?.workspace,
-      onSelectWorkspace,
-      onEditWorkspace,
-      onRemoveWorkspace,
-      onNewWorkspace,
-    }),
-    // 首次进入/空工作区：需求澄清才是第一步，不要让用户先猜“新建流程”按钮在哪
-    list.length === 0
-      ? h('div', {
-        style: {
-          border: `1px solid ${T.brandBorder}`,
-          borderRadius: T.rLg,
-          background: `linear-gradient(135deg, ${T.brandSoft}, ${T.surface})`,
-          padding: '16px 18px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 10,
-        },
+  const merged = list.length > 0
+  const clarifications = !merged
+    ? h('div', {
+      style: {
+        border: `1px solid ${T.brandBorder}`,
+        borderRadius: T.rLg,
+        background: `linear-gradient(135deg, ${T.brandSoft}, ${T.surface})`,
+        padding: '16px 18px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 10,
       },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-          h(IconSeat, { size: 30, tone: 'accent' }, '✧'),
-          h('span', { style: { fontSize: T.font.md, fontWeight: 650, color: T.text } }, '从一次需求澄清开始'),
-          h('span', { style: styles.sectionHint }, '不用先想流程；先说一句要做什么，工作站会扫仓库并追问。'),
-        ),
-        h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
-          ['1. 描述要做什么', '2. 回答关键追问', '3. 确认计划并开工'].map((text) => h('span', {
-            key: text,
-            style: {
-              height: 26,
-              padding: '0 10px',
-              display: 'inline-flex',
-              alignItems: 'center',
-              borderRadius: 6,
-              background: T.surface,
-              border: `1px solid ${T.borderSoft}`,
-              color: T.text2,
-              fontSize: T.font.sm,
-            },
-          }, text)),
-        ),
-        h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
-          h(Button, { primary: true, onClick: onNewFlow, children: '开始需求澄清' }),
-          h(Button, { onClick: onOpenClarifications, children: '查看澄清会话' }),
-        ),
-      )
-      : null,
-    h(FlowList, {
+    },
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+        h(IconSeat, { size: 30, tone: 'accent' }, '✧'),
+        h('span', { style: { fontSize: T.font.md, fontWeight: 650, color: T.text } }, '从一次需求澄清开始'),
+        h('span', { style: styles.sectionHint }, '不用先想流程；先说一句要做什么，工作站会扫仓库并追问。'),
+      ),
+      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+        ['1. 描述要做什么', '2. 回答关键追问', '3. 确认计划并开工'].map((text) => h('span', {
+          key: text,
+          style: {
+            height: 26,
+            padding: '0 10px',
+            display: 'inline-flex',
+            alignItems: 'center',
+            borderRadius: 6,
+            background: T.surface,
+            border: `1px solid ${T.borderSoft}`,
+            color: T.text2,
+            fontSize: T.font.sm,
+          },
+        }, text)),
+      ),
+      h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+        h(Button, { primary: true, onClick: onNewFlow, children: '开始需求澄清' }),
+        h(Button, { onClick: onOpenClarifications, children: '查看澄清会话' }),
+      ),
+    )
+    : null
+  const projectBar = h(ProjectBar, {
+    repo,
+    member: state?.profile?.member,
+    // 优先用带 exists 的卡片数据；旧数据回退到路径数组
+    repos: state?.profile?.repoCards ?? state?.profile?.repos,
+    onRefresh,
+    onSelectRepo,
+    switchingRepo,
+    onAddRepo,
+    onScan,
+    onNewFlow,
+    onRemoveRepo,
+    workspaces: state?.workspaces,
+    activeWorkspace: state?.workspace,
+    onSelectWorkspace,
+    onEditWorkspace,
+    onRemoveWorkspace,
+    onNewWorkspace,
+    tabbed: merged,
+    tabAttached: Boolean(tabPatch),
+  })
+  // 空工作区已经有需求澄清引导卡，不再渲染一个“还没有开发流程 + 新建开发流程”的空面板，
+  // 否则两个入口表达同一件事，用户反而不知道该点哪个。
+  const flowList = merged
+    ? h(FlowList, {
       items: list,
       selectedId,
       sessionStates,
@@ -1173,7 +1153,29 @@ export function HomeView(props) {
       onOpenReport,
       onFixTitles,
       fixingTitles,
-    }),
+      tabbed: true,
+    })
+    : null
+  return h('div', { ref: wrapRef, style: { position: 'relative', display: 'flex', flexDirection: 'column', gap: T.gap.sm } },
+    // 选中目标是当前 tab 且贴着面板时，用一小段卡片底色盖住分隔线，让 tab 和内容真正连在一起
+    tabPatch
+      ? h('span', {
+        'aria-hidden': true,
+        style: {
+          position: 'absolute',
+          left: tabPatch.left,
+          top: tabPatch.top,
+          width: tabPatch.width,
+          height: 2,
+          background: T.brandSoft,
+          zIndex: 5,
+          pointerEvents: 'none',
+        },
+      })
+      : null,
+    merged
+      ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 0 } }, projectBar, flowList)
+      : h('div', { style: { display: 'flex', flexDirection: 'column', gap: T.gap.sm } }, projectBar, clarifications, flowList),
     h(ParallelSection, { parallel, error: parallelError }),
   )
 }
