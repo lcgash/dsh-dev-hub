@@ -170,7 +170,7 @@ export function suggestNextSteps(item, session) {
           ? '测试通过后代码/诉求又有变化，旧结果已过期；重跑后才会进入评审'
           : (isAnalysis
             ? `分析流程用本机自测作为只读证据（当前${summary.localTestLabel}）；通过即结束，不进入提交`
-            : `本机自测当前${summary.localTestLabel}，跑通后才能点「继续推进」开始评审`),
+            : `本机自测当前${summary.localTestLabel}；评审通过后也会要求重跑，这里可以先跑`),
       )
     } else if (isAnalysis) {
       // 分析流程本机自测通过即完成（阶段会自动到 done）；不再建议评审/环境测试/提交

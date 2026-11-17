@@ -14,12 +14,12 @@ import { suggestModules } from './modules.mjs'
  */
 
 /** 目录级跳过：这些东西里不可能有本次要改的源码。 */
-const SKIP_DIRS = new Set([
+export const SKIP_DIRS = new Set([
   'node_modules', '.git', 'target', 'build', 'dist', 'out', 'coverage', '.next',
   'vendor', '.idea', '.vscode', '.gradle', '__pycache__', '.venv', 'venv', '.dev-hub',
 ])
 
-const TEXT_EXTS = new Set([
+export const TEXT_EXTS = new Set([
   '.java', '.kt', '.kts', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.py', '.go', '.rs',
   '.xml', '.yml', '.yaml', '.json', '.md', '.sql', '.sh', '.properties', '.gradle', '.toml', '.txt',
 ])
@@ -82,12 +82,12 @@ export function extractTokens(description, { max = DEFAULT_LIMITS.maxTokens } = 
   return out
 }
 
-function isTextFile(name) {
+export function isTextFile(name) {
   const index = name.lastIndexOf('.')
   return index > 0 && TEXT_EXTS.has(name.slice(index).toLowerCase())
 }
 
-async function walkFiles(root, limits, state) {
+export async function walkFiles(root, limits, state) {
   const out = []
   async function visit(dir, depth) {
     if (depth > limits.maxDepth || out.length >= limits.maxScan || state.truncated) return
@@ -206,9 +206,11 @@ export async function reconRepo(repo, description, options = {}) {
   if (!tokens.length) return result
 
   const modules = await suggestModules(repo, { limit: 200 })
-  const candidates = await walkFiles(repo, limits, state)
-  result.scanned = candidates.length
-  result.truncated = state.truncated
+  // 有索引时只对候选文件做二次扫描（读文件拿命中行），避免每次全仓 walk+read。
+  const provided = Array.isArray(options.fileList) && options.fileList.length ? options.fileList : null
+  const candidates = provided ?? await walkFiles(repo, limits, state)
+  result.scanned = Number(options.scannedTotal) || candidates.length
+  result.truncated = provided ? false : state.truncated
 
   // 第一遍：记录每个文件命中了哪些检索词（用于文档频率过滤），以及命中行
   const perFile = []

@@ -2449,7 +2449,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         : h('div', { style: sectionBox },
           h('div', { style: styles.sectionTitle }, '还没有开始评审'),
           h('div', { style: { ...styles.sectionHint, marginTop: 4 } },
-            '开发阶段完成、本机自测通过后，点顶栏「继续推进」即自动开始评审（审核员按默认配置产生）。审核员只读，不会改代码；他们给的结论会写进台账与开发报告。')),
+            '开发任务完成后，点顶栏「继续推进」即自动开始评审（审核员按默认配置产生）。审核员只读，不会改代码；他们给的结论会写进台账与开发报告。')),
       view.history.length
         ? h('details', { style: sectionBox },
           h('summary', { style: { cursor: 'pointer', fontSize: T.font.sm, fontWeight: 600 } }, `历史轮次（${view.history.length}）`),
@@ -2480,7 +2480,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         ? { label: '跑本机自测', hint: '分析流程只读：跑通本机自测作为结论证据，通过后流程直接完成（不跑环境测试、不提交）', action: () => runTest('local'), command: tests.local?.command }
         : { label: '已完成', hint: '分析流程只读：结论产出即结束，不建 worktree、不产生提交', action: () => {}, command: null })
       : !localValid
-        ? { label: '重跑本机自测', hint: tests.local?.stale ? '测试通过后代码/诉求又有变化：旧结果已过期，重跑后才会进入评审' : '跑通后进入「独立评审」；评审通过才允许跑环境测试', action: () => runTest('local'), command: tests.local?.command }
+        ? { label: '重跑本机自测', hint: tests.local?.stale ? '测试通过后代码/诉求又有变化：旧结果已过期，请重跑' : '评审通过后也会要求重跑本机自测；这里可以先跑，用于验证改动', action: () => runTest('local'), command: tests.local?.command }
         : !reviewAllowed
           ? {
             // 评审阶段的主操作也是「继续推进」：与顶栏同一个自动派发入口，不是手工派发按钮
@@ -2864,8 +2864,13 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         let sentToSession = false
         const targetSession = draft.session?.id
         if ((body.action === 'session' || body.action === 'both') && targetSession) {
-          const sent = await sendToSession(ctx, targetSession, body.sessionMessage || message)
-          sentToSession = Boolean(sent?.sent)
+          // 会话正在跑时不要排队再塞一条：排队会让本轮更难结束，用户会以为“推进没反应”
+          if (session?.running) {
+            setNotice('开发会话正在工作：等当前这步结束再推进；这次没有把消息排队发给会话')
+          } else {
+            const sent = await sendToSession(ctx, targetSession, body.sessionMessage || message)
+            sentToSession = Boolean(sent?.sent)
+          }
         }
         const parts = [body.reply]
         if (body.applied?.length) parts.push(`已更新台账：${body.applied.join('、')}`)
@@ -3508,7 +3513,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           },
         },
           h(Spinner, { size: 12, tone: 'accent', title: '开发会话正在工作' }),
-          h('span', null, '开发中：开发会话正在工作，完成后到「测试与提交」跑本机自测'),
+          h('span', null, '开发中：开发会话正在工作；完成后点顶栏「继续推进」开始独立评审'),
         )
         : null,
       stage === 'review'

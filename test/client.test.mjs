@@ -1316,7 +1316,7 @@ test('开发中 loading：详情/阶段条/启动按钮/抽屉的源码级回归
 
   // 详情标题行 + 「流程」卡 loading 提示
   assert.match(index, /正在开发…/)
-  assert.match(index, /开发中：开发会话正在工作，完成后到「测试与提交」跑本机自测/)
+  assert.match(index, /开发中：开发会话正在工作；完成后点顶栏「继续推进」开始独立评审/)
 
   // 开启/继续开发会话：本地 launchBusy 包住 onLaunch，finally 复位，失败也复位
   assert.match(index, /const \[launchBusy, setLaunchBusy\] = useState\(null\)/)
@@ -1542,7 +1542,7 @@ test('新建虚拟库弹窗：勾选已登记代码库 + 额外路径，>=2 校�
 test('虚拟库卡支持编辑成员：✎ 入口 + 编辑弹窗预填现有成员', async () => {
   const { readFile } = await import('node:fs/promises')
   const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
-  assert.match(home, /function WorkspaceCard\(\{ workspace, active, busy, onSelect, onEdit, onRemove \}\)/)
+  assert.match(home, /function WorkspaceCard\(\{ workspace, active, busy, onSelect, onEdit, onRemove[^}]*\}\)/)
   assert.match(home, /title: '编辑这个虚拟库：改名、增删成员库（成员库平权，任意成员都可移除\/替换）'/)
   assert.match(home, /onEdit\?\.\(workspace\)/)
   assert.match(home, /onEdit: onEditWorkspace/)

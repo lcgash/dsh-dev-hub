@@ -102,12 +102,15 @@ export function sessionState(ctx, sessionId, { now = Date.now() } = {}) {
     if (events[index]?.type === 'turn/start') lastStartIndex = index
     else if (events[index]?.type === 'turn/end') lastEndIndex = index
   }
-  const running = lastStartIndex >= 0 && lastStartIndex > lastEndIndex
+  // 没有活 agent 的会话不可能再产出事件：DSH 重启/进程被清理后，事件里可能残留
+  // 未闭合的 turn/start，若只看事件会让流程永远显示「开发中」、顶栏按钮一直禁用。
+  const running = Boolean(agent) && lastStartIndex >= 0 && lastStartIndex > lastEndIndex
   const idleSeconds = lastEventAt ? Math.max(0, Math.round((now - lastEventAt) / 1000)) : null
 
   return {
     sessionId: id,
     alive: Boolean(agent) || Boolean(session),
+    agentAlive: Boolean(agent),
     loaded: true,
     running,
     turns,

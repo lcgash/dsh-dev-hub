@@ -156,3 +156,18 @@ test('回合结束：turn/end 之后即使还有零散事件也不算在跑', as
   assert.equal(state.running, false)
   assert.equal(state.lastStage, 'ended')
 })
+
+test('sessionState：会话还在但 agent 已不在（重启/清理）→ 不算在跑，不能把流程永远卡在开发中', () => {
+  const ctx = fakeCtx({
+    agent: null,
+    events: [
+      { type: 'turn/start', time: t(0), data: {} },
+      { type: 'tool/call', time: t(1), data: { name: 'job_output' } },
+    ],
+  })
+  const state = sessionState(ctx, 's1', { now: t(2) })
+  assert.equal(state.alive, true, '会话对象还在：仍可读历史/绑定关系')
+  assert.equal(state.agentAlive, false)
+  assert.equal(state.running, false, '没有活 agent 就不该显示“正在开发”，否则「继续推进」永远被禁用')
+  assert.equal(state.lastStage, 'ended')
+})
