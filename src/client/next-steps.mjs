@@ -158,6 +158,10 @@ export function suggestNextSteps(item, session) {
       push('start-review', '重试评审', '有审核员未返回结论：点它重试派发（流程标记为待处理，不能当成通过）')
     } else if (review.status === 'pending') {
       push('review', '独立评审进行中', `第 ${review.round} 轮：${review.passed}/${review.total} 位已返回，等结论（不重复派发）`)
+    } else if (review.status === 'idle' && !isAnalysis && summary.stage === 'develop'
+      && summary.tasks.total > 0 && summary.tasks.done >= summary.tasks.total) {
+      // 开发任务完成即评审（评审在测试验证之前）；不能等本机自测，否则永远卡在开发中
+      push('start-review', '开始独立评审', '开发任务已完成：点它自动派 1~3 位审核员复核改动与证据；评审通过后再跑本机/环境测试')
     } else if (!localTestValid) {
       push(
         'local-test',

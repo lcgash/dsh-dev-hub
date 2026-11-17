@@ -511,13 +511,19 @@ export function reviewAdvancePlan(item) {
       hint: `上次评审异常：${reviewFailureHint(view)}（重试评审或重置本轮）`,
     }
   }
-  if (view.status === 'idle' && stage === 'review') {
+  // 开发任务全部完成就可以开始评审：评审在测试验证之前（阶段条顺序），
+  // 不能因为「还没跑本机自测」把流程永远卡在开发中、点「继续推进」却只往会话里发消息。
+  const tasks = Array.isArray(item?.tasks) ? item.tasks : []
+  const devDone = tasks.length > 0 && tasks.every((task) => Boolean(task?.done))
+  if (view.status === 'idle' && (stage === 'review' || (stage === 'develop' && devDone))) {
     return {
       action: 'dispatch',
       status: view.status,
       label: '开始独立评审',
       disabled: false,
-      hint: '开始独立评审：自动派 1~3 位审核员复核改动与证据',
+      hint: stage === 'develop'
+        ? '开发任务已完成：开始独立评审（审核员复核改动与证据）；评审通过后再跑本机/环境测试'
+        : '开始独立评审：自动派 1~3 位审核员复核改动与证据',
     }
   }
   if (view.status === 'passed' && stage === 'verify') {

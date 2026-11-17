@@ -199,8 +199,17 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
   assert.equal(dispatch.label, '开始独立评审')
   assert.match(dispatch.hint, /开始独立评审/)
 
-  // 不在评审这一步：仍走原来的继续推进开发会话
-  assert.equal(reviewAdvancePlan(item({ stage: 'develop', review: null })).action, 'continue')
+  // 开发任务已完成：即使还没跑本机自测，也能直接开始评审（评审在测试验证之前）
+  const devDone = reviewAdvancePlan(item({ stage: 'develop', review: null }))
+  assert.equal(devDone.action, 'dispatch')
+  assert.match(devDone.hint, /开发任务已完成/)
+
+  // 任务还没做完：仍走原来的继续推进开发会话
+  assert.equal(reviewAdvancePlan(item({
+    stage: 'develop',
+    review: null,
+    tasks: [{ text: '实现评审模型', done: false }],
+  })).action, 'continue')
 
   // 已有 pending：不重复派发，按钮禁用并显示「评审中」
   const waiting = reviewAdvancePlan(item({ review: normalizeReview({ round: 1, reviewers: [reviewer('reviewer-1', 'pending')] }) }))

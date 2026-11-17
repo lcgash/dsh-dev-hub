@@ -3400,8 +3400,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                 if (advance.action === 'rework') { runLaunch('rework', reworkFromReview); return }
                 if (advance.action === 'verify') { setTab('test'); setNotice('评审已通过：去「测试与提交」跑环境测试并提交'); return }
                 if (advance.action === 'dispatch' || advance.action === 'retry') {
-                  if (draft.session?.id) runLaunch('continue', continueDev)
-                  else runLaunch('review', startReview)
+                  // 评审是台账动作，不是“给会话再发一句话”：直接派审核员，标签也显示评审中
+                  runLaunch('review', startReview)
                   return
                 }
                 if (advance.action === 'wait') return
@@ -4951,18 +4951,16 @@ function DevHubPage({ ctx }) {
         },
       }, h(HomeGlyph, { size: 15 })),
       h(Segmented, {
-        value: tab,
-        // 「新建流程」页签是明确的“再开一个”：先落新对话，不能恢复上一段的进行中对话
-        // （否则上一段的扫描/澄清结果会和这一次混在同一段对话里）。
+        // 聊天页属于“需求澄清”流程内部，不再单独占一个顶层页签；
+        // 在聊天页时让「需求澄清」保持选中，点击它回草稿工作区。
+        value: tab === 'chat' ? 'clarify' : tab,
         onChange: (next) => {
           if (next === tab) return
-          if (next === 'chat') { openChat(null, null, { fresh: true }); return }
           setTab(next)
         },
         options: [
           { value: 'flows', label: '流程' },
           { value: 'clarify', label: '需求澄清' },
-          { value: 'chat', label: '新建流程' },
           { value: 'skills', label: '技能' },
         ],
       }),

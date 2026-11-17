@@ -41,12 +41,22 @@ export function deriveAttention(item, { running = false, pendingQuestions = 0, p
   if (review.status === 'error') return { kind: 'review-error', label: '评审异常待处理', tone: 'warn' }
   if (review.status === 'pending') return { kind: 'review-pending', label: '独立评审进行中', tone: 'neutral' }
   if (local === 'failed') return { kind: 'test-failed', label: '本机自测失败', tone: 'danger' }
+  // 开发完成先评审（评审在测试验证之前）；分析流程例外：本机自测通过即结束
+  const intent = item?.workflow?.intent
+  if (review.status === 'idle' && stage === 'develop' && intent !== 'analysis') {
+    const tasks = Array.isArray(item?.tasks) ? item.tasks : []
+    const allDone = tasks.length > 0 && tasks.every((task) => Boolean(task?.done))
+    if (allDone) return { kind: 'ready-review', label: '开发已完成：点「继续推进」开始评审', tone: 'accent' }
+  }
   if (local !== 'passed') {
     // 只有开发任务全部完成、会话也空闲了，才真的可以跑本机自测；
     // 计划/开发中的流程不提示测试（否则用户每步都看到"可以跑本机自测"）。
     const tasks = Array.isArray(item?.tasks) ? item.tasks : []
     const allDone = tasks.length > 0 && tasks.every((task) => Boolean(task?.done))
-    if (stage === 'develop' && allDone) return { kind: 'ready-test', label: '可以跑本机自测', tone: 'accent' }
+    // 评审通过后（verify）也要提示跑本机自测；开发阶段则要求任务全部完成，避免半路误报
+    if ((stage === 'develop' && allDone) || (stage === 'verify' && review.status === 'passed')) {
+      return { kind: 'ready-test', label: '可以跑本机自测', tone: 'accent' }
+    }
     return null
   }
   if (review.status === 'idle') return { kind: 'ready-review', label: '继续推进即开始评审', tone: 'accent' }

@@ -612,7 +612,7 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove }) 
 }
 
 /** 顶部项目条：当前库 + 成员 + 全局动作；下方是虚拟库/代码库卡片，点卡片即切换。 */
-function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchingRepo, onRefresh, onSelectRepo, onAddRepo, onScan, onNewFlow, onRemoveRepo, onSelectWorkspace, onEditWorkspace, onRemoveWorkspace, onNewWorkspace }) {
+function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchingRepo, onRefresh, onSelectRepo, onAddRepo, onScan, onNewFlow, onRemoveRepo, onSelectWorkspace, onEditWorkspace, onRemoveWorkspace, onNewWorkspace, tabbed = false }) {
   const members = workspaceMembersView(activeWorkspace)
   const memberCount = activeWorkspace ? members.length : 0
   const localPath = activeWorkspace?.path ?? activeWorkspace?.localPath ?? null
@@ -627,7 +627,23 @@ function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchin
   }
   const targetCount = workspaceViews.length + (repos ?? []).length
   return h('div', {
-    style: { ...styles.cardFlat, display: 'flex', flexDirection: 'column', gap: T.gap.xs },
+    style: {
+      ...styles.cardFlat,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: T.gap.xs,
+      // 和下方「开发流程」拼成一块：去掉底边/下圆角，选中卡才能像 tab 一样压住分隔线
+      ...(tabbed
+        ? {
+            paddingBottom: 0,
+            borderBottom: 'none',
+            borderBottomLeftRadius: 0,
+            borderBottomRightRadius: 0,
+            position: 'relative',
+            zIndex: 2,
+          }
+        : {}),
+    },
   },
     // 这一块是「项目管理」：管理代码库/虚拟库，选中的目标决定下面的流程列表
     h('div', { style: { display: 'flex', alignItems: 'center', gap: T.gap.xs, flexWrap: 'wrap' } },
@@ -667,7 +683,7 @@ function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchin
       h('div', { style: styles.spacer }),
       h(Button, { style: miniButton, onClick: onScan, children: '扫描文档' }),
       h(Button, { style: miniButton, onClick: onRefresh, children: '刷新' }),
-      h(Button, { primary: true, onClick: onNewFlow, children: '新建流程' }),
+      h(Button, { primary: true, onClick: onNewFlow, children: '开始需求澄清' }),
     ),
     // 虚拟库与代码库放进同一个卡片网格，用 ▣ / ◈ 图标和卡内信息区分，不再分两块渲染
     workspaceViews.length || (repos ?? []).length
@@ -858,9 +874,20 @@ function FlowRow({ item, session, selected, last, onClick, onOpenReport }) {
   )
 }
 
-function FlowList({ items, selectedId, sessionStates, onOpenItem, onRefresh, onNewFlow, onOpenReport, onFixTitles, fixingTitles = false }) {
+function FlowList({ items, selectedId, sessionStates, onOpenItem, onRefresh, onNewFlow, onOpenReport, onFixTitles, fixingTitles = false, tabbed = false }) {
   const weakTitleCount = items.filter((entry) => entry?.titleNeedsWork).length
-  return h('div', { id: 'devhub-flow-list', style: { ...styles.cardFlat, padding: 0, overflow: 'hidden' } },
+  return h('div', {
+    id: 'devhub-flow-list',
+    style: {
+      ...styles.cardFlat,
+      padding: 0,
+      overflow: 'hidden',
+      // 与上方项目管理卡无缝相接：上圆角去掉，顶边线就是 tab 栏的分隔线
+      ...(tabbed
+        ? { borderTopLeftRadius: 0, borderTopRightRadius: 0, position: 'relative', zIndex: 1 }
+        : {}),
+    },
+  },
     h('div', { style: { display: 'flex', alignItems: 'center', gap: T.gap.xs, flexWrap: 'wrap', padding: '10px 16px' } },
       h('span', { style: styles.sectionTitle }, '开发流程'),
       h(Tag, { tone: 'neutral' }, String(items.length)),

@@ -84,14 +84,28 @@ test('开发中不误报：任务没做完 / 没有任务 / 不在 develop 阶�
   )
 })
 
-test('ready-test：已绑定 + develop 阶段 + 任务非空且全部完成 + 会话空闲', () => {
+test('开发完成先评审：任务全部完成 + develop + 会话空闲 → ready-review（不是先跑测试）', () => {
   const ready = bound({ tasks: [{ text: 'a', done: true }, { text: 'b', done: true }] })
   assert.deepEqual(
     deriveAttention(ready, { running: false }),
-    { kind: 'ready-test', label: '可以跑本机自测', tone: 'accent' },
+    { kind: 'ready-review', label: '开发已完成：点「继续推进」开始评审', tone: 'accent' },
   )
   // 不传 facts 时默认 running=false，结论一致
-  assert.equal(deriveAttention(ready).kind, 'ready-test')
+  assert.equal(deriveAttention(ready).kind, 'ready-review')
+
+  // 分析流程例外：本机自测通过即结束，开发完成仍先提示跑本机自测
+  const analysis = bound({
+    workflow: { stage: 'develop', intent: 'analysis', tests: {} },
+    tasks: [{ text: 'a', done: true }],
+  })
+  assert.deepEqual(deriveAttention(analysis), { kind: 'ready-test', label: '可以跑本机自测', tone: 'accent' })
+
+  // 评审已通过、还没跑本机自测：此时才提示本机自测
+  const reviewed = bound({
+    workflow: { stage: 'verify', review: { reviewers: [{ status: 'passed', verdict: 'pass' }] }, tests: {} },
+    tasks: [{ text: 'a', done: true }],
+  })
+  assert.deepEqual(deriveAttention(reviewed), { kind: 'ready-test', label: '可以跑本机自测', tone: 'accent' })
 })
 
 test('ready-review / ready-env / ready-submit：评审 → 环境测试 → 提交按阶段递进', () => {

@@ -2048,3 +2048,13 @@ test('需求澄清工作区：独立页签 + 空工作区首屏引导', async ()
   assert.match(home, /从一次需求澄清开始/)
   assert.match(home, /开始需求澄清/)
 })
+
+test('需求澄清工作区取代「新建流程」顶层页签：聊天页归属澄清页签', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.doesNotMatch(index, /value: 'chat', label: '新建流程'/)
+  assert.match(index, /value: tab === 'chat' \? 'clarify' : tab/)
+  assert.match(index, /value: 'clarify', label: '需求澄清'/)
+  const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
+  assert.match(home, /children: '开始需求澄清'/)
+})
