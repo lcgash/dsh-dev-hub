@@ -685,7 +685,8 @@ function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchin
       h('div', { style: styles.spacer }),
       h(Button, { style: miniButton, onClick: onScan, children: '扫描文档' }),
       h(Button, { style: miniButton, onClick: onRefresh, children: '刷新' }),
-      h(Button, { primary: true, onClick: onNewFlow, children: '开始需求澄清' }),
+      // 空工作区由下方引导卡提供唯一的“开始需求澄清”，避免同一屏两个相同主按钮
+      onNewFlow ? h(Button, { primary: true, onClick: onNewFlow, children: '开始需求澄清' }) : null,
     ),
     // 虚拟库与代码库放进同一个卡片网格，用 ▣ / ◈ 图标和卡内信息区分，不再分两块渲染
     workspaceViews.length || (repos ?? []).length
@@ -1129,7 +1130,8 @@ export function HomeView(props) {
     switchingRepo,
     onAddRepo,
     onScan,
-    onNewFlow,
+    // 空工作区只保留引导卡上的入口，顶栏不再重复
+    onNewFlow: merged ? onNewFlow : null,
     onRemoveRepo,
     workspaces: state?.workspaces,
     activeWorkspace: state?.workspace,
