@@ -1,7 +1,7 @@
 /**
- * 工作站对话的本地留存（按代码库分区，支持多段历史对话）。
+ * 工作站对话的本地留存（按项目分区，支持多段历史对话）。
  *
- * 结构（每个代码库一份）：
+ * 结构（每个项目一份）：
  * ```
  * {
  *   version: 2,
@@ -60,10 +60,11 @@ function clampMessage(message) {
   if (copy.recon && typeof copy.recon === 'object') {
     copy.recon = {
       ...copy.recon,
-      files: (copy.recon.files ?? []).slice(0, 20).map((file) => ({
+      files: (copy.recon.files ?? []).slice(0, 120).map((file) => ({
         path: file?.path,
         why: file?.why,
         confidence: file?.confidence,
+        source: file?.source,
         score: file?.score,
         matches: (file?.matches ?? []).slice(0, 5),
       })),
@@ -149,7 +150,7 @@ function normalizeStore(raw) {
   return null
 }
 
-/** 读取某代码库的对话集合（内存优先，其次 localStorage；老 key 自动迁移）。 */
+/** 读取某项目的对话集合（内存优先，其次 localStorage；老 key 自动迁移）。 */
 export function loadStore(repoPath, scope = 'new') {
   const key = chatKey(repoPath, scope)
   if (MEMORY.has(key)) return MEMORY.get(key)
@@ -350,7 +351,7 @@ export function deleteChat(repoPath, id, scope = 'new') {
   return store.activeId ?? null
 }
 
-/** 清空某代码库的全部对话留存（调试/重置用）。 */
+/** 清空某项目的全部对话留存（调试/重置用）。 */
 export function clearChat(repoPath, scope = 'new') {
   const key = chatKey(repoPath, scope)
   MEMORY.delete(key)

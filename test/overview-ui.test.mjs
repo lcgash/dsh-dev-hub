@@ -1,5 +1,5 @@
 /**
- * 「进行中」抽屉的跨目标 UI：多个代码库/虚拟库的流程要能一起看到，点击时切对目标。
+ * 「进行中」抽屉的跨目标 UI：多个项目/多库项目的流程要能一起看到，点击时切对目标。
  */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
@@ -14,7 +14,7 @@ test('头部/抽屉接入 /overview，并带跨目标切换与「当前」标记
   assert.match(source, /const \[overview, setOverview\] = useState\(null\)/)
   assert.match(source, /function drawerTargetOf\(/)
   assert.match(source, /export function FlowDrawer\(\{ overview, fallbackState/)
-  assert.match(source, /全部开发目标/)
+  assert.match(source, /全部项目/)
   assert.match(source, /个目标 · \$\{inProgress\} 个进行中/)
   assert.match(source, /target\.current \? 'accent' : 'neutral'/)
   assert.match(source, /export function switchBodyForTarget\(/)
@@ -25,7 +25,7 @@ test('头部/抽屉接入 /overview，并带跨目标切换与「当前」标记
   assert.match(source, /overview\?\.targetCount \?\?/)
 })
 
-test('switchBodyForTarget：虚拟库走 workspaceId，单库走 repoPath + 成员名', async () => {
+test('switchBodyForTarget：多库项目走 workspaceId，单库走 repoPath + 成员名', async () => {
   const { switchBodyForTarget } = await import('../src/client/index.mjs')
   assert.deepEqual(
     switchBodyForTarget({ kind: 'workspace', workspaceId: 'ws-1', path: '/p/a' }, '张三'),
@@ -54,7 +54,7 @@ test('FlowDrawer 渲染：跨目标条目、进行中标记、当前目标徽标
         target: { key: 'repo:/p/a', kind: 'repo', name: 'repo-a', path: '/p/a', workspaceId: null, member: '张三', current: true },
       },
       {
-        id: 'flow-b', title: '虚拟库的流程', status: 'verifying', stage: 'verify',
+        id: 'flow-b', title: '多库项目的流程', status: 'verifying', stage: 'verify',
         running: false, attention: { kind: 'ready-env', label: '可以跑环境测试', tone: 'accent' }, doneCount: 2, taskCount: 2,
         target: { key: 'workspace:ws-1', kind: 'workspace', name: '前后端组合', path: '/p/a', workspaceId: 'ws-1', member: '张三', current: false },
       },
@@ -71,7 +71,7 @@ test('FlowDrawer 渲染：跨目标条目、进行中标记、当前目标徽标
     onPick() {},
     onClose() {},
   }))
-  assert.match(html, /全部开发目标/)
+  assert.match(html, /全部项目/)
   assert.match(html, /2 个目标 · 3 个进行中/)
   assert.match(html, /repo-a/)
   assert.match(html, /前后端组合/)

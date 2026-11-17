@@ -130,7 +130,7 @@ function orderedTemplates(resource) {
     return compiled
   })
   // 字面量更长的模板更具体；同等长度时占位符更少者优先。
-  // 避免 `{value1} 个成员库` 抢先吞掉 `虚拟库「X」：N 个成员库` 这种长句。
+  // 避免 `{value1} 个成员库` 抢先吞掉 `多库项目「X」：N 个成员库` 这种长句。
   ordered.sort((a, b) => {
     const literal = (sourceText) => sourceText.replace(/\{[A-Za-z][A-Za-z0-9_]*\}/g, '').length
     return (literal(b.source) - literal(a.source)) || (a.names.length - b.names.length)

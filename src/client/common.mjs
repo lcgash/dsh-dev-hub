@@ -623,9 +623,9 @@ export function Mono({ children, style }) {
 }
 
 /**
- * 当前「开发目标」徽标：流程页 / 技能页的头部都靠它回答“现在管的是哪个库”。
+ * 当前「项目」徽标：流程页 / 技能页的头部都靠它回答“现在管的是哪个库”。
  *
- * 虚拟库（多代码库组合）没有主库：台账/规范/上下文/证据都在本机独立目录
+ * 多库项目（多库项目）没有主库：台账/规范/上下文/证据都在本机独立目录
  * `~/.dev-hub/workspaces/<id>/`，成员库只是一个平权的组合。
  *
  * 只做展示、不取数：调用方把 `/state` 返回的 repo / workspace 传进来即可。
@@ -637,10 +637,10 @@ export function RepoScopeBadge({ repo = null, workspace = null, onClick = null, 
   const clickable = typeof onClick === 'function'
   const truncate = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
   const title = workspace
-    ? `虚拟库「${workspace.name ?? '未命名'}」· ${repos.length} 个成员库\n本机台账 ${localPath || '—'}\n台账/规范/上下文/证据都写在本机，不写任何成员库`
+    ? `多库项目「${workspace.name ?? '未命名'}」· ${repos.length} 个成员库\n本机台账 ${localPath || '—'}\n台账/规范/上下文/证据都写在本机，不写任何成员库`
     : repo
-      ? `当前代码库：${repo.name ?? '未命名'}\n${repo.path ?? '—'}`
-      : '还没有选择代码库：到「流程」页选择或新增'
+      ? `当前项目：${repo.name ?? '未命名'}\n${repo.path ?? '—'}`
+      : '还没有选择项目：到「流程」页选择或新增'
   return h('div', {
     ...(clickable ? { role: 'button', tabIndex: 0 } : {}),
     title,
@@ -671,20 +671,20 @@ export function RepoScopeBadge({ repo = null, workspace = null, onClick = null, 
   },
     workspace
       ? [
-        h(Tag, { key: 'kind', tone: 'accent' }, '虚拟库'),
+        h(Tag, { key: 'kind', tone: 'accent' }, '多库项目'),
         h('span', { key: 'name', style: { fontWeight: 600, color: T.text, maxWidth: 180, flex: '0 1 auto', ...truncate } }, workspace.name ?? '未命名'),
-        h(Tag, { key: 'count', tone: 'neutral' }, `${repos.length} 库`),
+        h(Tag, { key: 'count', tone: 'neutral' }, `${repos.length} 个代码库`),
         h('span', { key: 'local', style: { ...styles.mono, color: T.text4, maxWidth: 220, minWidth: 0, ...truncate } }, '本机台账'),
       ]
       : repo
         ? [
-          h(Tag, { key: 'kind', tone: 'neutral' }, '代码库'),
+          h(Tag, { key: 'kind', tone: 'neutral' }, '项目'),
           h('span', { key: 'name', style: { fontWeight: 600, color: T.text, maxWidth: 180, flex: '0 0 auto', ...truncate } }, repo.name ?? repo.path ?? '未命名'),
           h('span', { key: 'dot', style: { color: T.text4, flex: '0 0 auto' } }, '·'),
           // 全路径放 tooltip；这里只留定位信息（目录名与仓库名相同时只显示父目录，避免重复）
           h('span', { key: 'path', style: { ...styles.mono, color: T.text4, minWidth: 0, flex: '1 1 auto', ...truncate } }, shortRepoPath(repo.path, repo.name)),
         ]
-        : [h(Tag, { key: 'kind', tone: 'warn' }, '未选择代码库')],
+        : [h(Tag, { key: 'kind', tone: 'warn' }, '未选择项目')],
   )
 }
 
@@ -746,7 +746,7 @@ export function fmtTime(value) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`
 }
 
-/** 路径最后一段目录名（虚拟库成员库 label 的兜底口径）。 */
+/** 路径最后一段目录名（多库项目成员库 label 的兜底口径）。 */
 export function repoBaseName(path) {
   const value = String(path ?? '').replace(/[\\/]+$/, '')
   if (!value) return ''
@@ -754,10 +754,10 @@ export function repoBaseName(path) {
 }
 
 /**
- * scope 词条：`module:xxx` 表示模块名，`<成员库>:<仓库内路径>` 表示虚拟库里的成员库范围，
+ * scope 词条：`module:xxx` 表示模块名，`<成员库>:<仓库内路径>` 表示多库项目里的成员库范围，
  * 其余按裸路径展示。
  *
- * 虚拟库的跨库 scope 用 `web:src/x` 存（Host 扫描返回的格式），界面上显示成
+ * 多库项目的跨库 scope 用 `web:src/x` 存（Host 扫描返回的格式），界面上显示成
  * `web · src/x`，比冒号更像"某个库里的某个路径"，也不会和 `module:` 混在一起。
  * scope 路径都是仓库相对路径，因此不把单字母前缀（Windows 盘符）当特例。
  */

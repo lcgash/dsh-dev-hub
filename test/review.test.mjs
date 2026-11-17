@@ -249,11 +249,58 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
   assert.equal(errored.disabled, false)
   assert.match(errored.hint, /provider down/)
 
-  // 评审通过且阶段到 verify：顶栏直接去测试验证
-  assert.equal(reviewAdvancePlan(item({
+  // 评审通过且阶段到 verify：顶栏直接推进“下一步测试”，不是只切页签
+  const verify = reviewAdvancePlan(item({
     stage: 'verify',
     review: normalizeReview({ reviewers: [reviewer('reviewer-1', 'passed')] }),
-  })).action, 'verify')
+  }))
+  assert.equal(verify.action, 'verify')
+  assert.equal(verify.phase, 'environment', '本机自测已通过：下一步是环境测试')
+  assert.equal(verify.label, '跑环境测试')
+
+  const noLocal = reviewAdvancePlan(item({
+    workflow: {
+      stage: 'verify',
+      plan: { summary: '计划', steps: ['a'], estimate: { size: 'S', days: 1 } },
+      tests: { local: { status: 'not_run' }, environment: { status: 'not_run' } },
+      review: normalizeReview({ reviewers: [reviewer('reviewer-1', 'passed')] }),
+    },
+  }))
+  assert.equal(noLocal.phase, 'local')
+  assert.equal(noLocal.label, '跑本机自测')
+
+  const skippedLocal = reviewAdvancePlan(item({
+    workflow: {
+      stage: 'verify',
+      plan: { summary: '计划', steps: ['a'], estimate: { size: 'S', days: 1 } },
+      tests: { local: { status: 'skipped' }, environment: { status: 'not_run' } },
+      review: normalizeReview({ reviewers: [reviewer('reviewer-1', 'passed')] }),
+    },
+  }))
+  assert.equal(skippedLocal.phase, 'environment', '本机自测已跳过：下一步直接环境测试')
+
+  const skippedAll = reviewAdvancePlan(item({
+    workflow: {
+      stage: 'verify',
+      plan: { summary: '计划', steps: ['a'], estimate: { size: 'S', days: 1 } },
+      tests: { local: { status: 'skipped' }, environment: { status: 'skipped' } },
+      review: normalizeReview({ reviewers: [reviewer('reviewer-1', 'passed')] }),
+    },
+  }))
+  assert.equal(skippedAll.phase, 'submit', '测试都跳过后：按钮去提交')
+
+  const bothPassed = reviewAdvancePlan(item({
+    workflow: {
+      stage: 'submit',
+      plan: { summary: '计划', steps: ['a'], estimate: { size: 'S', days: 1 } },
+      tests: { local: { status: 'passed' }, environment: { status: 'passed' } },
+      review: normalizeReview({ reviewers: [reviewer('reviewer-1', 'passed')] }),
+    },
+  }))
+  assert.equal(bothPassed.action, 'verify')
+  assert.equal(bothPassed.phase, 'submit')
+  assert.equal(bothPassed.label, '提交并推送')
+
   assert.equal(reviewAdvancePlan(item({ review: normalizeReview({ reviewers: [reviewer('reviewer-1', 'passed')] }) })).action, 'continue')
 
   // 失败原因可单独取用（按钮旁内联提示复用同一口径）

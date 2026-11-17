@@ -98,7 +98,7 @@ function groupConstraints(constraints, view) {
  */
 export function SkillsPanel({ initialView = null, initialRepo = null, initialWorkspace = null } = {}) {
   const [repo, setRepo] = useState(initialRepo)
-  // 虚拟库（多代码库组合）：规范技能写在虚拟库本机独立目录，成员库不共享；页面顶部要说清楚。
+  // 多库项目（多库项目）：规范技能写在多库项目本机独立目录，成员库不共享；页面顶部要说清楚。
   const [workspace, setWorkspace] = useState(initialWorkspace)
   const [view, setView] = useState(initialView)
   const [loading, setLoading] = useState(!initialView)
@@ -281,17 +281,17 @@ export function SkillsPanel({ initialView = null, initialRepo = null, initialWor
           h('span', {
             style: { fontSize: T.font.md, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
             title: workspace
-              ? `虚拟库「${workspace.name ?? '未命名'}」：${workspaceRepos.length} 个代码库；规范技能只写入本机 ${workspace.path ?? workspace.localPath ?? '—'}`
+              ? `多库项目「${workspace.name ?? '未命名'}」：${workspaceRepos.length} 个代码库；规范技能只写入本机 ${workspace.path ?? workspace.localPath ?? '—'}`
               : repo?.path ?? '',
           }, workspace
-            ? `虚拟库 · ${workspace.name ?? '未命名'}`
-            : (repo ? `代码库 · ${repo.name ?? repo.path ?? '未命名'}` : '未选择代码库')),
+            ? `多库项目 · ${workspace.name ?? '未命名'}`
+            : (repo ? `项目 · ${repo.name ?? repo.path ?? '未命名'}` : '未选择项目')),
           workspace ? h(Tag, { tone: 'accent' }, `${workspaceRepos.length} 库`) : null,
-          workspace ? h(Tag, { tone: 'neutral', title: '虚拟库本机独立目录（不是任何成员库）' }, '本机规范') : null,
+          workspace ? h(Tag, { tone: 'neutral', title: '多库项目本机独立目录（不是任何成员库）' }, '本机规范') : null,
         ),
         workspace
           ? h('span', { style: styles.sectionHint },
-            `虚拟库的成员库不共享规范：技能与约束只写入虚拟库本机目录 ${workspace.path ?? workspace.localPath ?? '—'}`)
+            `多库项目的成员库不共享规范：技能与约束只写入多库项目本机目录 ${workspace.path ?? workspace.localPath ?? '—'}`)
           : null,
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
           h('span', { style: styles.sectionHint }, '规范文件'),
@@ -575,8 +575,8 @@ export function SkillsPanel({ initialView = null, initialRepo = null, initialWor
     return h('div', { style: styles.cardFlat },
       h(EmptyState, {
         icon: '◈',
-        title: '还没有选择代码库',
-        hint: '请先到「流程」页完成代码库初始化，再回来管理技能与约束。',
+        title: '还没有选择项目',
+        hint: '请先到「流程」页完成项目初始化，再回来管理技能与约束。',
       }),
     )
   }

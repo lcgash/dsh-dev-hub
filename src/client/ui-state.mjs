@@ -60,7 +60,7 @@ export function saveLastTab(tab) {
 }
 
 /**
- * 某代码库上次的详情页状态。
+ * 某项目上次的详情页状态。
  * @returns {{ selectedId: string|null, scrollTop: number }}
  */
 export function loadPanelState(repoPath) {

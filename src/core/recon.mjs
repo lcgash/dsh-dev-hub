@@ -40,7 +40,7 @@ const STOP_WORDS = new Set([
 ])
 
 const DEFAULT_LIMITS = {
-  maxFiles: 12,
+  maxFiles: 80,
   maxScan: 4000,
   maxDepth: 12,
   maxBytes: 256 * 1024,
@@ -276,7 +276,9 @@ export async function reconRepo(repo, description, options = {}) {
   scored.sort((a, b) => (b.score - a.score)
     || (Number(isCodePath(b.path)) - Number(isCodePath(a.path)))
     || a.path.localeCompare(b.path))
+  result.matchedTotal = scored.length
   result.files = scored.slice(0, limits.maxFiles)
+  result.truncatedFiles = Math.max(0, scored.length - result.files.length)
 
   const hitsByModule = new Map()
   for (const file of result.files) {

@@ -6,6 +6,7 @@ import { canonical, exists, findRepoRoot, isUnder, safeId } from './paths.mjs'
 import { DEFAULT_QUESTIONS, WORKFLOW_STAGES } from '../shared/workflow.mjs'
 import { isWeakTitle, normalizeRequirementRecord } from '../shared/requirement.mjs'
 import { normalizeAttachments } from '../shared/attachment.mjs'
+import { SUPPLEMENT_MAX, normalizeDocsConfig } from './techdoc.mjs'
 import { applyDerivedProgress } from './stage.mjs'
 import { normalizeReview } from './review.mjs'
 import { normalizeIntent } from './intent.mjs'
@@ -183,6 +184,8 @@ export function defaultProject(repoPath, name) {
       docs: ['AGENTS.md', 'docs/OPEN-ISSUES.md', 'docs/design'],
       commands: {},
     },
+    // 技术文档默认：飞书（本机 lark-cli 登录，不存 token）；本地路径 docs/design/{id}.md
+    docs: normalizeDocsConfig(),
   }
 }
 
@@ -240,12 +243,25 @@ function questionList(raw) {
 
 function normalizeTechDoc(raw) {
   const value = raw && typeof raw === 'object' ? raw : {}
+  const sync = value.sync && typeof value.sync === 'object' ? value.sync : {}
   return {
+    // provider：飞书 / 本地 md / 外部链接 / 暂不需要。旧数据只看 decision。
+    provider: ['feishu', 'local', 'link', 'none'].includes(value.provider) ? value.provider : null,
     decision: ['existing', 'create', 'none'].includes(value.decision) ? value.decision : null,
     exists: Boolean(value.exists),
     title: String(value.title ?? '').trim(),
     url: String(value.url ?? '').trim(),
     localPath: String(value.localPath ?? '').trim(),
+    // 用户补充（Markdown）存台账：重新生成文档不会覆盖
+    supplement: String(value.supplement ?? '').trim().slice(0, SUPPLEMENT_MAX),
+    supplementUpdatedAt: value.supplementUpdatedAt || null,
+    generatedAt: value.generatedAt || null,
+    generatedHash: String(value.generatedHash ?? '').trim(),
+    sync: {
+      status: ['fresh', 'stale', 'external-modified', 'not-synced', 'conflict'].includes(sync.status) ? sync.status : null,
+      checkedAt: sync.checkedAt || null,
+      note: String(sync.note ?? '').trim().slice(0, 400),
+    },
     createdBy: String(value.createdBy ?? '').trim(),
     createdAt: value.createdAt || null,
   }
@@ -278,7 +294,10 @@ function normalizePlan(raw) {
 function normalizeTest(raw, { keepLocalWorkspace = true } = {}) {
   const value = raw && typeof raw === 'object' ? raw : {}
   return {
-    status: ['not_run', 'running', 'passed', 'failed'].includes(value.status) ? value.status : 'not_run',
+    status: ['not_run', 'running', 'passed', 'failed', 'skipped'].includes(value.status) ? value.status : 'not_run',
+    // 人工跳过：报告里必须能看出“跳过了、为什么跳过、谁跳的”
+    skipReason: String(value.skipReason ?? '').trim().slice(0, 500),
+    skippedBy: String(value.skippedBy ?? '').trim(),
     command: String(value.command ?? '').trim(),
     // 这条结果用的是哪来的命令：本机覆盖 / 项目命令 / 显式传入（没有就留空）
     commandSource: ['local', 'project', 'explicit'].includes(value.commandSource) ? value.commandSource : null,
@@ -357,6 +376,13 @@ function normalizeWorkflow(raw, status, { keepLocalWorkspace = true } = {}) {
             .filter((entry) => entry.name && entry.branch)
             .slice(0, 8),
         }
+      : {}),
+    // 需求关联的内部会话：澄清/扫描子代理 id（可跨机重新打开；不是本机路径）
+    ...(Array.isArray(value.clarifySessions) && value.clarifySessions.length
+      ? { clarifySessions: value.clarifySessions.map(String).filter(Boolean).slice(0, 8) }
+      : {}),
+    ...(Array.isArray(value.scanSessions) && value.scanSessions.length
+      ? { scanSessions: value.scanSessions.map(String).filter(Boolean).slice(0, 8) }
       : {}),
     rootProblem: String(value.rootProblem ?? '').trim(),
     discoveryNotes: String(value.discoveryNotes ?? '').trim(),

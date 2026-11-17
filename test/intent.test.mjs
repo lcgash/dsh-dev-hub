@@ -72,5 +72,5 @@ test('显式 analysis 生成只读计划：不修改代码、不补测试、不�
   assert.doesNotMatch(steps, /补充单元测试|仓库门禁|同步契约/)
   assert.ok(plan.acceptance.some((text) => /不改代码、不建 worktree、不产生提交/.test(text)))
   assert.ok(plan.acceptance.some((text) => /分析结论已产出/.test(text)))
-  assert.ok(plan.acceptance.some((text) => /本机自测通过（只读证据）/.test(text)))
+  assert.ok(plan.acceptance.some((text) => /本机自测通过（只读证据/.test(text)))
 })

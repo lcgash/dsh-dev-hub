@@ -287,8 +287,11 @@ test('聊天式入口：一句话创建后可直接开工（默认值带入，�
     assert.equal(item.workflow.rootProblem, '给 source 的 Sample 补 webhook 重试')
     assert.ok(item.workflow.plan.summary, '计划摘要自动带入')
     assert.ok(item.workflow.plan.steps.length >= 2)
+    assert.ok(!item.workflow.plan.steps.some((step) => /跑本机自测|跑仓库门禁/.test(step)), '开发计划不包含测试/门禁执行')
+    assert.ok(item.workflow.plan.steps.some((step) => /回写任务进度与变更点/.test(step)), '开发交接只回写过程事实')
     assert.ok(item.workflow.plan.estimate.days > 0)
-    assert.equal(item.workflow.techDoc.decision, 'none')
+    assert.equal(item.workflow.techDoc.decision, 'create', '聊天入口默认按项目配置创建技术文档')
+    assert.equal(item.workflow.techDoc.provider, 'feishu')
     assert.ok(item.acceptance.length >= 2, '验收标准自动带入')
     assert.match(item.acceptance.join(' '), /本机自测/)
 
@@ -297,6 +300,8 @@ test('聊天式入口：一句话创建后可直接开工（默认值带入，�
     assert.ok(started.body.context.contextHash)
     assert.match(started.body.context.prompt, /【目标文件与摘录】/)
     assert.match(started.body.context.prompt, /【项目约束】/)
+    assert.match(started.body.context.prompt, /【阶段边界】/)
+    assert.match(started.body.context.prompt, /【测试\/门禁（工作站执行，开发会话不要运行）】/)
     assert.ok(started.body.item.baseline.commit)
   } finally {
     await rm(repo, { recursive: true, force: true })

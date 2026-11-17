@@ -41,6 +41,12 @@ export function deriveAttention(item, { running = false, pendingQuestions = 0, p
   if (review.status === 'error') return { kind: 'review-error', label: '评审异常待处理', tone: 'warn' }
   if (review.status === 'pending') return { kind: 'review-pending', label: '独立评审进行中', tone: 'neutral' }
   if (local === 'failed') return { kind: 'test-failed', label: '本机自测失败', tone: 'danger' }
+  // 本机自测人工跳过：下一步是环境测试（或也跳过），不能反过来提示“跑本机自测”
+  if (stage === 'verify' && review.status === 'passed'
+    && tests.local?.status === 'skipped' && !tests.local?.stale
+    && !(tests.environment?.status === 'passed' || tests.environment?.status === 'skipped')) {
+    return { kind: 'ready-env', label: '本机自测已跳过：可以跑环境测试', tone: 'accent' }
+  }
   // 开发完成先评审（评审在测试验证之前）；分析流程例外：本机自测通过即结束
   const intent = item?.workflow?.intent
   if (review.status === 'idle' && stage === 'develop' && intent !== 'analysis') {

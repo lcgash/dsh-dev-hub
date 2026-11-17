@@ -22,7 +22,7 @@ test('chat-store：澄清卡里改过的流程标题会随对话持久化', () =
   assert.equal(conversation.titleTouched, true)
 })
 
-test('chat-store：按代码库分区，互不干扰', () => {
+test('chat-store：按项目分区，互不干扰', () => {
   clearChat(REPO)
   clearChat('/repo/other')
   saveActiveChat(REPO, { messages: [{ id: 'm1', role: 'user', kind: 'text', text: 'A 仓库的对话' }], phase: 'idle' })
@@ -71,7 +71,7 @@ test('chat-store：落盘有上限（消息条数、文本、recon/plan 字段�
   assert.ok(saved.messages.length <= 80)
   const last = saved.messages.at(-1)
   assert.ok(last.text.length <= 4001)
-  assert.ok(last.recon.files.length <= 20)
+  assert.ok(last.recon.files.length <= 120)
   assert.ok(last.recon.files[0].matches.length <= 5)
   assert.ok(last.plan.steps.length <= 30)
   assert.ok(saved.input.length <= 4000)

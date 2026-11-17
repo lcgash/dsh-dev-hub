@@ -35,7 +35,35 @@ import {
 /** 次要动作统一缩一号，避免顶部一排按钮比内容还抢眼。 */
 const miniButton = { height: 28, padding: '0 10px', fontSize: T.font.sm }
 
-/** 代码库卡与「新增开发目标」卡统一高度，让同一行网格对齐、不再一高一矮。 */
+/** 目标 tab 横向滚动时隐藏滚动条：避免滚动条占高度把卡片底部裁掉。 */
+let targetTabsStyleInjected = false
+function ensureTargetTabsStyle() {
+  if (targetTabsStyleInjected || typeof document === 'undefined') return
+  targetTabsStyleInjected = true
+  const style = document.createElement('style')
+  style.id = 'devhub-target-tabs-style'
+  style.textContent = '#devhub-target-tabs{scrollbar-width:none}#devhub-target-tabs::-webkit-scrollbar{display:none;width:0;height:0}'
+  document.head?.appendChild(style)
+}
+
+/** 「+ 新建」下拉里的菜单项（项目/多库项目两个入口）。 */
+const menuItemStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: 6,
+  width: '100%',
+  padding: '7px 8px',
+  border: 'none',
+  borderRadius: T.rSm,
+  background: 'transparent',
+  color: T.text2,
+  textAlign: 'left',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontSize: T.font.sm,
+}
+
+/** 项目卡与「新增项目」卡统一高度，让同一行网格对齐、不再一高一矮。 */
 const GRID_CARD_MIN_HEIGHT = 120
 
 function stageText(stage) {
@@ -69,7 +97,8 @@ export function pendingFlowStep(item) {
     return local !== 'passed' ? '还差本机自测' : '继续推进即开始评审'
   }
   if (stage === 'verify') {
-    if (isAnalysis) return local !== 'passed' ? '还差本机自测' : '结论待回写'
+    if (isAnalysis) return local !== 'passed' && local !== 'skipped' ? '还差本机自测' : '结论待回写'
+    if (local === 'skipped') return env !== 'passed' && env !== 'skipped' ? '还差环境测试（本机自测已跳过）' : '待提交'
     return local !== 'passed' ? '还差本机自测' : (env !== 'passed' ? '还差环境测试' : '待提交')
   }
   if (stage === 'submit') return isAnalysis ? '分析流程不进入提交' : '待提交'
@@ -175,50 +204,73 @@ function ScopeChips({ tokens }) {
   )
 }
 
-/** 一个已有代码库＝一张卡：选中用品牌紫边 + 淡底 + 对勾，点一下就切换。 */
+/** 一个已有项目＝一张卡：选中用品牌紫边 + 淡底 + 对勾，点一下就切换。 */
 /**
- * 末尾的虚线卡：把「新增代码库」和「新建虚拟库」合并成一个入口，避免同屏两个
- * 含义相近的按钮让用户分不清该点哪个。两个动作仍各自保留明确文案。
+ * 当前选中目标的详情条：放在「开发流程」面板顶部，而不是塞在项目管理 tab 头里。
+ * 上面只留「项目管理」标题 + 目标 tab；选中的是谁、路径/成员/动作都在这里。
  */
-function AddTargetCard({ busy, onAddRepo, onAddWorkspace }) {
+function TargetSummary({ repo, member, activeWorkspace, switchingRepo, onScan, onRefresh, onNewFlow, onRemoveRepo, onEditWorkspace, onRemoveWorkspace }) {
+  const members = workspaceMembersView(activeWorkspace)
+  const localPath = activeWorkspace?.path ?? activeWorkspace?.localPath ?? null
+  const isWorkspace = Boolean(activeWorkspace)
+  const branch = !isWorkspace && repo?.branch
+    ? `${repo.branch}${repo.head ? `@${repo.head}` : ''}`
+    : ''
+  const memberNames = members.map((entry) => entry.name).join(' · ')
   return h('div', {
+    id: 'devhub-target-summary',
     style: {
       display: 'flex',
       flexDirection: 'column',
-      justifyContent: 'space-between',
-      gap: 8,
-      minWidth: 0,
-      minHeight: GRID_CARD_MIN_HEIGHT,
-      boxSizing: 'border-box',
-      padding: '10px 12px',
-      border: `1px dashed ${T.border}`,
-      borderRadius: T.rLg,
-      background: 'transparent',
-      color: T.text4,
-      transition: T.transition,
+      gap: 6,
+      padding: '12px 16px',
+      borderBottom: `1px solid ${T.borderSoft}`,
+      background: T.surface,
     },
   },
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 } },
-      h(IconSeat, { size: 26, tone: 'neutral' }, '+'),
-      h('span', { style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 } },
-        h('span', { style: { fontSize: T.font.base, fontWeight: 500, color: T.text2 } }, '新增开发目标'),
-        h('span', { style: { fontSize: T.font.xs, color: T.text4 } }, '单个代码库，或前后端多库组合'),
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: T.gap.sm, flexWrap: 'wrap' } },
+      h(IconSeat, { size: 32 }, isWorkspace ? '▣' : '◈'),
+      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '1 1 260px' } },
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 } },
+          h('span', { style: { fontSize: T.font.md, fontWeight: 600, color: T.text } },
+            isWorkspace ? `多库项目 · ${activeWorkspace.name ?? '未命名'}` : (repo?.name ?? '未选择项目')),
+          isWorkspace
+            ? h(Tag, { tone: 'accent' }, `${members.length} 个代码库`)
+            : (repo?.name ? h(Tag, { tone: 'neutral' }, '单库项目') : null),
+          isWorkspace
+            ? h(Tag, { tone: 'neutral', title: `台账/规范/上下文/证据都在本机独立目录：${localPath ?? '—'}（不写任何成员库）` }, '本机台账')
+            : null,
+          member ? h(Tag, { tone: 'accent' }, `成员 ${member}`) : null,
+        ),
+        h('span', {
+          style: {
+            ...styles.mono,
+            color: T.text4,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            whiteSpace: 'nowrap',
+          },
+        }, isWorkspace ? (localPath ?? '—') : (repo?.path ?? '—')),
       ),
+      h('div', { style: styles.spacer }),
+      h(Button, { style: miniButton, disabled: Boolean(switchingRepo), onClick: onScan, children: '扫描文档' }),
+      h(Button, { style: miniButton, disabled: Boolean(switchingRepo), onClick: onRefresh, children: '刷新' }),
+      onNewFlow ? h(Button, { primary: true, onClick: onNewFlow, children: '开始需求澄清' }) : null,
     ),
-    // footer：两个动作平分左右，和上方标题区拉开，点哪个一目了然
-    h('div', { style: { display: 'flex', gap: 6, width: '100%' } },
-      h(Button, {
-        style: { ...miniButton, flex: '1 1 0', minWidth: 0, padding: '0 6px' },
-        disabled: Boolean(busy),
-        onClick: onAddRepo,
-        children: '+ 新增代码库',
-      }),
-      h(Button, {
-        style: { ...miniButton, flex: '1 1 0', minWidth: 0, padding: '0 6px' },
-        disabled: Boolean(busy),
-        onClick: onAddWorkspace,
-        children: '▣ 新建虚拟库',
-      }),
+    h('div', { style: { ...styles.row, gap: 8, fontSize: T.font.xs, color: T.text4 } },
+      h('span', null, isWorkspace
+        ? (memberNames ? `成员库：${memberNames}` : '尚未登记成员库')
+        : (branch ? `分支 ${branch}` : '本地项目')),
+      h('div', { style: styles.spacer }),
+      isWorkspace && onEditWorkspace
+        ? h('span', { style: { color: T.brand, cursor: 'pointer' }, onClick: () => onEditWorkspace(activeWorkspace.id) }, '编辑成员')
+        : null,
+      isWorkspace && onRemoveWorkspace
+        ? h('span', { style: { color: T.danger, cursor: 'pointer' }, onClick: () => onRemoveWorkspace(activeWorkspace.id) }, '移除多库项目')
+        : null,
+      !isWorkspace && onRemoveRepo && repo?.path
+        ? h('span', { style: { color: T.danger, cursor: 'pointer' }, onClick: () => onRemoveRepo(repo.path) }, '移除项目')
+        : null,
     ),
   )
 }
@@ -226,7 +278,7 @@ function AddTargetCard({ busy, onAddRepo, onAddWorkspace }) {
 function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, branch, head, initialized, workspaces, onSelect, onRemove, tabAttached = false }) {
   const name = givenName || String(path ?? '').split('/').filter(Boolean).pop() || path
   const [hovered, setHovered] = useState(false)
-  // 虚拟库归属只放 tooltip：footer 再挂一个「虚拟库 · xxx」会让代码库卡看起来像虚拟库卡
+  // 多库项目归属只放 tooltip：footer 再挂一个「多库项目 · xxx」会让项目卡看起来像多库项目卡
   const workspaceNames = (Array.isArray(workspaces) ? workspaces : []).filter(Boolean)
   const gitText = !exists
     ? '路径不存在，不能切换'
@@ -236,11 +288,11 @@ function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, 
         ? '非 git 仓库'
         : branch
           ? `${branch}${head ? `@${head}` : ''}`
-          : '本地代码库'
+          : '本地项目'
   const hint = !exists
     ? '已失效'
     : active
-      ? '当前开发目标'
+      ? '当前项目'
       : initialized === false
         ? '尚未初始化 .dev-hub'
         : '点击切换'
@@ -255,9 +307,9 @@ function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, 
     h('button', {
       type: 'button',
       title: [
-        !exists ? `路径已不存在：${path}（可点右上角 × 移除）` : active ? `当前代码库：${path}` : busy ? '正在切换…' : `切换到 ${path}`,
+        !exists ? `路径已不存在：${path}（可点右上角 × 移除）` : active ? `当前项目：${path}` : busy ? '正在切换…' : `切换到 ${path}`,
         branch ? `分支 ${branch}${head ? `@${head}` : ''}` : (exists && isRepo === false ? '不是 git 仓库' : ''),
-        workspaceNames.length ? `虚拟库：${workspaceNames.join('、')}` : '',
+        workspaceNames.length ? `多库项目：${workspaceNames.join('、')}` : '',
       ].filter(Boolean).join('\n'),
       disabled: Boolean(busy) || !exists,
       'aria-pressed': active,
@@ -270,8 +322,9 @@ function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, 
         gap: 8,
         width: '100%',
         minWidth: 0,
-        minHeight: GRID_CARD_MIN_HEIGHT,
+        height: GRID_CARD_MIN_HEIGHT,
         boxSizing: 'border-box',
+        overflow: 'hidden',
         padding: '10px 12px',
         textAlign: 'left',
         border: `1px solid ${!exists ? T.danger : active ? T.brandBorder : T.borderSoft}`,
@@ -302,6 +355,7 @@ function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, 
                 minWidth: 0,
               },
             }, name),
+            h(Tag, { tone: 'neutral' }, '单库项目'),
             !exists
               ? h(Tag, { tone: 'danger' }, '路径不存在')
               : active
@@ -326,7 +380,7 @@ function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, 
           }, path),
         ),
       ),
-      // 下半区 footer：Git 事实 / 虚拟库归属 / 下一步提示，和上方信息分层
+      // 下半区 footer：Git 事实 / 多库项目归属 / 下一步提示，和上方信息分层
       h('div', {
         style: {
           display: 'flex',
@@ -364,15 +418,16 @@ function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, 
     hovered && !busy
       ? h('button', {
         type: 'button',
-        title: '从列表移除这个代码库（不动磁盘文件）',
+        title: '从列表移除这个项目（不动磁盘文件）',
         onClick: (event) => {
           event.stopPropagation()
           onRemove?.(path)
         },
         style: {
           position: 'absolute',
-          top: -6,
-          right: -6,
+          top: 6,
+          right: 6,
+          zIndex: 2,
           width: 18,
           height: 18,
           display: 'inline-flex',
@@ -423,7 +478,7 @@ export function workspaceMembersView(workspace) {
 
 const chipTruncate = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
 
-/** 一张虚拟库卡：和代码库卡同高同结构，用 ▣ 图标区分；hover 右上角 × 只从本机移除。 */
+/** 一张多库项目卡：和项目卡同高同结构，用 ▣ 图标区分；hover 右上角 × 只从本机移除。 */
 function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, tabAttached = false }) {
   const [hovered, setHovered] = useState(false)
   const members = workspaceMembersView(workspace)
@@ -437,7 +492,7 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, ta
   const hint = !members.length
     ? '未登记成员库'
     : active
-      ? '当前开发目标'
+      ? '当前项目'
       : '点击切换'
   return h('div', {
     id: active ? 'devhub-active-target' : undefined,
@@ -451,7 +506,7 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, ta
       'aria-pressed': active,
       disabled: Boolean(busy),
       title: [
-        `切换到虚拟库「${workspace?.name ?? '未命名'}」：${members.length} 个成员库`,
+        `切换到多库项目「${workspace?.name ?? '未命名'}」：${members.length} 个成员库`,
         memberTitle,
         missing.length ? `${missing.length} 个成员库路径不存在` : '',
       ].filter(Boolean).join('\n'),
@@ -464,14 +519,15 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, ta
         gap: 8,
         width: '100%',
         minWidth: 0,
-        minHeight: GRID_CARD_MIN_HEIGHT,
+        height: GRID_CARD_MIN_HEIGHT,
         boxSizing: 'border-box',
+        overflow: 'hidden',
         padding: '10px 12px',
         textAlign: 'left',
         border: `1px solid ${active ? T.brandBorder : T.borderSoft}`,
         ...(active && tabAttached ? { borderBottomColor: 'transparent' } : {}),
         borderRadius: active ? '12px 12px 4px 4px' : T.rLg,
-        // 非激活态也用浅灰底 + 品牌色 ▣，和白色代码库卡一眼区分开
+        // 非激活态也用浅灰底 + 品牌色 ▣，和白色项目卡一眼区分开
         background: active ? T.brandSoft : T.surface2,
         boxShadow: active ? `0 0 0 2px rgba(96,73,231,.10)` : T.shadowCard,
         cursor: busy ? 'progress' : active ? 'default' : 'pointer',
@@ -479,7 +535,7 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, ta
         transition: T.transition,
       },
     },
-      // 上区：▣ 图标 + 虚拟库名 / 类型说明；右侧只放当前与缺失状态
+      // 上区：▣ 图标 + 多库项目名 / 类型说明；右侧只放当前与缺失状态
       h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 10, minWidth: 0 } },
         h(IconSeat, { size: 26, tone: 'accent' }, '▣'),
         h('span', { style: { display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: '1 1 auto' } },
@@ -494,12 +550,12 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, ta
                 whiteSpace: 'nowrap',
                 minWidth: 0,
               },
-            }, workspace?.name ?? '未命名虚拟库'),
+            }, `多库项目 · ${workspace?.name ?? '未命名多库项目'}`),
             active ? h(Tag, { tone: 'accent' }, '当前') : null,
             missing.length ? h(Tag, { tone: 'danger' }, '缺失') : null,
           ),
           h('span', { style: { display: 'flex', alignItems: 'center', gap: 4, fontSize: T.font.xs, color: T.text4, minWidth: 0 } },
-            h('span', null, '多代码库组合'),
+            h('span', null, '多库项目'),
             h('span', { style: { color: T.border } }, '·'),
             h('span', null, `${members.length} 个成员库`),
           ),
@@ -514,7 +570,8 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, ta
           lineHeight: 1.45,
           color: missing.length ? T.danger : T.text3,
           display: '-webkit-box',
-          WebkitLineClamp: 2,
+          // 只留一行成员库摘要；完整成员列表在 title / 下方当前目标详情里
+          WebkitLineClamp: 1,
           WebkitBoxOrient: 'vertical',
           overflow: 'hidden',
           wordBreak: 'break-all',
@@ -558,11 +615,11 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, ta
     // 悬停操作：编辑成员 / 从本机移除（只删分组登记，不动成员库磁盘与台账）
     hovered && !busy
       ? h('div', {
-        style: { position: 'absolute', top: -6, right: -6, display: 'flex', gap: 4 },
+        style: { position: 'absolute', top: 6, right: 6, zIndex: 2, display: 'flex', gap: 4 },
       },
         h('button', {
           type: 'button',
-          title: '编辑这个虚拟库：改名、增删成员库（成员库平权，任意成员都可移除/替换）',
+          title: '编辑这个多库项目：改名、增删成员库（成员库平权，任意成员都可移除/替换）',
           onClick: (event) => {
             event.stopPropagation()
             onEdit?.(workspace)
@@ -586,7 +643,7 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, ta
         }, '✎'),
         h('button', {
           type: 'button',
-          title: '从本机移除这个虚拟库（不动成员库代码与流程台账）',
+          title: '从本机移除这个多库项目（不动成员库代码与流程台账）',
           onClick: (event) => {
             event.stopPropagation()
             onRemove?.(workspace)
@@ -613,19 +670,27 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove, ta
   )
 }
 
-/** 顶部项目条：当前库 + 成员 + 全局动作；下方是虚拟库/代码库卡片，点卡片即切换。 */
-function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchingRepo, onRefresh, onSelectRepo, onAddRepo, onScan, onNewFlow, onRemoveRepo, onSelectWorkspace, onEditWorkspace, onRemoveWorkspace, onNewWorkspace, tabbed = false, tabAttached = false }) {
-  const members = workspaceMembersView(activeWorkspace)
-  const memberCount = activeWorkspace ? members.length : 0
-  const localPath = activeWorkspace?.path ?? activeWorkspace?.localPath ?? null
+/** 顶部项目条：当前库 + 成员 + 全局动作；下方是多库项目/项目卡片，点卡片即切换。 */
+function ProjectBar({ repo, repos, workspaces, activeWorkspace, switchingRepo, onSelectRepo, onAddRepo, onRemoveRepo, onSelectWorkspace, onEditWorkspace, onRemoveWorkspace, onNewWorkspace, tabbed = false, tabAttached = false }) {
+  ensureTargetTabsStyle()
+  // 「+ 新建」下拉：新增项目 / 新建多库项目都收进项目管理标题旁，网格里不再放大卡片
+  const [addOpen, setAddOpen] = useState(false)
+  const addRef = useRef(null)
+  useEffect(() => {
+    if (!addOpen || typeof document === 'undefined') return undefined
+    const onDocDown = (event) => {
+      if (!addRef.current?.contains(event.target)) setAddOpen(false)
+    }
+    document.addEventListener('mousedown', onDocDown)
+    return () => document.removeEventListener('mousedown', onDocDown)
+  }, [addOpen])
   const activeWorkspaceId = activeWorkspace?.id ?? null
-  // 激活的虚拟库补上 members（/state 的 workspaces 列表只有名字/路径），并排到最前面
+  // 只补 members，不因为选中就把多库项目排到最前：tab 顺序必须稳定，否则切一次闪一次
   const workspaceViews = [...(workspaces ?? [])]
     .map((workspace) => (workspace.id === activeWorkspaceId ? { ...workspace, ...activeWorkspace } : workspace))
-    .sort((left, right) => Number(right.id === activeWorkspaceId) - Number(left.id === activeWorkspaceId))
-  // 旧响应/局部测试里可能只给 activeWorkspace、不给 workspaces 列表：激活的虚拟库仍要有卡片
+  // 旧响应/局部测试里可能只给 activeWorkspace、不给 workspaces 列表：补在末尾，也不打乱已有顺序
   if (activeWorkspace && !workspaceViews.some((workspace) => workspace.id === activeWorkspace.id)) {
-    workspaceViews.unshift(activeWorkspace)
+    workspaceViews.push(activeWorkspace)
   }
   const targetCount = workspaceViews.length + (repos ?? []).length
   return h('div', {
@@ -647,94 +712,111 @@ function ProjectBar({ repo, member, repos, workspaces, activeWorkspace, switchin
         : {}),
     },
   },
-    // 这一块是「项目管理」：管理代码库/虚拟库，选中的目标决定下面的流程列表
+    // 这一块是「项目管理」：管理项目/多库项目，选中的目标决定下面的流程列表
     h('div', { style: { display: 'flex', alignItems: 'center', gap: T.gap.xs, flexWrap: 'wrap' } },
       h('span', { style: styles.sectionTitle }, '项目管理'),
-      h(Tag, { tone: 'neutral' }, `${targetCount} 个开发目标`),
-      h('div', { style: styles.spacer }),
-      h('span', { style: styles.sectionHint }, '选中的目标决定下方「开发流程」'),
-    ),
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: T.gap.sm, flexWrap: 'wrap' } },
-      h(IconSeat, { size: 34 }, '◈'),
-      h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '1 1 240px' } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', minWidth: 0 } },
-          h('span', {
-            style: { fontSize: T.font.md, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
-            title: activeWorkspace
-              ? `虚拟库「${activeWorkspace.name ?? '未命名'}」：${memberCount} 个成员库平权；台账/规范/上下文/证据写本机 ${localPath ?? '—'}`
-              : repo?.path ?? '',
-          }, activeWorkspace
-            ? `虚拟库 · ${activeWorkspace.name ?? '未命名'}`
-            : (repo?.name ?? '未选择代码库')),
-          activeWorkspace ? h(Tag, { tone: 'accent' }, `${memberCount} 库`) : null,
-          activeWorkspace
-            ? h(Tag, { tone: 'neutral', title: `台账/规范/上下文/证据都在本机独立目录：${localPath ?? '—'}（不写任何成员库）` }, '本机台账')
-            : null,
-        ),
-        h('span', {
+      h(Tag, { tone: 'neutral' }, `${targetCount} 个项目`),
+      h('div', { ref: addRef, style: { position: 'relative' } },
+        h('button', {
+          type: 'button',
+          title: '新增项目',
+          'aria-label': '新增项目',
+          onClick: () => setAddOpen((value) => !value),
           style: {
-            ...styles.mono,
-            color: T.text4,
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
+            width: 28,
+            height: 26,
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: 2,
+            padding: 0,
+            border: `1px solid ${T.brandBorder}`,
+            borderRadius: T.rSm,
+            background: T.brandSoft,
+            color: T.brand,
+            cursor: 'pointer',
+            fontFamily: 'inherit',
+            fontSize: 18,
+            fontWeight: 600,
+            lineHeight: 1,
           },
-        }, activeWorkspace ? (localPath ?? '—') : (repo?.path ?? '—')),
+        }, '+'),
+        addOpen
+          ? h('div', {
+            style: {
+              position: 'absolute',
+              top: 32,
+              left: 0,
+              zIndex: 10001,
+              minWidth: 168,
+              padding: 6,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 2,
+              border: `1px solid ${T.borderSoft}`,
+              borderRadius: T.rLg,
+              background: T.surface,
+              boxShadow: T.shadowModal,
+            },
+          },
+            h('button', {
+              type: 'button',
+              onClick: () => { setAddOpen(false); onAddRepo?.() },
+              style: menuItemStyle,
+            }, '+ 新增项目'),
+            h('button', {
+              type: 'button',
+              onClick: () => { setAddOpen(false); onNewWorkspace?.() },
+              style: menuItemStyle,
+            }, '▣ 新建多库项目'),
+          )
+          : null,
       ),
-      h(Tag, { tone: 'accent' }, `成员 ${member ?? '未命名'}`),
       h('div', { style: styles.spacer }),
-      h(Button, { style: miniButton, onClick: onScan, children: '扫描文档' }),
-      h(Button, { style: miniButton, onClick: onRefresh, children: '刷新' }),
-      // 空工作区由下方引导卡提供唯一的“开始需求澄清”，避免同一屏两个相同主按钮
-      onNewFlow ? h(Button, { primary: true, onClick: onNewFlow, children: '开始需求澄清' }) : null,
+      h('span', { style: styles.sectionHint }, '选中的项目决定下方「开发流程」'),
     ),
-    // 虚拟库与代码库放进同一个卡片网格，用 ▣ / ◈ 图标和卡内信息区分，不再分两块渲染
+    // 项目平铺成一行横向卡片（工作区 + 项目）；选中卡与下方流程面板做 tab 合并
     workspaceViews.length || (repos ?? []).length
-      ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, marginTop: 2 } },
-        h('span', { style: { ...styles.sectionHint, paddingLeft: 2 } },
-          `开发目标（${workspaceViews.length + (repos ?? []).length}）· ▣ 虚拟库 / ◈ 代码库，点卡片切换，末尾新增`),
-        h('div', {
-          style: {
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))',
-            gap: T.gap.xs,
-          },
-        }, [
-          ...workspaceViews.map((workspace) => h(WorkspaceCard, {
-            key: workspace.id,
-            workspace,
-            active: activeWorkspace?.id === workspace.id,
-            tabAttached,
-            busy: Boolean(switchingRepo),
-            onSelect: onSelectWorkspace,
-            onEdit: onEditWorkspace,
-            onRemove: onRemoveWorkspace,
-          })),
-          ...(repos ?? []).map((entry) => h(RepoCard, {
-            key: typeof entry === 'string' ? entry : entry.path,
-            path: typeof entry === 'string' ? entry : entry.path,
-            name: typeof entry === 'string' ? undefined : entry.name,
-            exists: typeof entry === 'string' ? true : entry.exists !== false,
-            isRepo: typeof entry === 'string' ? undefined : entry.isRepo,
-            branch: typeof entry === 'string' ? null : entry.branch,
-            head: typeof entry === 'string' ? null : entry.head,
-            initialized: typeof entry === 'string' ? undefined : entry.initialized,
-            workspaces: typeof entry === 'string' ? [] : entry.workspaces,
-            // 激活虚拟库时不再把某个成员库的代码卡片标成选中：选中的是虚拟库，代码库只是成员
-            active: !activeWorkspace && (typeof entry === 'string' ? entry : entry.path) === repo?.path,
-            tabAttached,
-            busy: (typeof entry === 'string' ? entry : entry.path) === switchingRepo,
-            onSelect: onSelectRepo,
-            onRemove: onRemoveRepo,
-          })),
-          h(AddTargetCard, {
-            key: '__add__',
-            busy: Boolean(switchingRepo),
-            onAddRepo,
-            onAddWorkspace: onNewWorkspace,
-          }),
-        ]),
-      )
+      ? h('div', {
+        id: 'devhub-target-tabs',
+        style: {
+          display: 'grid',
+          gridAutoFlow: 'column',
+          gridAutoColumns: 'minmax(232px, 252px)',
+          gap: T.gap.xs,
+          overflowX: 'auto',
+          scrollbarWidth: 'none',
+          marginTop: 2,
+        },
+      }, [
+        ...workspaceViews.map((workspace) => h(WorkspaceCard, {
+          key: workspace.id,
+          workspace,
+          active: activeWorkspace?.id === workspace.id,
+          tabAttached,
+          busy: Boolean(switchingRepo),
+          onSelect: onSelectWorkspace,
+          onEdit: onEditWorkspace,
+          onRemove: onRemoveWorkspace,
+        })),
+        ...(repos ?? []).map((entry) => h(RepoCard, {
+          key: typeof entry === 'string' ? entry : entry.path,
+          path: typeof entry === 'string' ? entry : entry.path,
+          name: typeof entry === 'string' ? undefined : entry.name,
+          exists: typeof entry === 'string' ? true : entry.exists !== false,
+          isRepo: typeof entry === 'string' ? undefined : entry.isRepo,
+          branch: typeof entry === 'string' ? null : entry.branch,
+          head: typeof entry === 'string' ? null : entry.head,
+          initialized: typeof entry === 'string' ? undefined : entry.initialized,
+          workspaces: typeof entry === 'string' ? [] : entry.workspaces,
+          // 激活多库项目时不再把某个成员库的代码卡片标成选中：选中的是多库项目，项目只是成员
+          active: !activeWorkspace && (typeof entry === 'string' ? entry : entry.path) === repo?.path,
+          tabAttached,
+          busy: (typeof entry === 'string' ? entry : entry.path) === switchingRepo,
+          onSelect: onSelectRepo,
+          onRemove: onRemoveRepo,
+        })),
+      ])
       : null,
   )
 }
@@ -879,7 +961,7 @@ function FlowRow({ item, session, selected, last, onClick, onOpenReport }) {
   )
 }
 
-function FlowList({ items, selectedId, sessionStates, onOpenItem, onRefresh, onNewFlow, onOpenReport, onFixTitles, fixingTitles = false, tabbed = false }) {
+function FlowList({ items, selectedId, sessionStates, onOpenItem, onRefresh, onNewFlow, onOpenReport, onFixTitles, fixingTitles = false, tabbed = false, targetBar = null, emptyContent = null }) {
   const weakTitleCount = items.filter((entry) => entry?.titleNeedsWork).length
   return h('div', {
     id: 'devhub-flow-list',
@@ -893,6 +975,7 @@ function FlowList({ items, selectedId, sessionStates, onOpenItem, onRefresh, onN
         : {}),
     },
   },
+    targetBar,
     h('div', { style: { display: 'flex', alignItems: 'center', gap: T.gap.xs, flexWrap: 'wrap', padding: '10px 16px' } },
       h('span', { style: styles.sectionTitle }, '开发流程'),
       h(Tag, { tone: 'neutral' }, String(items.length)),
@@ -920,12 +1003,12 @@ function FlowList({ items, selectedId, sessionStates, onOpenItem, onRefresh, onN
           onClick: () => onOpenItem?.(item.id),
           onOpenReport,
         }))
-        : h(EmptyState, {
+        : (emptyContent ?? h(EmptyState, {
           icon: '✎',
           title: '还没有开发流程',
           hint: '用一段话描述你要做什么：工作站会扫仓库、追问、自评计划，再确认范围。',
           action: h(Button, { primary: true, onClick: onNewFlow, children: '新建开发流程' }),
-        }),
+        })),
     ),
   )
 }
@@ -1080,12 +1163,11 @@ export function HomeView(props) {
       observer?.disconnect()
     }
   })
-  const merged = list.length > 0
-  const clarifications = !merged
+  const merged = Boolean(repo || state?.workspace)
+  const clarifications = list.length === 0
     ? h('div', {
       style: {
-        border: `1px solid ${T.brandBorder}`,
-        borderRadius: T.rLg,
+        // 放进「开发流程」内容区：不再套一层边框，避免卡片里再套卡片
         background: `linear-gradient(135deg, ${T.brandSoft}, ${T.surface})`,
         padding: '16px 18px',
         display: 'flex',
@@ -1120,18 +1202,27 @@ export function HomeView(props) {
       ),
     )
     : null
-  const projectBar = h(ProjectBar, {
+  // 选中目标的详情（路径/成员/动作）放在 tab 内容区，顶部只留项目管理 tab 头
+  const targetBar = h(TargetSummary, {
     repo,
     member: state?.profile?.member,
+    activeWorkspace: state?.workspace,
+    switchingRepo,
+    onScan,
+    onRefresh,
+    // 空工作区由下方澄清引导卡提供唯一入口，避免两个「开始需求澄清」
+    onNewFlow: list.length > 0 ? onNewFlow : null,
+    onRemoveRepo,
+    onEditWorkspace,
+    onRemoveWorkspace,
+  })
+  const projectBar = h(ProjectBar, {
+    repo,
     // 优先用带 exists 的卡片数据；旧数据回退到路径数组
     repos: state?.profile?.repoCards ?? state?.profile?.repos,
-    onRefresh,
     onSelectRepo,
     switchingRepo,
     onAddRepo,
-    onScan,
-    // 空工作区只保留引导卡上的入口，顶栏不再重复
-    onNewFlow: merged ? onNewFlow : null,
     onRemoveRepo,
     workspaces: state?.workspaces,
     activeWorkspace: state?.workspace,
@@ -1142,8 +1233,7 @@ export function HomeView(props) {
     tabbed: merged,
     tabAttached: Boolean(tabPatch),
   })
-  // 空工作区已经有需求澄清引导卡，不再渲染一个“还没有开发流程 + 新建开发流程”的空面板，
-  // 否则两个入口表达同一件事，用户反而不知道该点哪个。
+  // 目标 tab 和内容区始终成对出现（即使还没有流程）：切目标时结构不跳、tab 合并也不闪。
   const flowList = merged
     ? h(FlowList, {
       items: list,
@@ -1156,6 +1246,8 @@ export function HomeView(props) {
       onFixTitles,
       fixingTitles,
       tabbed: true,
+      targetBar,
+      emptyContent: clarifications,
     })
     : null
   return h('div', { ref: wrapRef, style: { position: 'relative', display: 'flex', flexDirection: 'column', gap: T.gap.sm } },
@@ -1177,7 +1269,7 @@ export function HomeView(props) {
       : null,
     merged
       ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 0 } }, projectBar, flowList)
-      : h('div', { style: { display: 'flex', flexDirection: 'column', gap: T.gap.sm } }, projectBar, clarifications, flowList),
+      : h('div', { style: { display: 'flex', flexDirection: 'column', gap: T.gap.sm } }, projectBar, clarifications),
     h(ParallelSection, { parallel, error: parallelError }),
   )
 }

@@ -330,13 +330,13 @@ function scopeSuggestions(recon) {
   return uniqueTokens([...suggested, ...fromModules])
 }
 
-/** 候选文件属于哪个成员库（虚拟库扫描带 repoName；单库为空）。 */
+/** 候选文件属于哪个成员库（多库项目扫描带 repoName；单库为空）。 */
 function reconFileRepo(file) {
   return String(file?.repoName ?? (file?.repo ? repoBaseName(file.repo) : '') ?? '')
 }
 
 /**
- * 候选文件按成员库分组：虚拟库的探测结果会混着前后端文件，
+ * 候选文件按成员库分组：多库项目的探测结果会混着前后端文件，
  * 按库分组 + 组内按路径排序，比一锅平铺好扫。单库（没有 repoName）只有一组。
  */
 function groupReconFiles(files) {
@@ -541,7 +541,7 @@ function ReconCard({
   const modules = (recon?.modules ?? []).map((entry) => entry?.name).filter(Boolean).slice(0, 4)
   const suggestions = scopeSuggestions(recon)
   const members = reconMembers(recon)
-  // 虚拟库：同一个卡片里混着前后端文件，按成员库分组展示（单库只有一组、没有组标题）
+  // 多库项目：同一个卡片里混着前后端文件，按成员库分组展示（单库只有一组、没有组标题）
   const groups = groupReconFiles(files)
   const multiRepo = groups.length > 1 || groups.some(([repo]) => Boolean(repo))
   // 非 live 时看“当时确认的快照”，否则历史卡片会显示成 0 个已选
@@ -572,7 +572,9 @@ function ReconCard({
           h('div', { style: styles.row },
             repo ? h(Pill, { tone: 'accent' }, repo) : null,
             h('span', { style: { fontWeight: 600, wordBreak: 'break-all' } }, namePart),
-            file?.confidence ? h(Pill, { tone: file.confidence === 'high' ? 'ok' : file.confidence === 'low' ? 'warn' : 'neutral' }, `相关度 ${file.confidence}`) : null,
+            file?.source === 'keyword'
+              ? h(Pill, { tone: 'neutral' }, '关键词命中')
+              : (file?.confidence ? h(Pill, { tone: file.confidence === 'high' ? 'ok' : file.confidence === 'low' ? 'warn' : 'neutral' }, `相关度 ${file.confidence}`) : null),
           ),
           file?.why ? h('div', { style: { ...styles.smallMuted, marginTop: 2 } }, file.why) : null,
           matches.length ? h('div', { style: { ...styles.smallMuted, marginTop: 2 } }, `命中 ${matches.length} 处`) : null,
@@ -657,6 +659,10 @@ function ReconCard({
         )),
       )
       : h('div', { style: { ...styles.smallMuted, marginTop: 8 } }, '没有命中候选文件。可以直接按目录/模块建流程，或点「重新描述」补充关键词。'),
+    files.length && Number(recon?.truncatedFiles) > 0
+      ? h('div', { style: { ...styles.smallMuted, marginTop: 4 } },
+        `还有 ${Number(recon.truncatedFiles)} 个关键词命中未展示（达到展示上限）；可以缩小描述或按目录拆分扫描。`)
+      : null,
 
     live
       ? h('div', { style: { marginTop: 10 } },
@@ -1157,7 +1163,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     }
   }
 
-  // 恢复上次的对话（按代码库分区，支持多段历史）：切走面板/页签回来、刷新页面都不该从空白开始
+  // 恢复上次的对话（按项目分区，支持多段历史）：切走面板/页签回来、刷新页面都不该从空白开始
   const restoredRef = useRef(null)
   const [chats, setChats] = useState([])
   const [activeChatId, setActiveChatId] = useState(null)
@@ -1705,6 +1711,8 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         missing: body.missing ?? [],
         engine: body.engine ?? 'dsh',
         degraded: Boolean(body.degraded),
+        // 需求关联：评审/开发之外，澄清子代理也要能回到这条需求下
+        sessionId: body.sessionId ?? null,
       }
       // 切到别的对话了：这轮澄清结果只属于原来的对话（写回去，不丢也不串）
       if (!runIsCurrent(run)) {
@@ -1946,7 +1954,8 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         description: pending.description,
         draft: pending.draft,
         scope: scopeList,
-        recon: { tokens: pending.recon?.tokens ?? [], files },
+        recon: { tokens: pending.recon?.tokens ?? [], files, scanSessionId: pending.recon?.scanSessionId ?? null },
+        clarifySessionId: clarify?.sessionId ?? null,
         firstRun: Boolean(state?.firstRun),
         cwd: state?.repo?.path,
         summary: planData.summary,
@@ -2070,8 +2079,8 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     if (setupRequired) {
       return h('div', { style: { padding: '16px 18px' } },
         h('div', { style: styles.warnCard },
-          h('div', { style: { fontWeight: 600 } }, '请先在“流程”页完成代码库初始化'),
-          h('div', { style: { marginTop: 4 } }, '工作站需要一个代码库路径才能扫仓库、建流程和开启开发会话。'),
+          h('div', { style: { fontWeight: 600 } }, '请先在“流程”页完成项目初始化'),
+          h('div', { style: { marginTop: 4 } }, '工作站需要一个项目路径才能扫仓库、建流程和开启开发会话。'),
         ),
         h('div', { style: { ...styles.row, marginTop: 10 } },
           h(Button, { primary: true, onClick: () => onRequireSetup?.(), children: '去“流程”页初始化' }),
@@ -2155,8 +2164,8 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     const recon = pending?.recon ?? null
     const files = Array.isArray(recon?.files) ? recon.files : []
     const members = reconMembers(recon)
-    // 侧栏只放前 12 条；先分组再截断，避免某一成员库把其它库挤掉
-    const shownGroups = groupReconFiles(files.slice(0, 12))
+    // 侧栏保留全部候选（大改动可能命中很多文件）；分组展示，成员库之间不互相挤占
+    const shownGroups = groupReconFiles(files)
     const plan = pendingPlan?.plan ?? null
     const spec = clarify?.spec ?? {}
     const box = { display: 'flex', flexDirection: 'column', gap: 6, paddingBottom: 10, borderBottom: `1px solid ${T.borderSoft}` }
@@ -2326,7 +2335,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
               onClick: () => attachInputRef.current?.click(),
               children: attachBusy ? '上传中…' : '引用文件/图片',
             }),
-            // 历史对话：同一个代码库下的旧对话可以随时进入，而不是只有最后一段
+            // 历史对话：同一个项目下的旧对话可以随时进入，而不是只有最后一段
             chats.length
               ? h('div', { style: { position: 'relative' } },
                 h(Button, { onClick: () => setHistoryOpen((value) => !value), disabled: busy, children: '历史对话 ▾' }),

@@ -125,6 +125,8 @@ test('首条消息把会话钉在 Context Pack 与规范上', () => {
   assert.match(prompt, /Gerrit webhook（gerrit-hook）/)
   assert.match(prompt, /【项目约束】是本次开发的硬规则/)
   assert.match(prompt, /devhub_get/)
+  assert.match(prompt, /【阶段边界】/)
+  assert.match(prompt, /不要运行本机自测/)
   assert.match(prompt, /【目标】x$/)
 })
 
@@ -337,7 +339,8 @@ test('回归：风险勾选直接落盘，删掉风险行会清掉孤儿勾选',
   assert.match(index, /draft\.riskAcks/)
   assert.match(index, /勾选＝同意并知晓/)
   // 点「处理风险」应滚到勾选列表，而不是自动进文本编辑态
-  const step = index.slice(index.indexOf("if (action === 'edit-risks')"), index.indexOf("if (action === 'ask-session')"))
+  const riskAt = index.indexOf("if (action === 'edit-risks')")
+  const step = index.slice(riskAt, riskAt + 700)
   assert.doesNotMatch(step, /beginEdit\('risks'\)/)
 
   const { sanitizeItem } = await import('../src/core/store.mjs')
@@ -675,12 +678,12 @@ test('回归：右侧详情栏打开时，输入框仍与消息列同轴（不�
   assert.match(chat, /root: \{ \.\.\.styles\.page, height: 'auto', flex: '1 1 auto', minHeight: 0 \}/)
 })
 
-test('回归：代码库卡片支持移除，失效路径显示红标且不可切换', async () => {
+test('回归：项目卡片支持移除，失效路径显示红标且不可切换', async () => {
   const { readFile } = await import('node:fs/promises')
   const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
   assert.match(home, /路径不存在/)
   assert.match(home, /onRemove\?\.\(path\)/)
-  assert.match(home, /从列表移除这个代码库/)
+  assert.match(home, /从列表移除这个项目/)
   assert.match(home, /repoCards/)
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /API\.removeRepo/)
@@ -1029,40 +1032,38 @@ test('回归：聊天右区展示候选文件/计划，并支持按最新讨论�
   assert.match(chat, /setSideOpen/)
 })
 
-test('回归：虚拟库入口（虚拟库卡片 / 新建弹窗 / 切换）', async () => {
+test('回归：多库项目入口（多库项目卡片 / 新建弹窗 / 切换）', async () => {
   const { readFile } = await import('node:fs/promises')
   const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
-  assert.match(home, /虚拟库/)
-  assert.match(home, /新建虚拟库/)
+  assert.match(home, /多库项目/)
+  assert.match(home, /新建多库项目/)
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /API\.workspaces/)
   assert.match(index, /switchRepo.*workspaceId|workspaceId/)
   assert.match(index, /创建并切换/)
 })
 
-test('回归：新增代码库与新建虚拟库合并为同一个「新增开发目标」入口', async () => {
+test('回归：新增项目/新建多库项目收进「项目管理」旁的 + 下拉，不再占一张卡', async () => {
   const { readFile } = await import('node:fs/promises')
   const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
-  assert.match(home, /function AddTargetCard/)
-  const start = home.indexOf('function AddTargetCard')
-  const block = home.slice(start, home.indexOf('function RepoCard', start))
-  assert.match(block, /新增代码库/)
-  assert.match(block, /新建虚拟库/)
-  assert.match(block, /onAddRepo/)
-  assert.match(block, /onAddWorkspace/)
-  // 卡片高度与代码库卡统一，两个动作在 footer 区域左右平分
+  // 不再有末尾的「新增项目」大卡片
+  assert.doesNotMatch(home, /function AddTargetCard/)
+  assert.doesNotMatch(home, /h\(AddTargetCard, \{/)
+  // 标题旁的 + 按钮，点开是项目/多库项目两个入口
+  assert.match(home, /'aria-label': '新增项目'/)
+  assert.match(home, /setAddOpen/)
+  assert.match(home, /'\+ 新增项目'/)
+  assert.match(home, /'▣ 新建多库项目'/)
+  assert.match(home, /onAddRepo\?\.\(\)/)
+  assert.match(home, /onNewWorkspace\?\.\(\)/)
+  // 平铺成一行横向卡片，而不是多行网格
+  assert.match(home, /gridAutoFlow: 'column'/)
+  assert.match(home, /overflowX: 'auto'/)
   assert.match(home, /const GRID_CARD_MIN_HEIGHT = 120/)
-  assert.match(block, /minHeight: GRID_CARD_MIN_HEIGHT/)
-  assert.equal((block.match(/flex: '1 1 0'/g) ?? []).length, 2, 'footer 两个动作要平分')
-  assert.match(home, /minHeight: GRID_CARD_MIN_HEIGHT,\n\s+boxSizing: 'border-box',\n\s+padding: '10px 12px',\n        textAlign: 'left'/)
-  // 旧的独立新增卡片/独立虚拟库提示行不应再出现
   assert.doesNotMatch(home, /function AddRepoCard/)
-  assert.doesNotMatch(home, /把多个代码库（前后端）当成一个开发目标：/)
-  // 末尾网格里只挂合并后的卡片
-  assert.match(home, /h\(AddTargetCard, \{/)
 })
 
-test('代码库卡：上区名称+路径、下区 footer 显示 Git 分支（虚拟库归属只放 tooltip）', async () => {
+test('项目卡：上区名称+路径、下区 footer 显示 Git 分支（多库项目归属只放 tooltip）', async () => {
   const { readFile } = await import('node:fs/promises')
   const { HomeView } = await import('../src/client/home.mjs')
   const html = renderToStaticMarkup(h(HomeView, {
@@ -1088,10 +1089,10 @@ test('代码库卡：上区名称+路径、下区 footer 显示 Git 分支（虚
   assert.match(html, /web/)
   assert.match(html, /\/w\/web/)
   assert.match(html, /当前/)
-  // footer：Git 分支@HEAD、非 git/失效说明；虚拟库归属只在 tooltip，不能显示成虚拟库卡
+  // footer：Git 分支@HEAD、非 git/失效说明；多库项目归属只在 tooltip，不能显示成多库项目卡
   assert.match(html, /main@abc1234/)
-  assert.match(html, /虚拟库：用户中心/)
-  assert.doesNotMatch(html, /虚拟库 · 用户中心/)
+  assert.match(html, /多库项目：用户中心/)
+  assert.doesNotMatch(html, /多库项目 · 用户中心/)
   assert.match(html, /非 git 仓库/)
   assert.match(html, /路径不存在，不能切换/)
 
@@ -1104,10 +1105,57 @@ test('代码库卡：上区名称+路径、下区 footer 显示 Git 分支（虚
   assert.match(home, /WebkitBoxOrient: 'vertical'/)
   assert.match(home, /wordBreak: 'break-all'/)
 
-  // 虚拟库激活时点主库代码卡必须能切回单库：不能按 state.repo.path 直接 return
+  // 多库项目激活时点主库代码卡必须能切回单库：不能按 state.repo.path 直接 return
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /const alreadySingle = !state\?\.workspace && target === state\?\.repo\?\.path/)
   assert.match(index, /if \(!target \|\| alreadySingle\) return/)
+})
+
+test('会话管理页：工作站「会话」页签 + 分类卡 + 展开对话/归档/置顶', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const sessions = await readFile(new URL('../src/client/sessions.mjs', import.meta.url), 'utf8')
+  assert.match(sessions, /export function SessionsPanel/)
+  assert.match(sessions, /API\.managedSessions/)
+  assert.match(sessions, /CATEGORY_ICON/)
+  assert.match(sessions, /开发会话|评审会话|扫描会话|澄清会话/)
+  assert.match(sessions, /打开会话/)
+  assert.match(sessions, /查看对话/)
+  assert.match(sessions, /收起对话/)
+  assert.match(sessions, /API\.sessionTranscript/)
+  assert.doesNotMatch(sessions, /children: '放入 Workspace'/)
+  assert.match(sessions, /\$\{API\.sessionTranscript\}\?sessionId=/)
+  assert.match(sessions, /归档本组/)
+  assert.match(sessions, /session\.archived \? '取消归档' : '归档'/)
+  assert.match(sessions, /项目 Workspace/)
+  assert.match(sessions, /ui\.openWorkspace\(workspace\.id\)/)
+  assert.match(sessions, /projectWorkspaces/)
+  // 项目 → 需求 → 会话层级
+  assert.match(sessions, /function ProjectNode/)
+  assert.match(sessions, /function FlowNode/)
+  assert.doesNotMatch(sessions, /未关联到需求的会话/)
+  assert.match(sessions, /按项目/)
+  assert.match(sessions, /按类型/)
+  // 只渲染顶部选中的项目，不再一次铺开所有项目
+  assert.match(sessions, /activeRepoPath = null, activeWorkspacePath = null/)
+  assert.match(sessions, /const selectedProject = hierarchyAvailable && activePath/)
+  assert.match(sessions, /只显示顶部选中的项目/)
+  assert.doesNotMatch(sessions, /data\.projects\.map/)
+  const index2 = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(index2, /activeRepoPath: flowList\?\.repo\?\.path \?\? null/)
+  assert.match(index2, /activeWorkspacePath: flowList\?\.workspace\?\.path \?\? null/)
+  // 旧 Host 没有 projects 时退回按类型，并提示重启，不要显示空白层级
+  assert.match(sessions, /const hierarchyAvailable = Array\.isArray\(data\?\.projects\)/)
+  assert.match(sessions, /effectiveView = view === 'project' && !hierarchyAvailable \? 'category' : view/)
+  assert.match(sessions, /当前 Host 版本还不支持“项目 → 需求 → 会话”层级/)
+
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(index, /import \{ SessionsPanel \} from '\.\/sessions\.mjs'/)
+  assert.match(index, /\{ value: 'sessions', label: '会话' \}/)
+  assert.match(index, /h\(SessionsPanel, \{/)
+  assert.match(index, /会话管理 · 开发\/评审\/扫描\/澄清分类/)
+
+  const api = await readFile(new URL('../src/shared/api.mjs', import.meta.url), 'utf8')
+  assert.match(api, /managedSessions: '\/api\/dev-hub\/sessions\/manage'/)
 })
 
 test('回归：流程类型可在详情顶部点击纠正，列表用 Tag 标出 bug / 多库', async () => {
@@ -1156,13 +1204,13 @@ test('回归：下一步只保留一个"发送"，由工作站判断补台账还
   assert.doesNotMatch(index, /children: '推进开发'/)
 })
 
-test('头部开发目标徽标：代码库 / 虚拟库 / 未选择 三种情况都说清楚', async () => {
+test('头部项目徽标：项目 / 多库项目 / 未选择 三种情况都说清楚', async () => {
   const { RepoScopeBadge } = await import('../src/client/common.mjs')
 
   const repoHtml = renderToStaticMarkup(h(RepoScopeBadge, {
     repo: { name: 'demo', path: '/Users/lcg/demo' },
   }))
-  assert.match(repoHtml, /代码库/)
+  assert.match(repoHtml, /项目/)
   assert.match(repoHtml, /demo/)
   assert.match(repoHtml, /\/Users\/lcg\/demo/) // 全路径仍保留在 tooltip 里
   assert.match(repoHtml, /…\/lcg/) // 可见文本只留定位目录，避免长路径撑爆徽标
@@ -1171,9 +1219,9 @@ test('头部开发目标徽标：代码库 / 虚拟库 / 未选择 三种情况�
     repo: { name: 'web', path: '/w/web' },
     workspace: { id: 'w1', name: '用户中心 前后端', repos: ['/w/web', '/w/api'], path: '/home/u/.dev-hub/workspaces/w1' },
   }))
-  assert.match(wsHtml, /虚拟库/)
+  assert.match(wsHtml, /多库项目/)
   assert.match(wsHtml, /用户中心 前后端/)
-  assert.match(wsHtml, /2 库/)
+  assert.match(wsHtml, /2 个代码库/)
   assert.match(wsHtml, /本机台账/)
   // 没有主库：徽标不能再出现「主库 X / 写入主库」这类文案
   assert.doesNotMatch(wsHtml, /主库/)
@@ -1181,11 +1229,11 @@ test('头部开发目标徽标：代码库 / 虚拟库 / 未选择 三种情况�
   assert.match(wsHtml, /\/home\/u\/\.dev-hub\/workspaces\/w1/)
 
   const emptyHtml = renderToStaticMarkup(h(RepoScopeBadge, {}))
-  assert.match(emptyHtml, /未选择代码库/)
+  assert.match(emptyHtml, /未选择项目/)
   assert.match(emptyHtml, /到「流程」页选择或新增/)
 })
 
-test('流程页 / 技能页头部常驻「现在管的是哪个库或虚拟库」，切库后立刻刷新', async () => {
+test('流程页 / 技能页头部常驻「现在管的是哪个库或多库项目」，切库后立刻刷新', async () => {
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   // 头部徽标读 /state 的 repo + workspace，并且点击能回「流程」列表（切库入口在那里）
@@ -1197,7 +1245,7 @@ test('流程页 / 技能页头部常驻「现在管的是哪个库或虚拟库�
   assert.match(page, /repo: flowList\.repo/)
   assert.match(page, /workspace: flowList\.workspace/)
   assert.match(page, /setTab\('flows'\); setOpenFlow\(null\); setHomeNonce/)
-  // 切库/新增/初始化/新建虚拟库后立刻重取 state，而不是等 10 秒轮询
+  // 切库/新增/初始化/新建多库项目后立刻重取 state，而不是等 10 秒轮询
   assert.match(page, /scopeNonce/)
   assert.match(index, /onScopeChanged: \(\) => setScopeNonce\(/)
   assert.match(index, /function Panel\(\{[^}]*onScopeChanged/)
@@ -1206,11 +1254,11 @@ test('流程页 / 技能页头部常驻「现在管的是哪个库或虚拟库�
 
   const skills = await readFile(new URL('../src/client/skills.mjs', import.meta.url), 'utf8')
   assert.match(skills, /setWorkspace\(state\.workspace \?\? null\)/)
-  assert.match(skills, /虚拟库 · /)
-  assert.match(skills, /技能与约束只写入虚拟库本机目录/)
+  assert.match(skills, /多库项目 · /)
+  assert.match(skills, /技能与约束只写入多库项目本机目录/)
 })
 
-test('技能页：虚拟库时标出本机规范目录，并说明成员库不共享规范', async () => {
+test('技能页：多库项目时标出本机规范目录，并说明成员库不共享规范', async () => {
   const { SkillsPanel } = await import('../src/client/skills.mjs')
   const view = {
     firstRun: false,
@@ -1231,15 +1279,15 @@ test('技能页：虚拟库时标出本机规范目录，并说明成员库不�
     },
     initialView: view,
   }))
-  assert.match(html, /虚拟库 · 用户中心 前后端/)
-  assert.match(html, /2 库/)
+  assert.match(html, /多库项目 · 用户中心 前后端/)
+  assert.match(html, /2 个代码库/)
   assert.match(html, /本机规范/)
   assert.doesNotMatch(html, /主库/)
   assert.match(html, /成员库不共享规范/)
-  assert.match(html, /技能与约束只写入虚拟库本机目录 \/home\/u\/\.dev-hub\/workspaces\/w1/)
+  assert.match(html, /技能与约束只写入多库项目本机目录 \/home\/u\/\.dev-hub\/workspaces\/w1/)
 })
 
-test('流程页项目条：激活虚拟库时显示虚拟库名与本机台账目录，不再只显示某个成员库名', async () => {
+test('流程页项目条：激活多库项目时显示多库项目名与本机台账目录，不再只显示某个成员库名', async () => {
   const { HomeView } = await import('../src/client/home.mjs')
   const html = renderToStaticMarkup(h(HomeView, {
     state: {
@@ -1257,8 +1305,8 @@ test('流程页项目条：激活虚拟库时显示虚拟库名与本机台账�
     items: [],
     sessionStates: new Map(),
   }))
-  assert.match(html, /虚拟库 · 用户中心 前后端/)
-  assert.match(html, /2 库/)
+  assert.match(html, /多库项目 · 用户中心 前后端/)
+  assert.match(html, /2 个代码库/)
   assert.match(html, /本机台账/)
   assert.doesNotMatch(html, /主库 · /)
   assert.match(html, /\/home\/u\/\.dev-hub\/workspaces\/w1/)
@@ -1369,7 +1417,7 @@ test('渲染：开发会话运行中的流程详情出现「正在开发」loadi
   assert.doesNotMatch(html, /本机自测当前未运行/)
 })
 
-test('scope 词条：虚拟库 `<成员库>:<路径>` 显示成 `成员库 · 路径`，module: 保持原样', () => {
+test('scope 词条：多库项目 `<成员库>:<路径>` 显示成 `成员库 · 路径`，module: 保持原样', () => {
   assert.equal(common.scopeTokenLabel('web:src/x.js'), 'web · src/x.js')
   assert.equal(common.scopeTokenLabel('module:pipeline-service'), '模块 pipeline-service')
   assert.equal(common.scopeTokenLabel('src/main/java'), 'src/main/java')
@@ -1456,7 +1504,7 @@ test('流程页项目条：成员库 chip 平权展示分支/HEAD，缺失成员
   assert.match(html, /\/w\/api/)
 })
 
-test('开发目标：虚拟库与代码库同一网格；激活虚拟库时不再选中主库代码卡', async () => {
+test('项目：多库项目与项目同一网格；激活多库项目时不再选中主库代码卡', async () => {
   const { readFile } = await import('node:fs/promises')
   const { HomeView } = await import('../src/client/home.mjs')
   const workspace = {
@@ -1477,12 +1525,12 @@ test('开发目标：虚拟库与代码库同一网格；激活虚拟库时不�
     items: [],
     sessionStates: new Map(),
   }))
-  // 一个统一网格：虚拟库 + 代码库 + 新增卡，不再分「虚拟库」「代码库」两块
-  assert.match(html, /开发目标（2）/)
-  assert.doesNotMatch(html, /虚拟库（1）/)
-  assert.doesNotMatch(html, /代码库（1）/)
-  // 虚拟库卡是唯一选中项；主库代码卡不再跟着显示选中
-  assert.match(html, /aria-pressed="true" title="切换到虚拟库「用户中心」/)
+  // 平铺成一行：多库项目 + 项目都在同一个横向卡片行里，不再分「多库项目」「项目」两块
+  assert.match(html, /2 个项目/)
+  assert.doesNotMatch(html, /多库项目（1）/)
+  assert.doesNotMatch(html, /项目（1）/)
+  // 多库项目卡是唯一选中项；主库代码卡不再跟着显示选中
+  assert.match(html, /aria-pressed="true" title="切换到多库项目「用户中心」/)
   const repoAt = html.indexOf('切换到 /w/web')
   assert.ok(repoAt > 0, '主库代码卡应存在且是未选中状态')
   assert.match(html.slice(repoAt, repoAt + 320), /aria-pressed="false"/)
@@ -1490,8 +1538,9 @@ test('开发目标：虚拟库与代码库同一网格；激活虚拟库时不�
   const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
   assert.match(home, /\.\.\.workspaceViews\.map/)
   assert.match(home, /active: !activeWorkspace &&/)
+  assert.match(home, /gridAutoFlow: 'column'/)
 
-  // 重复点击当前虚拟库/同一目标切换中不再发请求、不再弹「已切到」提示
+  // 重复点击当前多库项目/同一目标切换中不再发请求、不再弹「已切到」提示
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /state\?\.workspace\?\.id === target/)
   assert.match(index, /const switchTargetRef = useRef\(null\)/)
@@ -1499,12 +1548,12 @@ test('开发目标：虚拟库与代码库同一网格；激活虚拟库时不�
   assert.match(index, /setSwitchingRepo\(targetKey\)/)
 })
 
-test('虚拟库卡片支持移除：只删本机登记，不动成员库磁盘与台账', async () => {
+test('多库项目卡片支持移除：只删本机登记，不动成员库磁盘与台账', async () => {
   const { readFile } = await import('node:fs/promises')
   const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
   assert.match(home, /onRemoveWorkspace/)
-  assert.match(home, /从本机移除这个虚拟库/)
-  assert.match(home, /从本机移除这个虚拟库（不动成员库代码与流程台账）/)
+  assert.match(home, /从本机移除这个多库项目/)
+  assert.match(home, /从本机移除这个多库项目（不动成员库代码与流程台账）/)
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /action: 'remove', id: workspace\?\.id/)
   assert.match(index, /只删本机的分组登记/)
@@ -1512,7 +1561,7 @@ test('虚拟库卡片支持移除：只删本机登记，不动成员库磁盘�
   assert.match(index, /本机台账仍保留/)
 })
 
-test('新建虚拟库弹窗：勾选已登记代码库 + 额外路径，>=2 校验，后端错误显示在弹窗内', async () => {
+test('新建多库项目弹窗：勾选已登记项目 + 额外路径，>=2 校验，后端错误显示在弹窗内', async () => {
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   // 只列路径存在的已登记卡片；编辑时额外保留当前成员（即使路径已失效，便于移除）
@@ -1528,7 +1577,7 @@ test('新建虚拟库弹窗：勾选已登记代码库 + 额外路径，>=2 校�
   assert.match(index, /wsError/)
   assert.match(index, /setWsError\(errorText\(err\)\)/)
   // 成功后按成员数提示并刷新页面 state
-  assert.match(index, /已创建并切到虚拟库/)
+  assert.match(index, /已创建并切到多库项目/)
   assert.match(index, /台账在本机/)
   // 同一个弹窗承担编辑：action update、成员库平权（没有锁定项）、保存修改
   assert.match(index, /function openEditWorkspace/)
@@ -1539,11 +1588,11 @@ test('新建虚拟库弹窗：勾选已登记代码库 + 额外路径，>=2 校�
   assert.match(index, /children: busy \? \(wsEditId \? '保存中…' : '创建中…'\)/)
 })
 
-test('虚拟库卡支持编辑成员：✎ 入口 + 编辑弹窗预填现有成员', async () => {
+test('多库项目卡支持编辑成员：✎ 入口 + 编辑弹窗预填现有成员', async () => {
   const { readFile } = await import('node:fs/promises')
   const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
   assert.match(home, /function WorkspaceCard\(\{ workspace, active, busy, onSelect, onEdit, onRemove[^}]*\}\)/)
-  assert.match(home, /title: '编辑这个虚拟库：改名、增删成员库（成员库平权，任意成员都可移除\/替换）'/)
+  assert.match(home, /title: '编辑这个多库项目：改名、增删成员库（成员库平权，任意成员都可移除\/替换）'/)
   assert.match(home, /onEdit\?\.\(workspace\)/)
   assert.match(home, /onEdit: onEditWorkspace/)
   assert.match(home, /onEditWorkspace,/)
@@ -1551,11 +1600,11 @@ test('虚拟库卡支持编辑成员：✎ 入口 + 编辑弹窗预填现有成�
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /const \[wsEditId, setWsEditId\] = useState\(null\)/)
   assert.match(index, /setWsPicked\(\[\.\.\.\(workspace\?\.repos \?\? \[\]\)\]\)/)
-  assert.match(index, /title: wsEditId \? '编辑虚拟库（成员库）' :/)
+  assert.match(index, /title: wsEditId \? '编辑多库项目（成员库）' :/)
   assert.match(index, /onEditWorkspace: openEditWorkspace/)
 })
 
-test('流程详情：虚拟库流程显示「虚拟库 X · N 库」徽标（成员名按 repos 目录名兜底）', async () => {
+test('流程详情：多库项目流程显示「多库项目 X · N 库」徽标（成员名按 repos 目录名兜底）', async () => {
   const { ItemEditor } = await import('../src/client/index.mjs')
   const { sanitizeItem } = await import('../src/core/store.mjs')
   const base = {
@@ -1571,19 +1620,19 @@ test('流程详情：虚拟库流程显示「虚拟库 X · N 库」徽标（成
     session: null,
     onBack() {}, onSaved() {}, onContext() {}, onStarted() {}, onLaunch() {}, onOpenSession() {}, onUnbindSession() {},
   }))
-  assert.match(multi, /虚拟库 用户中心 · 2 库/)
+  assert.match(multi, /多库项目 用户中心 · 2 库/)
 
-  // 单库流程保持旧界面：没有虚拟库徽标
+  // 单库流程保持旧界面：没有多库项目徽标
   const single = renderToStaticMarkup(h(ItemEditor, {
     item: sanitizeItem({ ...base, id: 'single-badge', repos: ['/w/web'] }),
     ctx: { get: () => undefined },
     session: null,
     onBack() {}, onSaved() {}, onContext() {}, onStarted() {}, onLaunch() {}, onOpenSession() {}, onUnbindSession() {},
   }))
-  assert.doesNotMatch(single, /虚拟库/)
+  assert.doesNotMatch(single, /多库项目/)
 })
 
-test('变更文件：虚拟库用 file.key 唯一标识 + 成员库 Tag，diff 请求带 repo', async () => {
+test('变更文件：多库项目用 file.key 唯一标识 + 成员库 Tag，diff 请求带 repo', async () => {
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /function fileKeyOf\(file\)/)
@@ -1624,7 +1673,7 @@ test('变更文件确认按成员库分组；探测卡片与右区按 repoName �
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /function changesByRepo/)
-  assert.match(index, /按库分组|虚拟库按成员库分组/)
+  assert.match(index, /按库分组|多库项目按成员库分组/)
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   assert.match(chat, /function groupReconFiles/)
   assert.match(chat, /function reconFileRepo/)
@@ -1950,7 +1999,7 @@ test('聊天计划卡：与输入框同宽同轴，深色主题不再用硬编�
   assert.match(common, /--dsw-alias-label-caption/)
 })
 
-test('切换代码库后聊天页重建，扫描显式绑定当前库', async () => {
+test('切换项目后聊天页重建，扫描显式绑定当前库', async () => {
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
@@ -2027,7 +2076,7 @@ test('聊天任务恢复：切页/刷新回来 job 与进度可见，不会静�
   assert.match(chat, /resumeTriedRef\.current = false/)
 })
 
-test('点代码库卡片只切换目标，不自动跳进该库上次打开的流程', async () => {
+test('点项目卡片只切换目标，不自动跳进该库上次打开的流程', async () => {
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   const start = index.indexOf('async function selectRepo(repoPath)')
@@ -2035,7 +2084,7 @@ test('点代码库卡片只切换目标，不自动跳进该库上次打开的�
   const body = index.slice(start, index.indexOf('async function', start + 10))
   assert.match(body, /setSelected\(null\)/)
   assert.doesNotMatch(body, /loadPanelState\(targetRepo\)/)
-  assert.match(body, /点代码库卡片是“切换目标”/)
+  assert.match(body, /点项目卡片是“切换目标”/)
 })
 
 test('需求澄清工作区：独立页签 + 空工作区首屏引导', async () => {

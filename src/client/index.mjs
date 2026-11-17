@@ -63,6 +63,7 @@ import { DevHubBoundary } from './error-boundary.mjs'
 import { loadLastTab, loadPanelState, saveLastTab, savePanelState } from './ui-state.mjs'
 import { deleteChat, selectChat, startNewChat } from './chat-store.mjs'
 import { SkillsPanel } from './skills.mjs'
+import { SessionsPanel } from './sessions.mjs'
 import { ReportView } from './report.mjs'
 import { KEY_FILE_LIMIT, excerptLines, keyFileKind, pickKeyFiles } from './key-files.mjs'
 
@@ -193,12 +194,12 @@ function SetupForm({ state, onDone, mode = 'setup', onPickDirectory }) {
   }
 
   return h('div', { style: styles.card },
-    h('h3', { style: { margin: '0 0 6px' } }, adding ? '新增代码库' : '初始化 DevHub'),
+    h('h3', { style: { margin: '0 0 6px' } }, adding ? '新增项目' : '初始化 DevHub'),
     h('p', { style: { color: C.muted, marginTop: 0 } }, adding
-      ? '填一个已有代码库的路径（或选择目录）；它会加入代码库卡片，环境自动探测一次后缓存。'
-      : '只需要填代码库路径和你的名字；系统、Shell、JDK、Maven、Git 和可用工具会自动探测。'),
+      ? '填一个已有项目的路径（或选择目录）；它会加入项目卡片，环境自动探测一次后缓存。'
+      : '只需要填项目路径和你的名字；系统、Shell、JDK、Maven、Git 和可用工具会自动探测。'),
     h('form', { onSubmit: submit },
-      h('label', { style: styles.label }, '代码库路径'),
+      h('label', { style: styles.label }, '项目路径'),
       h('div', { style: { display: 'flex', gap: T.gap.xs } },
         h('input', {
           style: { ...styles.input, flex: '1 1 auto' },
@@ -290,7 +291,7 @@ export function ProjectCommands({ project, localCommands = {}, onSaved }) {
     try {
       const body = await api(API.project, { method: 'POST', body: JSON.stringify({ commands: shared }) })
       onSaved?.(body.project, body.localCommands ?? local)
-      setMessage('已保存项目命令（会随代码库提交，团队共用）')
+      setMessage('已保存项目命令（会随仓库提交，团队共用）')
     } catch (err) { setMessage(errorText(err)) } finally { setBusy(false) }
   }
 
@@ -514,7 +515,7 @@ async function postAllowingFailure(url, payload) {
 }
 
 /**
- * 流程归属的虚拟库徽标：流程建在虚拟库里时，标题旁要能看出「这次跨了几个库」。
+ * 流程归属的多库项目徽标：流程建在多库项目里时，标题旁要能看出「这次跨了几个库」。
  *
  * 台账里的 `item.workspace` 可能只有 `{id,name}`（归属快照），成员名按 `item.repos`
  * 的目录名兜底；两者都没有时（单库流程）不渲染，保持旧界面不变。
@@ -535,11 +536,11 @@ function WorkspaceBadge({ workspace, repos }) {
     key: 'workspace',
     tone: 'accent',
     title: [
-      `虚拟库${workspace?.name ? `「${workspace.name}」` : ''}：${members.length} 个成员库`,
+      `多库项目${workspace?.name ? `「${workspace.name}」` : ''}：${members.length} 个成员库`,
       names.length ? `成员库：${names.join('、')}（成员库平权）` : '',
       '台账/规范/上下文/证据写在本机独立目录，不写任何成员库',
     ].filter(Boolean).join('\n'),
-  }, `虚拟库${workspace?.name ? ` ${workspace.name}` : ''} · ${members.length} 库`)
+  }, `多库项目${workspace?.name ? ` ${workspace.name}` : ''} · ${members.length} 库`)
 }
 
 /** 提交/测试结果里的成员库名：优先 Host 的 name，旧数据按路径兜底。 */
@@ -548,7 +549,7 @@ function repoDisplayName(entry) {
 }
 
 /**
- * 变更文件在界面上的唯一 key：虚拟库用 Host 的 `file.key`（`<成员库>/<路径>`），
+ * 变更文件在界面上的唯一 key：多库项目用 Host 的 `file.key`（`<成员库>/<路径>`），
  * 旧单库响应没有 key，回退 `path`，渲染与选中行为完全不变。
  */
 function fileKeyOf(file) {
@@ -588,6 +589,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [lark, setLark] = useState(null)
+  // 技术方案：生成/更新、冲突、预览与用户补充
+  const [techDocBusy, setTechDocBusy] = useState(false)
+  const [techDocConflict, setTechDocConflict] = useState(null)
+  const [techDocPreview, setTechDocPreview] = useState(null)
+  const [supplementDraft, setSupplementDraft] = useState(item?.workflow?.techDoc?.supplement ?? '')
+  // 测试跳过：记录原因；报告会显式标注，不当成通过
+  const [skipEdit, setSkipEdit] = useState(null)
+  const [skipBusy, setSkipBusy] = useState(false)
   const [changes, setChanges] = useState(null)
   const [selectedPaths, setSelectedPaths] = useState([])
   const [commitMessage, setCommitMessage] = useState('')
@@ -702,6 +711,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
 
   useEffect(() => {
     setDraft(item)
+    setTechDocConflict(null)
+    setTechDocPreview(null)
+    setSupplementDraft(item?.workflow?.techDoc?.supplement ?? '')
     // 计划校验（纯本地计算；打开详情 / 指纹变化时各跑一次）
     if (item?.id) {
       api(API.repro, { method: 'POST', body: JSON.stringify({ id: item.id }) })
@@ -852,15 +864,126 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     catch (err) { setError(errorText(err)) }
   }
 
-  async function createTechDoc(action) {
-    setBusy(true); setError(''); setNotice('')
+  function techDocProviderOf(value = techDoc) {
+    return value?.provider || 'feishu'
+  }
+
+  function techDocDefaultPath() {
+    return `docs/design/${draft.id || 'item'}.md`
+  }
+
+  function techDocDecisionFor(provider, current) {
+    if (provider === 'none') return 'none'
+    if (provider === 'link' || (provider === 'feishu' && current?.url)) return 'existing'
+    if (provider === 'local' || provider === 'feishu') return current?.exists ? 'existing' : 'create'
+    return null
+  }
+
+  /** 保存技术方案设置（provider/decision/标题/路径/链接），立刻落台账。 */
+  async function saveTechDocPatch(patch, message = '已保存技术方案设置') {
+    const base = draft.workflow?.techDoc ?? {}
+    const nextTechDoc = { ...base, ...patch }
+    nextTechDoc.decision = techDocDecisionFor(nextTechDoc.provider ?? techDocProviderOf(), nextTechDoc)
+    const next = { ...draft, workflow: { ...(draft.workflow ?? {}), techDoc: nextTechDoc } }
+    setDraft(next)
     try {
-      await persistDraft()
-      const body = await api(API.techdoc, { method: 'POST', body: JSON.stringify({ action, id: draft.id, title: techDoc.title || `${draft.title} 技术方案` }) })
-      setDraft(body.item); onSaved(body.item)
-      setNotice(action === 'create' ? `已创建：${body.url}` : `已生成：${body.path}`)
-      setEditKey(null); setSnapshot(null)
-    } catch (err) { setError(errorText(err)) } finally { setBusy(false) }
+      const saved = await persistDraft(next)
+      onSaved?.(saved)
+      setNotice(message)
+      return saved
+    } catch (err) {
+      setError(`保存技术方案设置失败：${errorText(err)}`)
+      return null
+    }
+  }
+
+  /** 生成/更新文档：飞书走 lark-cli（失败按配置回退本地），本地 md 生成/更新。 */
+  async function runTechDoc(force = false) {
+    if (techDocBusy) return
+    setTechDocBusy(true); setError(''); setNotice(''); setTechDocConflict(null)
+    try {
+      const provider = techDocProviderOf()
+      const body = await api(API.techdoc, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: provider === 'feishu' ? 'create' : 'local',
+          id: draft.id,
+          title: techDoc.title || `${draft.title} 技术方案`,
+          // 没填路径时交给 Host 按项目配置（默认 docs/design/{id}.md）解析，避免写死覆盖配置
+          path: techDoc.localPath || '',
+          // 已有飞书文档：更新正文，不新建
+          ...(provider === 'feishu' && techDoc.url ? { update: true } : {}),
+          force,
+        }),
+      })
+      if (body.conflict) {
+        setTechDocConflict(body)
+        setNotice(body.message || '本地文档有冲突：请选择覆盖生成段或保留内容并合并')
+        return
+      }
+      if (body.item) {
+        setDraft(body.item)
+        onSaved?.(body.item)
+        setSupplementDraft(body.item.workflow?.techDoc?.supplement ?? '')
+      }
+      if (body.degraded) {
+        setNotice(`飞书创建失败（${body.reason}），已回退生成本地文档：${body.path}`)
+      } else if (body.url) {
+        setNotice(body.updated ? `已更新飞书文档：${body.url}` : `已创建飞书文档：${body.url}`)
+      } else {
+        setNotice(body.status === 'created' ? `已生成：${body.path}` : `已更新：${body.path}`)
+      }
+      setTechDocPreview(null)
+    } catch (err) {
+      setError(`生成技术方案失败：${errorText(err)}`)
+    } finally { setTechDocBusy(false) }
+  }
+
+  /** 保存「我的补充」：存台账；本地文件存在时只同步 user 段，不动生成段。 */
+  async function saveSupplement() {
+    if (techDocBusy) return
+    setTechDocBusy(true); setError(''); setNotice('')
+    try {
+      const body = await api(API.techdoc, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'supplement', id: draft.id, supplement: supplementDraft }),
+      })
+      if (body.item) {
+        setDraft(body.item)
+        onSaved?.(body.item)
+        setSupplementDraft(body.item.workflow?.techDoc?.supplement ?? '')
+      }
+      setNotice(body.synced ? '补充已保存，并同步到本地文档的用户段' : '补充已保存到台账（重新生成不会覆盖）')
+    } catch (err) {
+      setError(`保存补充失败：${errorText(err)}`)
+    } finally { setTechDocBusy(false) }
+  }
+
+  async function previewTechDoc() {
+    if (techDocBusy) return
+    setTechDocBusy(true); setError('')
+    try {
+      const body = await api(API.techdoc, {
+        method: 'POST',
+        body: JSON.stringify({
+          action: 'preview',
+          id: draft.id,
+          title: techDoc.title,
+          path: techDoc.localPath || '',
+        }),
+      })
+      setTechDocPreview(body.markdown)
+    } catch (err) {
+      setError(`读取技术方案失败：${errorText(err)}`)
+    } finally { setTechDocBusy(false) }
+  }
+
+  function openDoc(url) {
+    if (!url) return
+    if (typeof window !== 'undefined' && typeof window.open === 'function') {
+      const opened = window.open(url, '_blank', 'noopener')
+      if (!opened) setNotice(url)
+    } else setNotice(url)
   }
 
   /** 让工作站把客户原话整理成目标/根因/验收（旧流程也能一键补规范化）。 */
@@ -939,7 +1062,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     ].join('\n'))
     const prompt = [
       `独立评审未通过，请按下面的纠偏意见返工（流程：${draft.title}）。`,
-      '先说明你准备怎么改，再改代码；完成后重跑本机自测并回写台账。评审通过前不要提交。',
+      '先说明你准备怎么改，再改代码；完成后回写任务与变更点。不要自行跑本机自测/门禁（测试由工作站「测试验证」阶段执行），评审通过前不要提交。',
       '',
       ...(lines.length ? [lines.join('\n\n')] : ['审核员未给出具体意见，请先读取评审页的结论与发现。']),
     ].join('\n')
@@ -958,12 +1081,24 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     } finally { setBusy(false) }
   }
 
+  /** 评审通过后的推进：直接执行下一步测试，而不是只切页签。 */
+  function advanceVerify(advance) {
+    if (busy) return
+    if (advance?.phase === 'environment') { runTest('environment'); return }
+    if (advance?.phase === 'submit') {
+      // 自动化开发站：点「去提交代码」直接按当前变更提交并推送，而不是只切页签
+      submitCode({ auto: true })
+      return
+    }
+    runTest('local')
+  }
+
   async function continueDev() {
     if (busy) return
     const advance = reviewAdvancePlan(draft)
     if (advance.action === 'manual') { setTab('review'); setNotice(advance.hint); return }
     if (advance.action === 'rework') { await reworkFromReview(); return }
-    if (advance.action === 'verify') { setTab('test'); setNotice('评审已通过：去「测试与提交」跑环境测试并提交'); return }
+    if (advance.action === 'verify') { advanceVerify(advance); return }
     if (advance.action === 'dispatch' || advance.action === 'retry') {
       await startReview()
       return
@@ -988,7 +1123,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   }
 
   /**
-   * 逐库测试结果：虚拟库里一个成员库失败，整体就是失败；但要说清哪几个库失败。
+   * 逐库测试结果：多库项目里一个成员库失败，整体就是失败；但要说清哪几个库失败。
    * 旧响应没有 result.repos 时什么都不额外渲染，单库界面保持原样。
    */
   function repoTestRows(result) {
@@ -1026,6 +1161,12 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   }
 
   async function runTest(phase) {
+    // 阶段边界：功能流程先评审再测试；本机自测只在评审通过后的测试验证阶段执行
+    const isAnalysisFlow = draft.workflow?.intent === 'analysis'
+    if (phase === 'local' && !isAnalysisFlow && reviewView.status !== 'passed') {
+      setError('独立评审通过后才进入测试验证：开发阶段请只改代码与测试代码，不要在开发会话里跑测试')
+      return
+    }
     const command = tests[phase]?.command || (phase === 'local' ? '项目配置的 localTest' : '项目配置的 environmentTest')
     if (!confirmText(`执行${phase === 'local' ? '本机自测' : '环境测试'}？\n\n${command}`)) return
     setBusy(true); setError(''); setNotice('')
@@ -1222,29 +1363,59 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     return [...map.entries()]
   }
 
-  async function submitCode({ pushOnly = false } = {}) {
-    if (!pushOnly && !selectedPaths.length) { setError('请选择要提交的文件'); return }
-    if (!pushOnly && !commitMessage.trim()) { setError('请填写提交信息'); return }
-    if (branchMode === 'new' && !pushOnly && !branchName.trim()) { setError('请填写新分支名'); return }
-    const submitTargetBranch = changes?.targetBranch || draft.baseline?.branch || changes?.branch || '当前分支'
-    const target = branchMode === 'new' && !pushOnly ? `新分支 ${branchName.trim()}` : `当前分支（${submitTargetBranch}）`
-    // 多成员库时确认框按库分组列文件，避免一长串路径看不出跨了哪些库
-    const groups = changesByRepo().filter(([, list]) => list.some((change) => selectedPaths.includes(change.path)))
-    const pathLines = groups.length > 1
-      ? groups.map(([repo, list]) => `【${repo || '成员库'}】\n${list.filter((change) => selectedPaths.includes(change.path)).map((change) => change.path).join('\n')}`).join('\n\n')
-      : selectedPaths.join('\n')
-    if (!confirmText(pushOnly
-      ? '上次提交没推送成功：现在重试 git push？'
-      : `确认提交 ${selectedPaths.length} 个文件到「${target}」，并立即 git push？\n\n${pathLines}`)) return
-    setBusy(true); setError(''); setNotice('')
+  async function submitCode({ pushOnly = false, auto = false } = {}) {
+    let paths = selectedPaths
+    let message = commitMessage
+    let mode = branchMode
+    let name = branchName.trim()
+    if (auto) {
+      // 自动化提交：按当前变更自动选文件、生成提交信息、当前分支直接 push，不弹确认
+      if (busy) return
+      setBusy(true); setError(''); setNotice('')
+      try {
+        const info = await api(`${API.changes}?id=${encodeURIComponent(draft.id)}`)
+        setChanges(info)
+        paths = (info.suggestedPaths ?? []).filter(Boolean)
+        const prefix = draft.workflow?.intent === 'bug' ? 'fix' : 'feat'
+        message = `${prefix}: ${draft.title || draft.id} (${draft.id})`
+        mode = 'current'
+        name = ''
+      } catch (err) {
+        setTab('test')
+        setError(`自动提交前读取变更失败：${errorText(err)}`)
+        setBusy(false)
+        return
+      }
+      if (!paths.length) {
+        setTab('test')
+        setNotice('没有检测到需要提交的变更（可能已经提交，或工作区是干净的）')
+        setBusy(false)
+        return
+      }
+    } else {
+      if (!pushOnly && !paths.length) { setError('请选择要提交的文件'); return }
+      if (!pushOnly && !String(message).trim()) { setError('请填写提交信息'); return }
+      if (mode === 'new' && !pushOnly && !name) { setError('请填写新分支名'); return }
+      const submitTargetBranch = changes?.targetBranch || draft.baseline?.branch || changes?.branch || '当前分支'
+      const target = mode === 'new' && !pushOnly ? `新分支 ${name}` : `当前分支（${submitTargetBranch}）`
+      // 多成员库时确认框按库分组列文件，避免一长串路径看不出跨了哪些库
+      const groups = changesByRepo().filter(([, list]) => list.some((change) => paths.includes(change.path)))
+      const pathLines = groups.length > 1
+        ? groups.map(([repo, list]) => `【${repo || '成员库'}】\n${list.filter((change) => paths.includes(change.path)).map((change) => change.path).join('\n')}`).join('\n\n')
+        : paths.join('\n')
+      if (!confirmText(pushOnly
+        ? '上次提交没推送成功：现在重试 git push？'
+        : `确认提交 ${paths.length} 个文件到「${target}」，并立即 git push？\n\n${pathLines}`)) return
+      setBusy(true); setError(''); setNotice('')
+    }
     try {
       // 部分成员库失败时 Host 仍返回逐库结果（ok:false）：不能让 api() 把 body 抛掉
       const body = await postAllowingFailure(API.submit, {
         id: draft.id,
-        paths: selectedPaths,
-        message: commitMessage,
-        branchMode,
-        branchName: branchName.trim(),
+        paths,
+        message,
+        branchMode: mode,
+        branchName: name,
         pushOnly,
       })
       if (body.item) { setDraft(body.item); onSaved(body.item) }
@@ -1274,6 +1445,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           lines.join('\n'),
         ].filter(Boolean).join('\n\n'))
         setError(body.error ?? 'git push 失败')
+        if (auto) setTab('test')
         return
       }
       setSubmitResult(`已提交并推送到 ${body.branch}：${body.commit}${body.pushOutput ? '\n' + body.pushOutput : ''}`)
@@ -1285,7 +1457,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       setNotice(worktreeBranch
         ? `${submitNotice}；独立工作区分支 ${body.branch || worktreeBranch} 已推送，合并回目标分支后再清理工作区`
         : submitNotice)
-    } catch (err) { setError(errorText(err)) } finally { setBusy(false) }
+    } catch (err) {
+      setError(errorText(err))
+      if (auto) setTab('test')
+    } finally { setBusy(false) }
   }
 
   /** 任务勾选直接落盘：勾一下就生效，不用再点一次保存。 */
@@ -1320,8 +1495,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   }
   const togglePath = (path) => setSelectedPaths((current) => (current.includes(path) ? current.filter((p) => p !== path) : [...current, path]))
   const techDocText = (decision) => ({ existing: '已有技术文档', create: '开发中创建', none: '暂不需要' }[decision] ?? '未选择')
-  const TEST_TEXT = { not_run: '未运行', running: '运行中', passed: '通过', failed: '失败' }
-  const testTone = (status) => (status === 'passed' ? 'ok' : status === 'failed' ? 'danger' : status === 'running' ? 'info' : 'neutral')
+  const TEST_TEXT = { not_run: '未运行', running: '运行中', passed: '通过', failed: '失败', skipped: '已跳过' }
+  const testTone = (status) => (status === 'passed' ? 'ok' : status === 'failed' ? 'danger' : status === 'running' ? 'info' : status === 'skipped' ? 'warn' : 'neutral')
 
   /* ------------------------------------------------------------- 概览页 */
 
@@ -1753,64 +1928,162 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             : h('div', { style: { ...styles.sectionHint, marginTop: T.gap.xs } }, '还没有任务；「批量编辑」可以一次粘贴')),
       ),
       h('div', { style: sectionBox },
-        sectionHead('技术文档', '有就填链接；没有可让 lark-cli 创建', 'techDoc'),
-        isEditing('techDoc')
-          ? h('div', null,
-            h('select', {
-              style: { ...styles.input, marginTop: T.gap.xs },
-              value: techDoc.decision ?? '',
-              onChange: (event) => updateWorkflow({ techDoc: { ...techDoc, decision: event.target.value || null } }),
-            },
-              h('option', { value: '' }, '请选择'),
-              h('option', { value: 'existing' }, '已有技术文档'),
-              h('option', { value: 'create' }, '没有，开发中创建'),
+        sectionHead('技术方案', '生成/更新不会覆盖「我的补充」；飞书用本机 lark-cli 登录，不存 token', 'techDoc'),
+        (() => {
+          const provider = techDoc.provider || 'feishu'
+          const status = techDoc.sync?.status
+          const stale = Boolean(techDoc.generatedAt && draft.updatedAt && new Date(draft.updatedAt) > new Date(techDoc.generatedAt))
+          const statusLabel = provider === 'none'
+            ? '暂不需要'
+            : !techDoc.exists
+              ? '未生成'
+              : stale ? '台账已更新，建议重新生成' : (status === 'external-modified' ? '本地文件已被修改' : '已生成')
+          const statusTone = provider === 'none' ? 'neutral' : (!techDoc.exists ? 'warn' : (stale || status === 'external-modified' ? 'warn' : 'ok'))
+          const copyPath = async () => {
+            const path = techDoc.localPath || techDocDefaultPath()
+            try { await navigator.clipboard.writeText(path); setNotice(`已复制路径：${path}`) } catch { setNotice(path) }
+          }
+          return [
+            h('div', { style: { ...styles.row, marginTop: T.gap.xs, flexWrap: 'wrap' } },
+              h('select', {
+                style: { ...styles.input, width: 160 },
+                value: provider,
+                disabled: techDocBusy,
+                onChange: (event) => {
+                  const next = event.target.value
+                  saveTechDocPatch({
+                    provider: next,
+                    ...(next === 'local' && !techDoc.localPath ? { localPath: techDocDefaultPath() } : {}),
+                    ...(next === 'feishu' && !techDoc.title ? { title: `${draft.title} 技术方案` } : {}),
+                  }, '已切换技术方案形式')
+                },
+              },
+              h('option', { value: 'feishu' }, '飞书文档'),
+              h('option', { value: 'local' }, '本地 Markdown'),
+              h('option', { value: 'link' }, '外部链接'),
               h('option', { value: 'none' }, '暂不需要'),
+              ),
+              h(Tag, { tone: statusTone }, statusLabel),
+              techDoc.localPath ? h('span', { style: { ...styles.mono, color: T.text4, wordBreak: 'break-all' } }, techDoc.localPath) : null,
+              techDoc.url ? h('span', { style: { ...styles.mono, color: T.text4, wordBreak: 'break-all' } }, techDoc.url) : null,
             ),
-            techDoc.decision === 'existing' ? h('div', null,
-              h('input', {
+            provider !== 'none'
+              ? h('input', {
                 style: { ...styles.input, marginTop: 6 },
-                placeholder: '文档标题',
+                placeholder: '技术方案标题',
                 value: techDoc.title ?? '',
                 onChange: (event) => updateWorkflow({ techDoc: { ...techDoc, title: event.target.value } }),
-              }),
-              h('input', {
+                onBlur: () => saveTechDocPatch({ title: techDoc.title ?? '' }, '已保存技术方案标题'),
+              })
+              : null,
+            provider === 'local'
+              ? h('div', { style: { marginTop: 6 } },
+                h('input', {
+                  style: styles.input,
+                  placeholder: techDocDefaultPath(),
+                  value: techDoc.localPath ?? '',
+                  onChange: (event) => updateWorkflow({ techDoc: { ...techDoc, localPath: event.target.value } }),
+                  onBlur: () => saveTechDocPatch({ localPath: techDoc.localPath ?? '' }, '已保存本地文档路径'),
+                }),
+                h('div', { style: styles.sectionHint }, '仓库内相对路径；默认 docs/design/{id}.md。生成只替换 generated 段，我的补充保留。'),
+              )
+              : null,
+            provider === 'link' || provider === 'feishu'
+              ? h('input', {
                 style: { ...styles.input, marginTop: 6 },
-                placeholder: '文档 URL 或本地路径',
-                value: techDoc.url || techDoc.localPath || '',
+                placeholder: provider === 'feishu' ? '已有飞书文档 URL（可选；创建后自动写入）' : '文档 URL（如 Confluence / wiki）',
+                value: techDoc.url ?? '',
                 onChange: (event) => updateWorkflow({ techDoc: { ...techDoc, url: event.target.value } }),
-              }),
-            ) : null,
-            techDoc.decision === 'create' ? h('div', null,
-              h('input', {
-                style: { ...styles.input, marginTop: 6 },
-                placeholder: '待创建文档标题',
-                value: techDoc.title ?? '',
-                onChange: (event) => updateWorkflow({ techDoc: { ...techDoc, title: event.target.value } }),
+                onBlur: () => saveTechDocPatch({ url: techDoc.url ?? '' }, '已保存文档链接'),
+              })
+              : null,
+            provider === 'feishu'
+              ? h('div', { style: styles.sectionHint },
+                techDoc.url
+                  ? '更新会覆盖飞书文档正文（含「我的补充」）；认证用本机 lark-cli 登录态，台账不存 token。'
+                  : '创建时用本机 lark-cli 登录态；不会在台账里保存 token。失败会按项目配置回退本地 Markdown。')
+              : null,
+            h('div', { style: { ...styles.row, marginTop: 6, flexWrap: 'wrap' } },
+              provider === 'feishu' || provider === 'local'
+                ? h(Button, {
+                  primary: true,
+                  disabled: techDocBusy || busy,
+                  onClick: () => runTechDoc(),
+                  children: techDocBusy
+                    ? '处理中…'
+                    : (provider === 'feishu' && techDoc.url
+                      ? '更新飞书文档'
+                      : (techDoc.exists ? (provider === 'feishu' ? '创建飞书文档' : '更新本地文档') : (provider === 'feishu' ? '创建飞书文档' : '生成本地文档'))),
+                })
+                : null,
+              provider !== 'none' ? h(Button, { style: mini, disabled: techDocBusy || busy, onClick: previewTechDoc, children: '预览' }) : null,
+              techDoc.url ? h(Button, { style: mini, onClick: () => openDoc(techDoc.url), children: '打开文档' }) : null,
+              techDoc.localPath ? h(Button, { style: mini, onClick: copyPath, children: '复制路径' }) : null,
+              provider === 'feishu' ? h(Button, { style: mini, onClick: probeLark, children: '检测 lark-cli' }) : null,
+            ),
+            provider === 'feishu' && lark
+              ? h('div', { style: { fontSize: T.font.sm, marginTop: 4, color: lark.available ? T.text4 : T.danger } },
+                `${lark.available ? 'lark-cli 可用' : 'lark-cli 不可用'} · ${lark.message ?? ''}`)
+              : null,
+            techDoc.sync?.note ? h('div', { style: { ...styles.sectionHint, color: T.warnText, marginTop: 4 } }, techDoc.sync.note) : null,
+            techDocConflict
+              ? h('div', { style: { ...styles.warnCard, marginTop: 6 } },
+                h('div', null, techDocConflict.message || '本地文档有冲突：默认不覆盖。'),
+                h('div', { style: { ...styles.row, marginTop: 6 } },
+                  h(Button, {
+                    primary: true,
+                    disabled: techDocBusy,
+                    onClick: () => { setTechDocConflict(null); runTechDoc(true) },
+                    children: techDocConflict.status === 'unmarked' ? '保留旧内容并合并' : '覆盖生成段并继续',
+                  }),
+                  h(Button, { disabled: techDocBusy, onClick: () => setTechDocConflict(null), children: '取消' }),
+                ),
+              )
+              : null,
+            techDocPreview
+              ? h('details', { style: { marginTop: 6 } },
+                h('summary', { style: { cursor: 'pointer', fontSize: T.font.sm, fontWeight: 600 } }, '方案预览'),
+                h('pre', { style: { ...styles.pre, maxHeight: 360, overflow: 'auto', marginTop: 4 } }, techDocPreview),
+              )
+              : null,
+            h('div', { style: { marginTop: 8, borderTop: `1px solid ${T.borderSoft}`, paddingTop: 8 } },
+              h('div', { style: styles.sectionTitle }, '我的补充'),
+              h('div', { style: styles.sectionHint }, '存台账；重新生成文档不会覆盖。本地文档会同步到 user 段。'),
+              h('textarea', {
+                style: { ...styles.textarea, minHeight: 120, marginTop: 6 },
+                placeholder: '方案取舍、边界、迁移/回滚、未决问题……',
+                value: supplementDraft,
+                onChange: (event) => setSupplementDraft(event.target.value),
               }),
               h('div', { style: { ...styles.row, marginTop: 6 } },
-                h(Button, { style: mini, onClick: probeLark, children: '检测 lark-cli' }),
-                h(Button, { style: mini, onClick: () => createTechDoc('create'), disabled: busy, children: '用 lark-cli 创建' }),
-                h(Button, { style: mini, onClick: () => createTechDoc('local'), disabled: busy, children: '生成本地文档' }),
+                h(Button, { primary: true, disabled: techDocBusy || busy, onClick: saveSupplement, children: techDocBusy ? '保存中…' : '保存补充' }),
+                h('span', { style: styles.sectionHint }, techDoc.supplementUpdatedAt ? `上次保存：${fmtTime(techDoc.supplementUpdatedAt)}` : '还没有补充'),
               ),
-              lark ? h('div', {
-                style: { fontSize: T.font.sm, marginTop: 4, color: lark.available ? T.text4 : T.danger },
-              }, `${lark.available ? 'available' : 'unavailable'} · ${lark.message ?? ''}`) : null,
-            ) : null,
-            editFooter('已保存技术文档'))
-          : h('div', { style: { marginTop: T.gap.xs, display: 'flex', flexDirection: 'column', gap: 4 } },
-            h('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
-              h(Tag, { tone: techDoc.decision === 'none' ? 'neutral' : techDoc.decision ? 'accent' : 'warn' }, techDocText(techDoc.decision)),
-              techDoc.title ? h(Tag, { tone: 'neutral' }, techDoc.title) : null,
             ),
-            techDoc.url || techDoc.localPath
-              ? h('span', { style: { ...styles.mono, color: T.text4, wordBreak: 'break-all' } }, techDoc.url || techDoc.localPath)
-              : null,
-            techDoc.createdBy ? h('span', { style: styles.sectionHint }, `来源：${techDoc.createdBy}`) : null),
+          ]
+        })(),
       ),
     )
   }
 
   /* ------------------------------------------------------- 测试与提交页 */
+
+  /** 人工跳过测试：原因写进台账，报告/阶段都会标注“已跳过”，不会伪装成通过。 */
+  async function skipTest(phase, reason) {
+    if (skipBusy) return
+    setSkipBusy(true); setError(''); setNotice('')
+    try {
+      const body = await api(API.test, {
+        method: 'POST',
+        body: JSON.stringify({ id: draft.id, phase, skip: true, reason }),
+      })
+      if (body.item) { setDraft(body.item); onSaved?.(body.item) }
+      setSkipEdit(null)
+      setNotice(`${phase === 'local' ? '本机自测' : '环境测试'}已跳过：${reason || '未填写原因'}；报告会标注`)
+    } catch (err) {
+      setError(`跳过测试失败：${errorText(err)}`)
+    } finally { setSkipBusy(false) }
+  }
 
   function testBlock(phase, title, hint) {
     const result = tests[phase] ?? {}
@@ -1825,17 +2098,50 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         ),
         h(Tag, { tone: stale ? 'warn' : testTone(status) }, stale ? '已过期，需重跑' : (TEST_TEXT[status] ?? status)),
       ),
-      h('div', { style: { ...styles.row, marginTop: T.gap.xs } },
+      h('div', { style: { ...styles.row, marginTop: T.gap.xs, flexWrap: 'wrap' } },
         h('span', { style: styles.sectionHint }, '命令'),
         h('span', { style: { ...styles.mono, color: T.text2 } }, command),
         h('div', { style: styles.spacer }),
         h(Button, {
           style: mini,
-          disabled: busy || (phase === 'environment' && (tests.local?.status !== 'passed' || tests.local?.stale || reviewView.status !== 'passed')),
+          disabled: busy
+            || (phase === 'local' && draft.workflow?.intent !== 'analysis' && reviewView.status !== 'passed')
+            || (phase === 'environment'
+              && ((!['passed', 'skipped'].includes(tests.local?.status)) || tests.local?.stale || reviewView.status !== 'passed')),
           onClick: () => runTest(phase),
-          children: phase === 'local' ? '运行本机自测' : '运行环境测试',
+          children: status === 'skipped' ? '重新运行' : (phase === 'local' ? '运行本机自测' : '运行环境测试'),
         }),
+        status === 'skipped'
+          ? null
+          : h(Button, {
+            style: mini,
+            disabled: busy || skipBusy || (phase === 'environment' && reviewView.status !== 'passed'),
+            title: phase === 'environment' && reviewView.status !== 'passed'
+              ? '评审通过后才能跳过环境测试'
+              : '跳过这次测试：原因会写进台账和开发报告，不会被当成通过',
+            onClick: () => setSkipEdit({ phase, reason: '' }),
+            children: '跳过',
+          }),
       ),
+      status === 'skipped'
+        ? h('div', { style: { ...styles.sectionHint, marginTop: 4, color: T.warnText } },
+          `已人工跳过${result.skipReason ? `：${result.skipReason}` : ''}${result.skippedBy ? `（${result.skippedBy}）` : ''}；报告会标注，不计为通过。`)
+        : null,
+      skipEdit?.phase === phase
+        ? h('div', { style: { ...styles.row, marginTop: 6, flexWrap: 'wrap' } },
+          h('input', {
+            style: { ...styles.input, flex: '1 1 260px' },
+            placeholder: '跳过原因（会写进开发报告；建议写清楚为什么）',
+            value: skipEdit.reason,
+            onChange: (event) => setSkipEdit({ ...skipEdit, reason: event.target.value }),
+            onKeyDown: (event) => {
+              if (event.key === 'Enter') { event.preventDefault(); skipTest(phase, skipEdit.reason) }
+            },
+          }),
+          h(Button, { primary: true, style: mini, disabled: skipBusy || busy, onClick: () => skipTest(phase, skipEdit.reason), children: skipBusy ? '处理中…' : '确认跳过' }),
+          h(Button, { style: mini, disabled: skipBusy, onClick: () => setSkipEdit(null), children: '取消' }),
+        )
+        : null,
       result.at
         ? h('div', { style: { ...styles.sectionHint, marginTop: 4 } },
           `最近一次：${fmtTime(result.at)}${result.durationMs ? ` · ${Math.round(result.durationMs / 1000)}s` : ''}`)
@@ -1846,7 +2152,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             status === 'failed' ? '查看失败输出' : '查看输出'),
           h('pre', { style: { ...styles.pre, marginTop: 6 } }, String(result.output).slice(-4000)))
         : null,
-      // 虚拟库：逐成员库测试结果（旧单库响应没有 repos，不渲染）
+      // 多库项目：逐成员库测试结果（旧单库响应没有 repos，不渲染）
       repoTestRows(result),
     )
   }
@@ -1902,7 +2208,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
 
   /**
    * 打开一个文件的 diff。
-   * 虚拟库里同一个仓库相对路径可能在多个成员库都存在，因此必须把 `repo` 一起带上，
+   * 多库项目里同一个仓库相对路径可能在多个成员库都存在，因此必须把 `repo` 一起带上，
    * 让 Host 去正确的成员库读；单库旧响应没有 repo 字段，URL 与以前完全一致。
    */
   async function openDiff(file) {
@@ -2078,7 +2384,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                   const saveNote = async () => {
                     if (!editing) return
                     try {
-                      // 虚拟库：同一个相对路径可能出现在多个成员库，说明要跟着 repo 走
+                      // 多库项目：同一个相对路径可能出现在多个成员库，说明要跟着 repo 走
                       const body = await api(API.fileNote, {
                         method: 'POST',
                         body: JSON.stringify({ id: draft.id, path: file.path, repo: file.repo, note: noteEdit.text }),
@@ -2391,7 +2697,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         view.status === 'failed'
           ? (view.reworkAt && !view.exhausted
             ? h('div', { style: { ...styles.infoCard, marginTop: T.gap.xs } },
-              '纠偏意见已发回开发会话返工。完成修改并重跑本机自测后点「重新评审」；本轮不再提供人工通过，避免返工中绕回评审门禁。')
+              '纠偏意见已发回开发会话返工。完成修改后点「重新评审」（测试仍由工作站「测试验证」阶段执行）；本轮不再提供人工通过，避免返工中绕回评审门禁。')
             : h('div', { style: { ...styles.warnCard, marginTop: T.gap.xs, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
               h('span', { style: { fontSize: T.font.sm, color: T.warnText, flex: '1 1 360px' } },
                 view.exhausted
@@ -2473,37 +2779,37 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     const isAnalysis = draft.workflow?.intent === 'analysis'
     // 分析流程只读：没有提交/推送环节，本机自测通过即结束
     const isGitRepo = draft.workflow?.gitRepo !== false && !isAnalysis
-    // 评审是测试验证的门禁：本机自测通过后点「继续推进」即开始评审，评审通过才允许跑环境测试
+    // 评审是测试验证的门禁：开发完成后点「继续推进」开始评审，评审通过后才跑本机/环境测试
     const reviewAllowed = reviewView.status === 'passed'
     const step = isAnalysis
       ? (!localValid
         ? { label: '跑本机自测', hint: '分析流程只读：跑通本机自测作为结论证据，通过后流程直接完成（不跑环境测试、不提交）', action: () => runTest('local'), command: tests.local?.command }
         : { label: '已完成', hint: '分析流程只读：结论产出即结束，不建 worktree、不产生提交', action: () => {}, command: null })
-      : !localValid
-        ? { label: '重跑本机自测', hint: tests.local?.stale ? '测试通过后代码/诉求又有变化：旧结果已过期，请重跑' : '评审通过后也会要求重跑本机自测；这里可以先跑，用于验证改动', action: () => runTest('local'), command: tests.local?.command }
-        : !reviewAllowed
-          ? {
-            // 评审阶段的主操作也是「继续推进」：与顶栏同一个自动派发入口，不是手工派发按钮
-            label: reviewView.status === 'failed'
-              ? '重新开始评审'
-              : reviewView.status === 'error'
-                ? '重试评审'
-                : reviewView.status === 'idle'
-                  ? '继续推进即开始评审'
-                  : '查看评审状态',
-            hint: reviewView.status === 'failed'
-              ? '评审未通过：流程已退回开发，按纠偏意见改完再点它重试评审'
-              : reviewView.status === 'error'
-                ? '评审异常待处理：有审核员未返回结论，点它重试派发（不重复已返回的结论）'
-                : reviewView.status === 'idle'
-                  ? '本机自测已通过：点它即自动开始评审（审核员按默认配置产生），评审通过后才能跑环境测试'
-                  : '评审进行中：等审核员返回结论，不要跳过评审直接跑环境测试',
-            action: () => {
-              if (reviewView.status === 'pending') { setTab('review'); return }
-              startReview()
-            },
-            command: null,
-          }
+      : !reviewAllowed
+        ? {
+          // 功能流程：先评审，评审通过后才进入测试验证；开发阶段不提供“先跑测试”入口
+          label: reviewView.status === 'failed'
+            ? '重新开始评审'
+            : reviewView.status === 'error'
+              ? '重试评审'
+              : reviewView.status === 'idle'
+                ? '继续推进即开始评审'
+                : '查看评审状态',
+          hint: reviewView.status === 'failed'
+            ? '评审未通过：流程已退回开发，按纠偏意见改完再点它重试评审'
+            : reviewView.status === 'error'
+              ? '评审异常待处理：有审核员未返回结论，点它重试派发（不重复已返回的结论）'
+              : reviewView.status === 'idle'
+                ? '点它即自动开始独立评审（审核员按默认配置产生）；评审通过后才进入测试验证'
+                : '评审进行中：等审核员返回结论，不要跳过评审直接跑环境测试',
+          action: () => {
+            if (reviewView.status === 'pending') { setTab('review'); return }
+            startReview()
+          },
+          command: null,
+        }
+        : !localValid
+          ? { label: '重跑本机自测', hint: tests.local?.stale ? '测试通过后代码/诉求又有变化：旧结果已过期，请重跑' : '评审已通过：测试由工作站在测试验证阶段执行', action: () => runTest('local'), command: tests.local?.command }
           : !envValid
             ? {
               label: '跑环境测试',
@@ -2534,7 +2840,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           step.command ? h('span', { style: { ...styles.mono, fontSize: T.font.xs, color: T.text4 } }, step.command) : null,
         ),
       ),
-      testBlock('local', '本机自测', isAnalysis ? '分析流程用本机自测作为只读证据；通过即结束，不修改代码' : '先在本机跑通，再进独立评审'),
+      testBlock('local', '本机自测', isAnalysis ? '分析流程用本机自测作为只读证据；通过即结束，不修改代码' : '评审通过后才进入测试验证；测试由工作站执行，开发阶段只改代码'),
       isAnalysis ? null : testBlock('environment', '环境测试', '本机自测 + 独立评审通过后才可执行'),
       isGitRepo ? h('div', { style: sectionBox, id: 'devhub-submit' },
         h('div', { style: styles.spread },
@@ -2592,7 +2898,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                   h('span', { style: { ...styles.mono, color: T.text2 } }, change.path),
                   change.type ? h(Tag, { tone: 'neutral' }, change.type) : null,
                 )
-                // 单库照旧平铺；虚拟库按成员库分组，避免"提交了哪几个库"看不出来
+                // 单库照旧平铺；多库项目按成员库分组，避免"提交了哪几个库"看不出来
                 if (!multi) return list.map(row)
                 return groups.map(([repo, rows]) => h('div', { key: repo || '__members__', style: { marginTop: 4 } },
                   h('div', { style: { ...styles.sectionHint, paddingLeft: 2, fontWeight: 600, color: T.text2 } },
@@ -2644,7 +2950,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         : h('div', { style: sectionBox },
           h('div', { style: styles.sectionTitle }, '不需要提交'),
           h('div', { style: { ...styles.sectionHint, marginTop: 4 } },
-            '这个代码库不是 git 仓库：没有提交与推送环节。本机自测 + 环境测试都通过后，流程会自动完成。'),
+            '这个项目不是 git 仓库：没有提交与推送环节。本机自测 + 环境测试都通过后，流程会自动完成。'),
         ),
     )
   }
@@ -2844,7 +3150,6 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         scrollToId('devhub-risks', 'center')
         return
       }
-      if (action === 'ask-session') { askSession(); return }
     }
 
     /**
@@ -2909,32 +3214,6 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         setError(errorText(err))
       } finally {
         setAssistBusy(false)
-      }
-    }
-
-    async function askSession() {
-      if (askBusy) return
-      setAskBusy(true)
-      setError('')
-      setNotice('')
-      try {
-        const message = composeAsk(summary, askText)
-        let target = boundId
-        if (!target) {
-          // 还没有会话：先开一个（会带上 Context Pack），再把这句话作为追问发过去
-          const launched = await onLaunch?.(draft.id)
-          if (launched?.error) throw new Error(launched.error)
-          target = launched?.sessionId ?? null
-        }
-        if (!target) throw new Error('还没有可用的开发会话：请先开启开发会话')
-        const result = await sendToSession(ctx, target, message)
-        if (!result.sent) throw new Error(result.reason ?? '发送失败')
-        setAskText('')
-        setNotice('已发到开发会话：它会按当前状态推进/给建议，进度显示在下方「会话内容」。')
-      } catch (err) {
-        setError(errorText(err))
-      } finally {
-        setAskBusy(false)
       }
     }
 
@@ -3167,7 +3446,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       reviewState: workflow.review?.status ?? 'idle',
       intent: workflow.intent,
     })
-    const testTone = (test) => (test?.status === 'passed' ? 'ok' : test?.status === 'failed' ? 'danger' : test?.status === 'running' ? 'info' : 'neutral')
+    const testTone = (test) => (test?.status === 'passed' ? 'ok' : test?.status === 'failed' ? 'danger' : test?.status === 'running' ? 'info' : test?.status === 'skipped' ? 'warn' : 'neutral')
     const testLabel = (test) => TEST_TEXT[test?.status] ?? '未运行'
     const totals = filesInfo?.totals ?? null
     const progressColor = draft.status === 'done' ? T.ok : T.brand
@@ -3403,7 +3682,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               onClick: () => {
                 if (advance.action === 'manual') { setTab('review'); setNotice(advance.hint); return }
                 if (advance.action === 'rework') { runLaunch('rework', reworkFromReview); return }
-                if (advance.action === 'verify') { setTab('test'); setNotice('评审已通过：去「测试与提交」跑环境测试并提交'); return }
+                if (advance.action === 'verify') { advanceVerify(advance); return }
                 if (advance.action === 'dispatch' || advance.action === 'retry') {
                   // 评审是台账动作，不是“给会话再发一句话”：直接派审核员，标签也显示评审中
                   runLaunch('review', startReview)
@@ -3464,7 +3743,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         h('div', { style: styles.spacer }),
         h('span', { style: styles.sectionHint }, draft.workflow?.intent === 'analysis'
           ? '分析流程只读：只读排查 → 结论；不跑环境测试、不进入提交'
-          : '阶段随工作自动推进：本机自测通过后点「继续推进」即开始独立评审；评审通过 → 测试验证；环境验证通过 → 待提交；提交后 → 完成'),
+          : '阶段随工作自动推进：开发任务完成后点「继续推进」开始独立评审；评审通过 → 测试验证（本机/环境测试由工作站执行）→ 待提交 → 完成'),
       ),
       h(ArrowSteps, {
         stages: draft.workflow?.gitRepo === false || draft.workflow?.intent === 'analysis'
@@ -3565,19 +3844,19 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
 }
 
 import { launchDevSession, launchPrompt, sendToSession } from './session.mjs'
-import { composeAsk, continuePrompt, describeFlow, suggestNextSteps } from './next-steps.mjs'
+import { continuePrompt, describeFlow, suggestNextSteps } from './next-steps.mjs'
 
 export { launchDevSession, launchPrompt }
 
 function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openFlowNonce = 0, homeNonce = 0, onScopeChanged = null }) {
   const [state, setState] = useState(null)
-  // 虚拟库：多代码库组合（前后端联动）
+  // 多库项目：多库项目（前后端联动）
   const [wsOpen, setWsOpen] = useState(false)
-  // null = 新建；否则是正在编辑的虚拟库 id
+  // null = 新建；否则是正在编辑的多库项目 id
   const [wsEditId, setWsEditId] = useState(null)
   const [wsName, setWsName] = useState('')
   const [wsPaths, setWsPaths] = useState('')
-  // 勾选的已登记代码库（state.profile.repoCards 里 exists 的）；额外路径走文本框
+  // 勾选的已登记项目（state.profile.repoCards 里 exists 的）；额外路径走文本框
   const [wsPicked, setWsPicked] = useState([])
   const [wsError, setWsError] = useState('')
   const [selected, setSelected] = useState(null)
@@ -3622,7 +3901,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   // 会话卡在提问时把问题捞出来，在工作站就地作答（否则开发会一直等答案）
   const [pendingQuestions, setPendingQuestions] = useState([])
   const [pendingApprovals, setPendingApprovals] = useState([])
-  // 代码库切换：进行中的目标路径 + 请求序号（防连点竞态）
+  // 项目切换：进行中的目标路径 + 请求序号（防连点竞态）
   const [switchingRepo, setSwitchingRepo] = useState(null)
   const switchSeq = useRef(0)
   // 同一个目标正在切换时不重复发请求（state 更新有延迟，不能只靠 disabled）
@@ -3838,15 +4117,15 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   }
 
   /**
-   * 点代码库卡片切换。
+   * 点项目卡片切换。
    * - 请求序号防连点竞态：只认最后一次响应（避免切回来还是别的库）；
    * - 切换前清空旧库的详情/会话状态/并行数据，避免串味；
-   * - detect:false 复用本机环境缓存（新库首次由「新增代码库」探测）。
+   * - detect:false 复用本机环境缓存（新库首次由「新增项目」探测）。
    */
   async function selectRepo(repoPath) {
     const target = String(repoPath ?? '').trim()
-    // 虚拟库激活时 state.repo 指向虚拟库自己的本机台账目录；点任意成员库代码卡都要能切回单库，
-    // 不能因为“看起来是同一个目标”就 early-return（否则会卡在虚拟库、切不走）。
+    // 多库项目激活时 state.repo 指向多库项目自己的本机台账目录；点任意成员库代码卡都要能切回单库，
+    // 不能因为“看起来是同一个目标”就 early-return（否则会卡在多库项目、切不走）。
     const alreadySingle = !state?.workspace && target === state?.repo?.path
     if (!target || alreadySingle) return
     const name = state?.profile?.member
@@ -3870,11 +4149,11 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
       })
       if (seq !== switchSeq.current) return // 有更新的切换请求，丢弃这次响应
       setState(next)
-      // 切库后让页面头部（开发目标徽标）立刻刷新，不用等 10 秒轮询。
+      // 切库后让页面头部（项目徽标）立刻刷新，不用等 10 秒轮询。
       onScopeChanged?.()
       setSessionStates(sessionMapFrom(next.sessionStates))
       setParallel(next.parallel ?? null)
-      // 点代码库卡片是“切换目标”，不是“继续上次的流程”：清掉旧详情并停在流程列表。
+      // 点项目卡片是“切换目标”，不是“继续上次的流程”：清掉旧详情并停在流程列表。
       // 抽屉/聊天里明确点了某条流程时由 openFlow 负责打开，两者不能混在一起。
       const targetRepo = next?.repo?.path
       if (targetRepo) restoredPanelRef.current = targetRepo
@@ -3984,7 +4263,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   async function launchDev(id, { fresh = false, resync = false } = {}) {
     const item = state?.selectedItem
     const title = item?.title ?? id
-    if (!state?.repo?.path) { setError('尚未选择代码库'); return }
+    if (!state?.repo?.path) { setError('尚未选择项目'); return }
     const previous = item?.session?.id
     const continueExisting = Boolean(previous) && !fresh
     // resync 来自「更多」里的显式低频按钮，标签已说明后果，不再弹确认。
@@ -4034,11 +4313,11 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     }
   }
 
-  /** 切到某个虚拟库（多成员库组合）。 */
+  /** 切到某个多库项目（多成员库组合）。 */
   async function selectWorkspace(workspaceId) {
     const target = String(workspaceId ?? '').trim()
     if (!target) return
-    // 已经在这个虚拟库里：重复点击不再弹切换提示、不再发请求
+    // 已经在这个多库项目里：重复点击不再弹切换提示、不再发请求
     if (state?.workspace?.id === target) return
     const targetKey = `workspace:${target}`
     if (switchTargetRef.current === targetKey) return
@@ -4063,7 +4342,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
       setSessionStates(sessionMapFrom(body.sessionStates))
       setSelected(null)
       const members = workspaceMembersView(body.workspace)
-      setNotice(`已切到虚拟库「${body.workspace?.name ?? target}」（${members.length} 个成员库；台账在本机 ${body.workspace?.path ?? '—'}）`)
+      setNotice(`已切到多库项目「${body.workspace?.name ?? target}」（${members.length} 个成员库；台账在本机 ${body.workspace?.path ?? '—'}）`)
     } catch (err) {
       if (seq === switchSeq.current) setError(errorText(err))
     } finally {
@@ -4078,13 +4357,13 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     setWsPicked((current) => (current.includes(path) ? current.filter((entry) => entry !== path) : [...current, path]))
   }
 
-  /** 新建虚拟库的输入汇总：勾选的已登记代码库 + 文本框里的额外路径（去重）。 */
+  /** 新建多库项目的输入汇总：勾选的已登记代码库 + 文本框里的额外路径（去重）。 */
   function workspaceDraftRepos() {
     const extra = wsPaths.split(/\r?\n/).map((line) => line.trim()).filter(Boolean)
     return [...new Set([...wsPicked, ...extra])]
   }
 
-  /** 打开新建虚拟库弹窗。 */
+  /** 打开新建多库项目弹窗。 */
   function openCreateWorkspace() {
     setWsEditId(null)
     setWsName('')
@@ -4096,7 +4375,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     setWsOpen(true)
   }
 
-  /** 打开编辑虚拟库弹窗：预填名字与现有成员。 */
+  /** 打开编辑多库项目弹窗：预填名字与现有成员。 */
   function openEditWorkspace(workspace) {
     setWsEditId(workspace?.id ?? null)
     setWsName(workspace?.name ?? '')
@@ -4114,13 +4393,13 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     setWsError('')
   }
 
-  /** 新建/编辑虚拟库：名字 + 勾选/填写 ≥2 个代码库；成员库平权，任意成员都可移除/替换。 */
+  /** 新建/编辑多库项目：名字 + 勾选/填写 ≥2 个项目；成员库平权，任意成员都可移除/替换。 */
   async function saveWorkspaceNow() {
     const editing = Boolean(wsEditId)
     const name = wsName.trim()
     const repos = workspaceDraftRepos()
-    if (!name) { setWsError('虚拟库需要名字'); return }
-    if (repos.length < 2) { setWsError('虚拟库至少需要两个不同的代码库：勾选已登记的库，或在下面每行填一个路径'); return }
+    if (!name) { setWsError('多库项目需要名字'); return }
+    if (repos.length < 2) { setWsError('多库项目至少需要两个不同的代码库：勾选已登记的库，或在下面每行填一个路径'); return }
     setBusy(true)
     setWsError('')
     setError('')
@@ -4144,9 +4423,9 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
       if (editing) {
         const added = body.added ?? []
         const removed = body.removed ?? []
-        setNotice(`已更新虚拟库「${body.workspace?.name ?? name}」（${members.length} 个成员库${added.length ? `；新增 ${added.map(repoBaseName).join('、')}` : ''}${removed.length ? `；移除 ${removed.map(repoBaseName).join('、')}` : ''}）`)
+        setNotice(`已更新多库项目「${body.workspace?.name ?? name}」（${members.length} 个成员库${added.length ? `；新增 ${added.map(repoBaseName).join('、')}` : ''}${removed.length ? `；移除 ${removed.map(repoBaseName).join('、')}` : ''}）`)
       } else {
-        setNotice(`已创建并切到虚拟库「${body.workspace?.name ?? name}」（${members.length} 个成员库；台账在本机 ${body.localPath ?? body.workspace?.path ?? '—'}）`)
+        setNotice(`已创建并切到多库项目「${body.workspace?.name ?? name}」（${members.length} 个成员库；台账在本机 ${body.localPath ?? body.workspace?.path ?? '—'}）`)
       }
     } catch (err) {
       // 错误显示在弹窗里：用户正在填表，不该跑回页面顶部找红字
@@ -4157,13 +4436,13 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   }
 
   /**
-   * 移除虚拟库：只删本机 profile 里的分组登记，不动任何成员库的代码与 .dev-hub 台账。
+   * 移除多库项目：只删本机 profile 里的分组登记，不动任何成员库的代码与 .dev-hub 台账。
    * 当前激活时 Host 会清掉/回退 activeRepo，这里按返回的 state 刷新（没有 state 就重取）。
    */
   async function removeWorkspace(workspace) {
     const name = workspace?.name ?? workspace?.id ?? '未命名'
     const ok = typeof window !== 'undefined' && confirmText(
-      `从本机移除虚拟库「${name}」？\n\n只删本机的分组登记，不会删除或修改任何成员库的代码与 .dev-hub；成员库本身仍保留在代码库列表里。\n\n虚拟库自己的台账/规范/上下文/证据仍留在本机 ~/.dev-hub/workspaces/${workspace?.id ?? '<id>'}/（不删数据）。`,
+      `从本机移除多库项目「${name}」？\n\n只删本机的分组登记，不会删除或修改任何成员库的代码与 .dev-hub；成员库本身仍保留在项目列表里。\n\n多库项目自己的台账/规范/上下文/证据仍留在本机 ~/.dev-hub/workspaces/${workspace?.id ?? '<id>'}/（不删数据）。`,
     )
     if (!ok) return
     setError('')
@@ -4178,7 +4457,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
         await reload()
       }
       setSelected(null)
-      setNotice(`已移除虚拟库「${name}」（成员库代码与 .dev-hub 未动；本机台账仍保留）`)
+      setNotice(`已移除多库项目「${name}」（成员库代码与 .dev-hub 未动；本机台账仍保留）`)
     } catch (err) {
       setError(errorText(err))
     }
@@ -4187,7 +4466,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   async function removeRepo(repoPath) {
     const name = repoPath.split('/').filter(Boolean).pop() || repoPath
     const ok = typeof window !== 'undefined' && confirmText(
-      `从列表移除代码库「${name}」？\n\n只删本机列表登记，不会删除磁盘上的代码/流程台账；以后还能重新添加。`,
+      `从列表移除项目「${name}」？\n\n只删本机列表登记，不会删除磁盘上的代码/流程台账；以后还能重新添加。`,
     )
     if (!ok) return
     setError('')
@@ -4211,14 +4490,14 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     setSetupOpen(false)
     setState(next)
     onScopeChanged?.()
-    // 新增代码库时 Host 会顺手装好内置技能：明确告诉用户，不用再等"首次初始化"
+    // 新增项目时 Host 会顺手装好内置技能：明确告诉用户，不用再等"首次初始化"
     const skills = next?.skills
     if (skills?.initialized) {
       setNotice(`已装好内置技能 ${skills.installedSkills?.length ?? 0} 个（约束 ${skills.constraints ?? 0} 条），可以直接新建流程。`)
     } else if (skills?.initialized === false && skills?.error) {
       setError(`内置技能初始化失败：${skills.error}（首次建流程时会再试）`)
     } else if (skills?.alreadyHad) {
-      setNotice(`沿用这个代码库已有的规范：${skills.installedSkills?.length ?? 0} 个技能 / ${skills.constraints ?? 0} 条约束。`)
+      setNotice(`沿用这个项目已有的规范：${skills.installedSkills?.length ?? 0} 个技能 / ${skills.constraints ?? 0} 条约束。`)
     }
     setSessionStates(sessionMapFrom(next?.sessionStates))
     setSelected(next?.items?.[0]?.id ?? null)
@@ -4230,7 +4509,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
 
   if (state === null) return h('div', { style: styles.wrap }, busy ? '加载 DevHub…' : 'DevHub 尚未加载')
   if (state.needsSetup || !state.repo) {
-    // 首次初始化 / 新增代码库也改变了“当前开发目标”，头部徽标要跟着刷新。
+    // 首次初始化 / 新增项目也改变了“当前项目”，头部徽标要跟着刷新。
     return h('div', { style: styles.wrap }, h(SetupForm, {
       state,
       onDone: (next) => { setState(next); onScopeChanged?.() },
@@ -4241,7 +4520,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   // 只渲染与当前 selected 匹配的详情：切流程的同一帧里也不会把上一条流程的内容顶上来
   const detail = state.selectedItem && state.selectedItem.id === selected ? state.selectedItem : null
   // 编辑时把当前成员也列出来（即使路径已失效），否则用户无法移除失效成员；
-  // 新建时只列路径存在的已登记代码库。
+  // 新建时只列路径存在的已登记项目。
   const editingWorkspace = wsEditId ? (state.workspaces ?? []).find((entry) => entry.id === wsEditId) ?? null : null
   const editingRepos = editingWorkspace?.repos ?? (wsEditId ? wsPicked : [])
   const repoChoices = (state.profile?.repoCards ?? []).filter((card) => card
@@ -4359,15 +4638,15 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     ) : null,
     envAndCommands,
     wsOpen ? h(Modal, {
-      title: wsEditId ? '编辑虚拟库（成员库）' : '新建虚拟库（多代码库组合）',
+      title: wsEditId ? '编辑多库项目（成员库）' : '新建多库项目（多个代码库）',
       onClose: closeWorkspaceModal,
     },
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
         h('div', { style: styles.sectionHint },
           wsEditId
             ? '调整成员库或改名。成员库平权：任意成员（包括第一个）都可以移除或替换；新增成员从当前 HEAD 开始计算变更。'
-            : '把前后端等多个代码库当成一个开发目标：扫描、计划、变更会一起看；台账/规范/上下文/证据都写在本机独立目录，不写任何成员库。'),
-        h('label', { style: styles.label }, '虚拟库名字'),
+            : '把前后端等多个代码库当成一个项目：扫描、计划、变更会一起看；台账/规范/上下文/证据都写在本机独立目录，不写任何成员库。'),
+        h('label', { style: styles.label }, '多库项目名字'),
         h('input', {
           style: styles.input,
           placeholder: '例如「用户中心 前后端」',
@@ -4416,7 +4695,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
         }),
         h('div', { style: styles.row },
           h(Tag, { tone: wsDraftRepos.length >= 2 ? 'ok' : 'warn' }, `已选 ${wsDraftRepos.length} 个代码库`),
-          h('span', { style: styles.sectionHint }, wsEditId ? '取消勾选 = 移除成员（任意成员都可移除）' : '至少 2 个；成员库平权'),
+          h('span', { style: styles.sectionHint }, wsEditId ? '取消勾选 = 移除成员（任意成员都可移除）' : '至少 2 个代码库；成员库平权'),
         ),
         wsError ? h('div', { style: styles.dangerCard }, wsError) : null,
         h('div', { style: styles.row },
@@ -4429,7 +4708,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
         ),
       ),
     ) : null,
-    setupOpen ? h(Modal, { title: setupMode === 'add' ? '新增代码库' : '初始化 DevHub', onClose: () => setSetupOpen(false) },
+    setupOpen ? h(Modal, { title: setupMode === 'add' ? '新增项目' : '初始化 DevHub', onClose: () => setSetupOpen(false) },
       h(SetupForm, {
         state,
         mode: setupMode,
@@ -4537,7 +4816,7 @@ function isItemRunning(state, item) {
 }
 
 /** 右上角「进行中」抽屉：需要你处理 / 进行中 / 已完成，点条目直接进详情。 */
-/** 当前激活目标（代码库 / 虚拟库）在抽屉里的统一描述；overview 还没回来时兜底。 */
+/** 当前激活目标（项目 / 多库项目）在抽屉里的统一描述；overview 还没回来时兜底。 */
 function drawerTargetOf(state) {
   const workspace = state?.workspace ?? null
   const repo = state?.repo ?? null
@@ -4545,7 +4824,7 @@ function drawerTargetOf(state) {
     return {
       key: `workspace:${workspace.id}`,
       kind: 'workspace',
-      name: workspace.name ?? '虚拟库',
+      name: workspace.name ?? '多库项目',
       path: repo?.path ?? null,
       workspaceId: workspace.id,
       member: state?.profile?.member ?? null,
@@ -4569,7 +4848,7 @@ function drawerTargetOf(state) {
 export function FlowDrawer({ overview, fallbackState, onPick, onClose, switchingTarget = null, error = '' }) {
   const hasOverview = Array.isArray(overview?.items)
   const fallbackTarget = drawerTargetOf(fallbackState)
-  // overview 是跨全部代码库/虚拟库的聚合；首屏没回来时先用当前目标兜底，不让抽屉空着。
+  // overview 是跨全部项目/多库项目的聚合；首屏没回来时先用当前目标兜底，不让抽屉空着。
   const items = hasOverview
     ? overview.items
     : (fallbackState?.items ?? []).map((item) => ({
@@ -4603,7 +4882,7 @@ export function FlowDrawer({ overview, fallbackState, onPick, onClose, switching
   },
     h('div', { style: { ...styles.row, marginBottom: 4, alignItems: 'flex-start' } },
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 } },
-        h('span', { style: styles.sectionTitle }, '全部开发目标'),
+        h('span', { style: styles.sectionTitle }, '全部项目'),
         h('span', { style: styles.sectionHint },
           `${targetCount} 个目标 · ${inProgress} 个进行中${switchingTarget ? ' · 正在切换…' : ''}`),
       ),
@@ -4711,14 +4990,14 @@ function DevHubPage({ ctx }) {
   // 需求澄清工作区刷新信号：新建/删除/打开草稿后重新读 chat store
   const [clarifyNonce, setClarifyNonce] = useState(0)
   const [flowsNonce, setFlowsNonce] = useState(0)
-  // 当前开发目标（代码库 / 虚拟库）变化时自增：头部徽标立刻重取 /state，不等轮询
+  // 当前项目（项目 / 多库项目）变化时自增：头部徽标立刻重取 /state，不等轮询
   const [scopeNonce, setScopeNonce] = useState(0)
   const [flowHint, setFlowHint] = useState(null)
   // 右上角"进行中"抽屉：所有流程按状态分类，点条目直接进详情
   const [flowList, setFlowList] = useState(null)
   // /state 轮询/切目标请求可能乱序返回：只接受最后一次发起的响应，避免旧目标的响应覆盖顶栏
   const flowStateSeqRef = useRef(0)
-  // 跨代码库/虚拟库的流程总览：抽屉与「进行中」角标都用它，避免只看得到当前目标
+  // 跨项目/多库项目的流程总览：抽屉与「进行中」角标都用它，避免只看得到当前目标
   const [overview, setOverview] = useState(null)
   const [overviewError, setOverviewError] = useState('')
   // 正在切换的目标 key（切库时抽屉保持打开、行内显示"切换中…"）
@@ -4738,7 +5017,7 @@ function DevHubPage({ ctx }) {
       flowStateSeqRef.current = seq
       try {
         const body = await api(API.state)
-        // 慢请求回来时用户可能已经切到别的代码库/虚拟库：旧目标不能覆盖新顶栏
+        // 慢请求回来时用户可能已经切到别的项目/多库项目：旧目标不能覆盖新顶栏
         if (!stop && seq === flowStateSeqRef.current) setFlowList(body)
       } catch { /* 抽屉数据失败：保留上次 */ }
     }
@@ -4782,8 +5061,8 @@ function DevHubPage({ ctx }) {
   }, [flowsNonce, scopeNonce, tab])
 
   /**
-   * 抽屉里点一条流程：如果它属于别的代码库/虚拟库，先切目标再打开详情。
-   * 切目标走 /switch-repo（与面板里点代码库卡片同一套 Host 逻辑），
+   * 抽屉里点一条流程：如果它属于别的项目/多库项目，先切目标再打开详情。
+   * 切目标走 /switch-repo（与面板里点项目卡片同一套 Host 逻辑），
    * 成功后重挂 Panel（flowsNonce）让 /state 用新目标重载，并把 openFlow 带过去。
    */
   async function openAcrossTarget(item) {
@@ -4859,7 +5138,7 @@ function DevHubPage({ ctx }) {
   }
 
   const flowItems = flowList?.items ?? []
-  // 头部计数跨全部代码库/虚拟库（overview 未到时先用当前目标兜底）。
+  // 头部计数跨全部项目/多库项目（overview 未到时先用当前目标兜底）。
   const inProgressCount = overview?.inProgressCount ?? flowItems.filter((item) => item.status !== 'done').length
   const attentionCount = overview?.attentionCount ?? (flowList?.attentionCount ?? 0)
   const runningCount = overview?.runningCount ?? flowItems.filter((item) => isItemRunning(flowList, item)).length
@@ -4883,22 +5162,24 @@ function DevHubPage({ ctx }) {
             style: { ...styles.pageSubtitle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
           }, tab === 'flows'
             ? '开发流程台账 · 会话状态 · 并行开发 · 测试与提交'
-            : tab === 'clarify'
-              ? '需求澄清工作区 · 草稿、追问与待确认计划都会保存在这里'
-              : tab === 'skills'
-                ? '通用技能包 · 安装/卸载 · 自定义约束 · 重建默认规范'
+            : tab === 'sessions'
+              ? '会话管理 · 开发/评审/扫描/澄清分类 · 打开、归档、置顶'
+              : tab === 'clarify'
+                ? '需求澄清工作区 · 草稿、追问与待确认计划都会保存在这里'
+                : tab === 'skills'
+                  ? '通用技能包 · 安装/卸载 · 自定义约束 · 重建默认规范'
                 : (chatScope
                 ? `专注流程：${flowHint?.title ?? chatScope} · 一句话追问、看扫仓库与计划`
                 : '新建开发流程 · 说一句要做什么 · 工作站扫仓库、追问、自评计划')),
         ),
       ),
-      // 中：当前开发目标（流程台账、技能与约束都落在这个目标上；点击回流程页切库）
+      // 中：当前项目（流程台账、技能与约束都落在这个目标上；点击回流程页切库）
       h('div', { style: { display: 'flex', justifyContent: 'center', minWidth: 0, maxWidth: 560, padding: '0 8px' } },
         flowList
           ? h(RepoScopeBadge, {
             repo: flowList.repo ?? null,
             workspace: flowList.workspace ?? null,
-            // 点了回「流程」列表（切库/虚拟库入口在那里），从详情页也能一步回到能切库的地方
+            // 点了回「流程」列表（切库/多库项目入口在那里），从详情页也能一步回到能切库的地方
             onClick: () => { setTab('flows'); setOpenFlow(null); setHomeNonce((value) => value + 1) },
           })
           : null,
@@ -4911,7 +5192,7 @@ function DevHubPage({ ctx }) {
       h('div', { style: { position: 'relative' } },
         h(Button, {
           style: { height: 28, padding: '0 12px', borderColor: attentionCount > 0 ? T.brandBorder : undefined },
-          title: `${targetCount} 个开发目标 · ${inProgressCount} 个进行中${attentionCount > 0 ? ` · ${attentionCount} 个需要你处理` : ''}`,
+          title: `${targetCount} 个项目 · ${inProgressCount} 个进行中${attentionCount > 0 ? ` · ${attentionCount} 个需要你处理` : ''}`,
           onClick: () => setDrawerOpen((value) => !value),
           children: [
             runningCount > 0 ? h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: { marginRight: 6 } }) : null,
@@ -4965,6 +5246,7 @@ function DevHubPage({ ctx }) {
         },
         options: [
           { value: 'flows', label: '流程' },
+          { value: 'sessions', label: '会话' },
           { value: 'clarify', label: '需求澄清' },
           { value: 'skills', label: '技能' },
         ],
@@ -4982,12 +5264,12 @@ function DevHubPage({ ctx }) {
       : tab === 'chat'
       ? h(DevHubChat, {
         ctx,
-        // 换代码库必须重建聊天组件：否则旧库的对话/探测结果会留在新库的聊天页里
+        // 换项目必须重建聊天组件：否则旧库的对话/探测结果会留在新库的聊天页里
         key: `${flowList?.repo?.path ?? 'none'}:${chatScope ?? 'new'}:${chatNonce}`,
         scopeId: chatScope,
         scopeTitle: flowHint?.title ?? '',
         // 聊天页不再回写顶栏目标：聊天自己的 /state 可能晚到/属于别的目标，
-        // 回写会把正在看的流程顶栏覆盖成另一个虚拟库（顶栏只认自己的 /state 序列）。
+        // 回写会把正在看的流程顶栏覆盖成另一个多库项目（顶栏只认自己的 /state 序列）。
         onFlowsChanged: () => setFlowsNonce((current) => current + 1),
         onRequireSetup: () => setTab('flows'),
         // 建流程 + 开工成功后自动进对应流程详情（标准流程继续，不留在聊天页）
@@ -4996,8 +5278,14 @@ function DevHubPage({ ctx }) {
           setOpenFlow({ id, nonce: Date.now() })
         },
       })
-      : tab === 'skills'
-        ? h('div', { style: styles.pageBody }, h(SkillsPanel))
+      : tab === 'sessions'
+        ? h('div', { style: styles.pageBody }, h(SessionsPanel, {
+          ctx,
+          activeRepoPath: flowList?.repo?.path ?? null,
+          activeWorkspacePath: flowList?.workspace?.path ?? null,
+        }))
+        : tab === 'skills'
+          ? h('div', { style: styles.pageBody }, h(SkillsPanel))
         : h('div', { style: styles.pageBody }, h(Panel, {
           ctx,
           key: flowsNonce,

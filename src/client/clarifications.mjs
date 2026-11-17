@@ -70,6 +70,7 @@ function ClarificationCard({ card, onOpen, onDelete }) {
       flexDirection: 'column',
       gap: 8,
       minWidth: 0,
+      height: '100%',
       padding: '14px 15px',
       border: `1px solid ${T.borderSoft}`,
       borderRadius: T.rLg,
@@ -80,17 +81,48 @@ function ClarificationCard({ card, onOpen, onDelete }) {
     h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 } },
       h(IconSeat, { size: 26, tone: 'accent' }, '✦'),
       h('div', { style: { display: 'flex', flexDirection: 'column', gap: 3, minWidth: 0, flex: '1 1 auto' } },
-        h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'wrap' } },
-          h('span', { style: { fontSize: T.font.base, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, card.title),
-          h(Pill, { tone: card.status.tone }, card.status.label),
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, minWidth: 0, flexWrap: 'nowrap' } },
+          h('span', { style: { flex: '1 1 auto', minWidth: 0, fontSize: T.font.base, fontWeight: 600, color: T.text, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, card.title),
+          h('span', { style: { flex: '0 0 auto' } }, h(Pill, { tone: card.status.tone }, card.status.label)),
         ),
         h('div', { style: { ...styles.sectionHint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, card.lastText || '还没有开始描述需求'),
       ),
     ),
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-      h('span', { style: { ...styles.sectionHint, flex: '1 1 auto' } }, `${card.messageCount} 条消息 · 更新于 ${fmtTime(card.updatedAt)}`),
-      h(Button, { primary: true, disabled: card.busy, onClick: () => onOpen?.(card.id), children: card.busy ? '处理中…' : (card.hasPlan ? '确认计划' : '继续澄清') }),
-      h(Button, { disabled: card.busy, title: card.busy ? '任务处理中，暂不能删除' : '删除这段澄清草稿', onClick: () => onDelete?.(card), children: '删除' }),
+    // 底部操作条：卡片内容再高再矮，按钮都贴底对齐（删除在左、主操作在右）
+    h('div', {
+      style: {
+        marginTop: 'auto',
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        paddingTop: 8,
+        borderTop: `1px solid ${T.borderSoft}`,
+      },
+    },
+      h(Button, {
+        disabled: card.busy,
+        title: card.busy ? '任务处理中，暂不能删除' : '删除这段澄清草稿',
+        onClick: () => onDelete?.(card),
+        style: { height: 30, padding: '0 10px', fontSize: T.font.sm, flex: '0 0 auto' },
+        children: '删除',
+      }),
+      h('div', { style: styles.spacer }),
+      h('span', {
+        style: {
+          ...styles.sectionHint,
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        },
+      }, `${card.messageCount} 条消息 · 更新于 ${fmtTime(card.updatedAt)}`),
+      h(Button, {
+        primary: true,
+        disabled: card.busy,
+        onClick: () => onOpen?.(card.id),
+        style: { height: 30, padding: '0 12px', fontSize: T.font.sm, minWidth: 96, flex: '0 0 auto' },
+        children: card.busy ? '处理中…' : (card.hasPlan ? '确认计划' : '继续澄清'),
+      }),
     ),
   )
 }
@@ -154,7 +186,7 @@ export function ClarificationWorkspace({ repoPath, refreshNonce = 0, onOpen, onN
     ),
     error ? h('div', { style: styles.dangerCard }, `读取澄清会话失败：${error}`) : null,
     cards.length
-      ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 10 } },
+      ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gridAutoRows: '1fr', alignItems: 'stretch', gap: 10 } },
         cards.map((card) => h(ClarificationCard, { key: card.id, card, onOpen, onDelete: remove })))
       : h('div', { style: styles.card },
         h(EmptyState, {

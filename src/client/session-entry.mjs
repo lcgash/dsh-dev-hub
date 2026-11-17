@@ -76,7 +76,7 @@ export function DevHubSessionQuick({ sessionId, ctx }) {
       const map = {}
       for (const row of sessions.sessions ?? []) map[row.itemId] = row
       setStates(map)
-      // 跨代码库反查：本会话到底属于哪个仓库的哪个流程（会话页要能看出来）
+      // 跨项目反查：本会话到底属于哪个仓库的哪个流程（会话页要能看出来）
       if (sessionId) {
         try {
           const lookup = await api(`${API.lookup}?sessionId=${encodeURIComponent(sessionId)}`)
@@ -90,7 +90,7 @@ export function DevHubSessionQuick({ sessionId, ctx }) {
     }
   }
 
-  /** 在会话页切到另一个开发站的代码库（不用回工作站）。 */
+  /** 在会话页切到另一个开发站的项目（不用回工作站）。 */
   async function switchRepo(repoPath) {
     if (!repoPath || repoPath === activeRepoPath) return
     const name = state?.profile?.member
@@ -191,11 +191,11 @@ export function DevHubSessionQuick({ sessionId, ctx }) {
           ),
           current
             ? h('div', { style: { ...styles.sectionHint, fontFamily: T.mono } }, `${current.repo?.path ?? ''} · ${current.id}`)
-            : h('div', { style: styles.sectionHint }, repo?.path ? `${repo.path}（本会话尚未关联流程）` : '未选择代码库'),
+            : h('div', { style: styles.sectionHint }, repo?.path ? `${repo.path}（本会话尚未关联流程）` : '未选择项目'),
         ),
         repos.length > 1
           ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 } },
-            h('span', { style: { ...styles.sectionHint, width: '100%' } }, '切换开发站（代码库）：'),
+            h('span', { style: { ...styles.sectionHint, width: '100%' } }, '切换开发站（项目）：'),
             repos.map((path) => h('button', {
               key: path,
               type: 'button',

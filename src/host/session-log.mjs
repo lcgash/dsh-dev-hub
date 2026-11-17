@@ -180,3 +180,65 @@ export function sessionTimeline(ctx, sessionId, { limit = 60 } = {}) {
     reason: null,
   }
 }
+
+/**
+ * 会话对话投影（管理页内嵌展开用）：
+ * - 活会话直接 deriveMessages；
+ * - 已结束/历史会话从 sessionPersistence 读事件（只读，不接管写锁）。
+ *
+ * 和历史 `sessionLog` 的区别：不要求会话仍在当前进程，也不要求属于当前活动仓库。
+ */
+export async function sessionTranscript(ctx, sessionId, { limit = 80 } = {}) {
+  const id = String(sessionId ?? '').trim()
+  if (!id) return { sessionId: null, alive: false, messages: [], reason: '缺少会话' }
+  const live = sessionLog(ctx, id, { limit })
+  if (live.messages.length) return { ...live, persisted: false }
+  const persistence = ctx.get('sessionPersistence')
+  if (!persistence?.open) return { ...live, persisted: false }
+
+  let handle = null
+  try {
+    handle = await persistence.open(id, 'read')
+    let events = []
+    const count = Number(handle.eventCount ?? (await persistence.stat?.(id))?.eventCount) || 0
+    try {
+      events = count > 0
+        ? (await handle.read(Math.max(0, count - 1200), 1200)).events
+        : (await handle.read()).events
+    } catch {
+      events = (await handle.read()).events
+    }
+    const rows = []
+    for (const event of events) {
+      if (event?.type !== 'user/message' && event?.type !== 'assistant/message') continue
+      const role = event.type === 'user/message' ? 'user' : 'assistant'
+      const text = textOfContent(event?.data?.message?.content)
+      if (!text) continue
+      rows.push({
+        role,
+        roleLabel: ROLE_TEXT[role] ?? role,
+        text: text.length > 1600 ? text.slice(0, 1600) + '…' : text,
+        at: event?.time ?? null,
+      })
+    }
+    return {
+      sessionId: id,
+      alive: false,
+      persisted: true,
+      total: rows.length,
+      messages: rows.slice(-limit),
+      truncated: rows.length > limit,
+      reason: rows.length ? null : '这条会话还没有可读的对话内容',
+    }
+  } catch (error) {
+    return {
+      sessionId: id,
+      alive: false,
+      persisted: false,
+      messages: [],
+      reason: `读取历史会话失败：${String(error?.message ?? error)}`,
+    }
+  } finally {
+    try { await handle?.close?.() } catch { /* ignore */ }
+  }
+}

@@ -37,8 +37,8 @@ test('项目管理：顶部有标题，选中目标卡与流程列表都带稳�
     sessionStates: new Map(),
   }))
   assert.match(html, /项目管理/)
-  assert.match(html, /2 个开发目标/)
-  assert.match(html, /选中的目标决定下方「开发流程」/)
+  assert.match(html, /2 个项目/)
+  assert.match(html, /选中的项目决定下方「开发流程」/)
   assert.match(html, /id="devhub-flow-list"/)
   assert.match(html, /id="devhub-active-target"/)
   assert.match(html, /data-devhub-target-card="1"/)
@@ -62,4 +62,39 @@ test('tab 打通：贴住面板时用卡片底色盖住分隔线，换行不贴�
   assert.match(home, /borderTopLeftRadius: 0, borderTopRightRadius: 0/)
   // 选中卡做成 tab：下沿收方
   assert.match(home, /active \? '12px 12px 4px 4px' : T\.rLg/)
+  // 选中信息在 tab 内容区（TargetSummary 进 FlowList），不是塞在顶部的 tab 头里
+  assert.match(home, /function TargetSummary/)
+  assert.match(home, /const targetBar = h\(TargetSummary/)
+  assert.match(home, /targetBar,/)
+  // 横向 tab 行隐藏滚动条，避免滚动条占高度把卡片底部裁掉
+  assert.match(home, /id: 'devhub-target-tabs'/)
+  assert.match(home, /devhub-target-tabs::-webkit-scrollbar/)
+})
+
+test('选中信息在 tab 内容区：目标 tab → 选中目标详情 → 开发流程', async () => {
+  const workspace = {
+    id: 'w1', name: '用户中心', repos: ['/w/web', '/w/api'], path: '/home/u/.dev-hub/workspaces/w1',
+    members: [
+      { path: '/w/web', name: 'web', exists: true, isRepo: true, initialized: true, branch: 'main', head: 'abc1234' },
+      { path: '/w/api', name: 'api', exists: true, isRepo: true, initialized: true, branch: 'main', head: 'def5678' },
+    ],
+  }
+  const html = renderToStaticMarkup(h(HomeView, {
+    state: {
+      repo: { name: 'web', path: '/w/web' },
+      profile: { member: '吕晨光', repoCards: [], repos: [] },
+      workspace,
+      workspaces: [workspace],
+      items: [{ id: 'f1', title: '流程一', status: 'developing', stage: 'develop', taskCount: 1, doneCount: 0, scope: ['a'], updatedAt: '2026-11-17T00:00:00Z' }],
+    },
+    items: [{ id: 'f1', title: '流程一', status: 'developing', stage: 'develop', taskCount: 1, doneCount: 0, scope: ['a'], updatedAt: '2026-11-17T00:00:00Z' }],
+    sessionStates: new Map(),
+  }))
+  const tabAt = html.indexOf('id="devhub-active-target"')
+  const flowListAt = html.indexOf('id="devhub-flow-list"')
+  const summaryAt = html.indexOf('id="devhub-target-summary"')
+  const sectionAt = html.indexOf('开发流程', summaryAt)
+  assert.ok(tabAt > 0 && flowListAt > tabAt && summaryAt > flowListAt && sectionAt > summaryAt,
+    `顺序应为 目标 tab → tab 内容（选中目标详情 → 开发流程）（${tabAt}/${flowListAt}/${summaryAt}/${sectionAt}）`)
+  assert.match(html, /成员库：web · api/)
 })

@@ -78,7 +78,7 @@ export function buildDesignDoc(item, repoName) {
   const lines = [
     `# ${item.title}`,
     '',
-    `- 代码库：${repoName}`,
+    `- 项目：${repoName}`,
     `- 开发项：${item.id}`,
     `- 状态：${item.status}`,
     `- 目标：${item.goal || '（未填写）'}`,

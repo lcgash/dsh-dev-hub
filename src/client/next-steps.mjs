@@ -10,6 +10,7 @@
 
 import { REVIEW_STATUS_LABELS, STAGE_LABELS } from '../shared/workflow.mjs'
 import { describeReview } from '../core/review.mjs'
+import { DEV_STAGE_RULE } from '../shared/boundaries.mjs'
 
 const STAGE_TEXT = {
   discovery: '需求澄清',
@@ -42,11 +43,15 @@ export function describeFlow(item, session) {
     intent: workflow.intent === 'analysis' ? 'analysis' : workflow.intent === 'bug' ? 'bug' : 'feature',
     tasks: { done, total: tasks.length },
     localTest: tests.local?.status ?? 'not_run',
+    localTestSkipped: tests.local?.status === 'skipped' && !tests.local?.stale,
+    localTestSkipReason: tests.local?.skipReason ?? '',
     localTestLabel: tests.local?.stale
       ? '已过期（需重跑）'
       : (TEST_TEXT[tests.local?.status] ?? '未运行'),
     localTestStale: Boolean(tests.local?.stale),
     environmentTest: tests.environment?.status ?? 'not_run',
+    environmentTestSkipped: tests.environment?.status === 'skipped' && !tests.environment?.stale,
+    environmentTestSkipReason: tests.environment?.skipReason ?? '',
     environmentTestLabel: tests.environment?.stale
       ? '已过期（需重跑）'
       : (TEST_TEXT[tests.environment?.status] ?? '未运行'),
@@ -104,6 +109,9 @@ export function suggestNextSteps(item, session) {
   const isAnalysis = summary.intent === 'analysis'
   const localTestValid = summary.localTest === 'passed' && !summary.localTestStale
   const environmentTestValid = summary.environmentTest === 'passed' && !summary.environmentTestStale
+  // 人工跳过也算“这一步已处理”，但报告会显式标注；跳过不等于通过
+  const localTestDone = localTestValid || summary.localTestSkipped
+  const environmentTestDone = environmentTestValid || summary.environmentTestSkipped
   const steps = []
   const push = (action, title, hint) => steps.push({ action, title, hint })
 
@@ -132,60 +140,62 @@ export function suggestNextSteps(item, session) {
     if (summary.stage === 'plan' || summary.stage === 'discovery' || summary.stage === 'techdoc') {
       push('edit-plan', '先补全计划', '计划与验收齐了，开工门禁才会放行')
     }
-  } else if (summary.session.running) {
-    push('ask-session', '看看它现在在做什么', '会话正在跑：让它先汇报进度，再决定要不要改方向')
-  } else if (summary.stage === 'review' && summary.review.status === 'idle') {
-    // 评审阶段先把「继续推进即开始评审」排在前面：这时点「继续推进」应该开始评审，
-    // 而不是把另一句话发给开发会话（那会绕开评审门禁）。
-  } else {
-    push('ask-session', '继续推进', '会话空闲：把下一个任务或改进点直接发给它')
   }
+  // 会话已绑定：推进/评审/继续开发统一收口到右上角「继续推进」按钮
+  // （会话在跑时按钮显示「正在开发…」并禁用），不再在「下一步」重复建议
+  // “看看它现在在做什么 / 继续推进”——这些卡片既重复又容易误导。
 
-  // 会话还在跑时不要建议「跑本机自测」：工具正在改代码，此时跑测试既抢资源又容易误判；
-  // 先让「看看它现在在做什么」排在前面，等它空闲后再给测试建议。
-  // 评审是测试验证的门禁：未通过先纠偏、未开始先「继续推进即开始评审」，评审通过才提示环境测试。
+  // 只有真正的下一步事实才给建议（评审纠偏、测试、提交、计划/风险）；
+  // 会话正在跑时不提示测试：工具正在改代码，此时跑测试既抢资源又容易误判。
   const review = summary.review
   if (summary.session.bound && !summary.session.running) {
     if (review.status === 'failed') {
       if (review.exhausted) {
         push('review', '评审已达自动轮次上限，人工决定', `已自动进行 ${review.round}/${review.maxRounds} 轮评审；系统不再自动返工/复审，请到评审页选择人工通过、重置或手工重试`)
       } else if (review.reworkAt) {
-        push('start-review', '重新评审', '纠偏意见已发回开发；完成修改并重跑自测后点它重新评审')
+        push('start-review', '重新评审', '纠偏意见已发回开发；完成修改后点它重新评审（测试仍由工作站测试验证阶段执行）')
       } else {
-        push('rework', '提交纠偏意见，重新进入开发', `独立评审未通过：${review.failed} 位审核员给出 ${review.corrections.reduce((sum, entry) => sum + entry.findings.length, 0)} 条意见；把意见发回开发会话返工，修完重跑自测再评审`)
+        push('rework', '提交纠偏意见，重新进入开发', `独立评审未通过：${review.failed} 位审核员给出 ${review.corrections.reduce((sum, entry) => sum + entry.findings.length, 0)} 条意见；把意见发回开发会话返工，修完先重新评审`)
       }
     } else if (review.status === 'error') {
       push('start-review', '重试评审', '有审核员未返回结论：点它重试派发（流程标记为待处理，不能当成通过）')
     } else if (review.status === 'pending') {
       push('review', '独立评审进行中', `第 ${review.round} 轮：${review.passed}/${review.total} 位已返回，等结论（不重复派发）`)
-    } else if (review.status === 'idle' && !isAnalysis && summary.stage === 'develop'
-      && summary.tasks.total > 0 && summary.tasks.done >= summary.tasks.total) {
-      // 开发任务完成即评审（评审在测试验证之前）；不能等本机自测，否则永远卡在开发中
-      push('start-review', '开始独立评审', '开发任务已完成：点它自动派 1~3 位审核员复核改动与证据；评审通过后再跑本机/环境测试')
-    } else if (!localTestValid) {
-      push(
-        'local-test',
-        summary.localTestStale ? '重跑本机自测' : '跑本机自测',
-        summary.localTestStale
-          ? '测试通过后代码/诉求又有变化，旧结果已过期；重跑后才会进入评审'
-          : (isAnalysis
-            ? `分析流程用本机自测作为只读证据（当前${summary.localTestLabel}）；通过即结束，不进入提交`
-            : `本机自测当前${summary.localTestLabel}；评审通过后也会要求重跑，这里可以先跑`),
-      )
     } else if (isAnalysis) {
-      // 分析流程本机自测通过即完成（阶段会自动到 done）；不再建议评审/环境测试/提交
-    } else if (review.status === 'idle') {
+      // 分析流程没有「开发→评审→测试」的强顺序：本机自测只作为只读证据，由工作站执行
+      if (!localTestDone) {
+        push('local-test', '跑本机自测', `分析流程用本机自测作为只读证据（当前${summary.localTestLabel}）；通过即结束，不进入提交；也可以跳过（原因会进报告）`)
+      }
+    } else if (review.status === 'passed') {
+      // 评审通过后才进入测试验证：测试统一由工作站按钮执行，不催开发会话自己跑
+      if (!localTestDone) {
+        push(
+          'local-test',
+          summary.localTestStale ? '重跑本机自测' : '跑本机自测',
+          summary.localTestStale
+            ? '测试通过后代码/诉求又有变化，旧结果已过期；重跑后才会继续验证'
+            : '评审已通过：测试由工作站执行，通过后进入环境测试；也可以跳过（原因会写进报告）',
+        )
+      } else if (!environmentTestDone) {
+        push(
+          'env-test',
+          summary.environmentTestStale ? '重跑环境测试' : '跑环境测试',
+          summary.environmentTestStale
+            ? '本机自测已重跑，之前的环境结果基于旧代码，需要重跑'
+            : '评审已通过、本机自测已通过或已跳过；环境验证通过后阶段会进入「待提交」；也可以跳过（原因会写进报告）',
+        )
+      } else if (summary.stage !== 'done') {
+        push('submit', '提交代码', '验证都过了（含人工跳过）：勾选变更文件、写提交信息')
+      }
+    } else if (review.status === 'idle' && summary.stage === 'review') {
+      // 已进入评审阶段：直接开始评审，不能把流程卡在“等测试”上
       push('start-review', '继续推进即开始评审', '点它即自动开始独立评审（审核员按默认配置产生）；全部通过才进入测试验证')
-    } else if (!environmentTestValid) {
-      push(
-        'env-test',
-        summary.environmentTestStale ? '重跑环境测试' : '跑环境测试',
-        summary.environmentTestStale
-          ? '本机自测已重跑，之前的环境结果基于旧代码，需要重跑'
-          : '评审已通过、本机自测已通过；环境验证通过后阶段会进入「待提交」',
-      )
-    } else if (summary.stage !== 'done') {
-      push('submit', '提交代码', '验证都过了：勾选变更文件、写提交信息')
+    } else if (review.status === 'idle'
+      && summary.stage === 'develop'
+      && summary.tasks.total > 0
+      && summary.tasks.done >= summary.tasks.total) {
+      // 开发任务完成即评审（评审在测试验证之前）；不能等本机自测
+      push('start-review', '开始独立评审', '开发任务已完成：点它自动派 1~3 位审核员复核改动与证据；评审通过后再跑本机/环境测试')
     }
   }
 
@@ -207,7 +217,7 @@ export function continuePrompt(summary) {
     `本机自测 ${summary.localTestLabel}`,
     `环境测试 ${summary.environmentTestLabel}`,
   ].join(' · ')
-  return `继续推进这个开发流程（${facts}）。先看一眼台账最新状态，接着做未完成的部分；改动前先说你打算怎么做，完成后回写任务与测试结果。`
+  return `继续推进这个开发流程（${facts}）。先看一眼台账最新状态，接着做未完成的部分；改动前先说你打算怎么做，完成后回写任务与变更点。${DEV_STAGE_RULE}`
 }
 
 /** 给会话的开场问题：把状态摘要与用户诉求合成一句可发送的话。 */
@@ -220,7 +230,7 @@ export function composeAsk(summary, userText) {
     `环境测试 ${summary.environmentTestLabel}`,
   ].join(' · ')
   if (text) {
-    return `${context}\n\n${text}\n\n（请按上面的现状推进；改动前先说明你打算怎么做，完成后回写任务与测试结果。）`
+    return `${context}\n\n${text}\n\n（请按上面的现状推进；改动前先说明你打算怎么做，完成后回写任务与变更点。${DEV_STAGE_RULE}）`
   }
   return `${context}\n\n请评估当前进度：下一步应该做什么？如果有改进建议（风险、测试缺口、实现问题）请直接说，然后继续推进。`
 }

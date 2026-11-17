@@ -36,13 +36,12 @@ test('suggestNextSteps：没会话时先建议开会话；有风险时先处理�
   assert.equal(risky.steps[0].action, 'edit-risks')
 })
 
-test('suggestNextSteps：会话运行中 vs 空闲给不同建议', () => {
+test('suggestNextSteps：会话相关操作收口到右上角「继续推进」，下一步不再重复 ask-session', () => {
   const running = suggestNextSteps(flow({ status: 'developing' }), { sessionId: 's1', running: true, alive: true })
-  assert.ok(running.steps.some((step) => step.action === 'ask-session'))
-  assert.match(running.steps.find((step) => step.action === 'ask-session').title, /在做/)
+  assert.ok(!running.steps.some((step) => step.action === 'ask-session'), '运行中不再建议“看看它现在在做什么”')
 
   const idle = suggestNextSteps(flow({ status: 'developing' }), { sessionId: 's1', running: false, alive: true })
-  assert.match(idle.steps.find((step) => step.action === 'ask-session').title, /继续推进/)
+  assert.ok(!idle.steps.some((step) => step.action === 'ask-session'), '空闲时“继续推进”由右上角按钮负责')
 })
 
 const reviewPassed = {
@@ -140,12 +139,19 @@ test('suggestNextSteps：评审是测试验证的门禁', () => {
 
 test('suggestNextSteps：会话还在跑时不催着跑本机自测，空闲后仍保留测试建议', () => {
   const running = suggestNextSteps(flow({ status: 'developing' }), { sessionId: 's1', running: true, alive: true })
-  // 正在开发：先让「看看它现在在做什么」排前面；不要让「跑本机自测」和开发抢活
-  assert.ok(running.steps.some((step) => step.action === 'ask-session'))
+  // 正在开发：下一步不重复会话操作（右上角显示「正在开发…」），也不催跑本机自测
+  assert.ok(!running.steps.some((step) => step.action === 'ask-session'))
   assert.ok(!running.steps.some((step) => step.action === 'local-test'), 'running 会话不应建议 local-test')
 
   const idle = suggestNextSteps(flow({ status: 'developing' }), { sessionId: 's1', running: false, alive: true })
-  assert.ok(idle.steps.some((step) => step.action === 'local-test'), 'idle 已绑定会话仍应建议 local-test')
+  assert.ok(!idle.steps.some((step) => step.action === 'local-test'), '开发阶段不催测试：测试在评审通过后由工作站执行')
+
+  const reviewPassed = { status: 'passed', round: 1, reviewers: [{ id: 'reviewer-1', role: 'direction', status: 'passed', verdict: 'pass', findings: [] }] }
+  const verify = suggestNextSteps(
+    flow({ workflow: { stage: 'verify', review: reviewPassed, tests: { local: { status: 'not_run' }, environment: { status: 'not_run' } } } }),
+    { sessionId: 's1', running: false, alive: true },
+  )
+  assert.ok(verify.steps.some((step) => step.action === 'local-test'), '评审通过、进入测试验证后才建议 local-test')
 })
 
 test('continuePrompt：轻量继续只带事实，不重发整包 Context Pack', () => {
@@ -155,7 +161,8 @@ test('continuePrompt：轻量继续只带事实，不重发整包 Context Pack',
   assert.match(text, /任务 1\/2/)
   assert.match(text, /本机自测 未运行/)
   assert.doesNotMatch(text, /Context Pack|=====/)
-  assert.ok(text.length < 200, '继续推进应是一句短消息，而不是整包上下文')
+  assert.match(text, /开发阶段只修改代码/)
+  assert.ok(text.length < 600, '继续推进应是一句短消息，而不是整包上下文')
 })
 
 test('风险勾选：已知晓的从待处理数量里扣掉，全勾后不再建议「处理风险」', () => {
@@ -252,4 +259,31 @@ test('suggestNextSteps：评审 pending 不重复派发，异常给「重试评�
   assert.ok(retryStep, '异常时应给重试评审入口')
   assert.match(retryStep.title, /重试评审/)
   assert.match(retryStep.hint, /待处理/)
+})
+
+test('suggestNextSteps：人工跳过测试后不再催跑本机自测，下一步转环境测试/提交', () => {
+  const skippedLocal = suggestNextSteps(
+    flow({
+      workflow: {
+        stage: 'verify',
+        review: { reviewers: [{ id: 'reviewer-1', role: 'direction', status: 'passed', verdict: 'pass' }] },
+        tests: { local: { status: 'skipped', skipReason: '依赖不可用' }, environment: { status: 'not_run' } },
+      },
+    }),
+    { sessionId: 's1', running: false },
+  )
+  assert.ok(!skippedLocal.steps.some((step) => step.action === 'local-test'), '已跳过本机自测不应再建议跑本机自测')
+  assert.ok(skippedLocal.steps.some((step) => step.action === 'env-test'))
+
+  const bothSkipped = suggestNextSteps(
+    flow({
+      workflow: {
+        stage: 'submit',
+        review: { reviewers: [{ id: 'reviewer-1', role: 'direction', status: 'passed', verdict: 'pass' }] },
+        tests: { local: { status: 'skipped' }, environment: { status: 'skipped' } },
+      },
+    }),
+    { sessionId: 's1', running: false },
+  )
+  assert.ok(bothSkipped.steps.some((step) => step.action === 'submit'))
 })

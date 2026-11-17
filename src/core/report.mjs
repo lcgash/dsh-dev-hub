@@ -20,6 +20,7 @@ const TEST_STATUS_LABEL = {
   running: '运行中',
   passed: '通过',
   failed: '失败',
+  skipped: '已跳过',
 }
 
 const STATUS_TONE = {
@@ -27,6 +28,7 @@ const STATUS_TONE = {
   running: 'info',
   passed: 'ok',
   failed: 'danger',
+  skipped: 'warn',
 }
 
 const FILE_STATUS_LABEL = {
@@ -48,6 +50,7 @@ const TEST_STATUS_TONE = {
   failed: 'danger',
   running: 'info',
   not_run: 'neutral',
+  skipped: 'warn',
 }
 
 /** 这些不是“本流程改的代码”：OS 元数据、IDE/构建缓存，报告一律不计入。 */
@@ -123,6 +126,13 @@ const TECH_DOC_LABEL = {
   none: '暂不需要',
 }
 
+const TECH_DOC_PROVIDER_LABEL = {
+  feishu: '飞书文档',
+  local: '本地 Markdown',
+  link: '外部链接',
+  none: '暂不需要',
+}
+
 function textOf(value) {
   return String(value ?? '').trim()
 }
@@ -180,10 +190,15 @@ function testField(label, test) {
     return { label, value: '未运行', tone: 'neutral' }
   }
   const bits = [testStatus(test)]
-  if (test.command) bits.push(test.command)
-  const duration = formatDuration(test.durationMs)
-  if (duration !== '—') bits.push(duration)
-  if (test.by) bits.push(`执行人 ${test.by}`)
+  if (test.status === 'skipped') {
+    if (test.skipReason) bits.push(`原因：${test.skipReason}`)
+    if (test.skippedBy) bits.push(`跳过人 ${test.skippedBy}`)
+  } else {
+    if (test.command) bits.push(test.command)
+    const duration = formatDuration(test.durationMs)
+    if (duration !== '—') bits.push(duration)
+    if (test.by) bits.push(`执行人 ${test.by}`)
+  }
   return { label, value: bits.join(' · '), tone: testTone(test) }
 }
 
@@ -331,9 +346,9 @@ function scopeSection(item, files, workspace, reportSet = reportFileSet(files)) 
   if (workspace) {
     blocks.push({
       type: 'fields',
-      title: '虚拟库',
+      title: '多库项目',
       fields: [
-        { label: '虚拟库', value: textOf(workspace.name) || textOf(workspace.id) || '—' },
+        { label: '多库项目', value: textOf(workspace.name) || textOf(workspace.id) || '—' },
         { label: '成员库', value: (workspace.members ?? []).map((member) => member.name || member.path).join('、') || '—' },
       ],
     })
@@ -682,7 +697,12 @@ function planSection(item) {
     { label: '人日', value: estimate.days === null || estimate.days === undefined || estimate.days === '' ? '—' : `${estimate.days} 人日` },
     { label: '置信度', value: { low: '低', medium: '中', high: '高' }[estimate.confidence] ?? '待评估' },
     { label: '开发任务', value: tasks.length ? `${done}/${tasks.length} 完成` : '没有任务清单', tone: tasks.length && done === tasks.length ? 'ok' : 'neutral' },
-    { label: '技术文档', value: techDoc.decision ? (TECH_DOC_LABEL[techDoc.decision] ?? techDoc.decision) : '未选择' },
+    {
+      label: '技术文档',
+      value: techDoc.provider
+        ? (TECH_DOC_PROVIDER_LABEL[techDoc.provider] ?? techDoc.provider)
+        : (techDoc.decision ? (TECH_DOC_LABEL[techDoc.decision] ?? techDoc.decision) : '未选择'),
+    },
     { label: '开发会话', value: item.session?.id ? String(item.session.id) : '未绑定' },
   ]
   if (techDoc.url || techDoc.localPath) {
@@ -690,6 +710,9 @@ function planSection(item) {
   }
   const blocks = [
     { type: 'fields', fields },
+    ...(String(techDoc.supplement ?? '').trim()
+      ? [{ type: 'text', title: '技术方案补充', text: String(techDoc.supplement).trim().slice(0, 4000) }]
+      : []),
     { type: 'text', title: '计划摘要', text: textOf(plan.summary) || '还没有计划摘要' },
     { type: 'list', title: '计划步骤', items: listOf(plan.steps).map((text) => ({ text })) },
     {
@@ -836,13 +859,19 @@ export function buildReport({ item, files = null, git = null, workspace = null, 
     verdictLabel = '未通过'
     verdictReason = failures.join('；')
   } else if (stage === 'done') {
+    const skippedTests = ['local', 'environment'].filter((phase) => tests[phase]?.status === 'skipped')
     verdict = 'passed'
     verdictLabel = '通过'
-    verdictReason = isAnalysis
-      ? '分析流程：只读结论已产出，不进入提交'
-      : submission?.commit
-        ? `已提交 ${submission.commit}${submission.pushed ? ' 并推送' : ''}`
-        : '非 git 仓库：本机自测与环境测试通过即完成'
+    verdictReason = [
+      isAnalysis
+        ? '分析流程：只读结论已产出，不进入提交'
+        : submission?.commit
+          ? `已提交 ${submission.commit}${submission.pushed ? ' 并推送' : ''}`
+          : '非 git 仓库：测试通过或已跳过后完成',
+      skippedTests.length
+        ? `测试人工跳过：${skippedTests.map((phase) => (phase === 'local' ? '本机自测' : '环境测试')).join('、')}（见测试报告）`
+        : '',
+    ].filter(Boolean).join('；')
   } else if (stage === 'review') {
     verdictReason = review.gateReason || '阶段停在「独立评审」：等审核员结论'
   } else if (stage === 'verify') {
@@ -850,7 +879,9 @@ export function buildReport({ item, files = null, git = null, workspace = null, 
       ? (tests.local?.status === 'passed' ? '分析流程：只读排查完成，等结论回写' : '分析流程：评审已通过，等待本机自测作为只读证据')
       : tests.local?.status === 'passed'
         ? (tests.environment?.status === 'passed' ? '本机与环境测试已通过，等待提交' : '评审已通过、本机自测已通过，环境测试还没跑')
-        : '评审已通过，等待本机自测'
+        : tests.local?.status === 'skipped'
+          ? '评审已通过，本机自测已跳过，等待环境测试或跳过'
+          : '评审已通过，等待本机自测'
   } else if (tests.local?.status === 'passed') {
     verdictReason = tests.environment?.status === 'passed'
       ? '本机与环境测试已通过，等待提交'

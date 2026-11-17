@@ -54,6 +54,23 @@ test('reconRepo：按描述找出候选文件、命中行、归属模块与建�
   }
 })
 
+test('reconRepo：大范围命中不再卡在 12 个，返回真实命中与总数', async () => {
+  const repo = await mkdtemp(join(tmpdir(), 'devhub-recon-bulk-'))
+  const bulk = join(repo, 'src/bulk')
+  await mkdir(bulk, { recursive: true })
+  for (let index = 0; index < 20; index += 1) {
+    await writeFile(join(bulk, `Bulk${index}.java`), `class Bulk${index} { // uniquetopic\n }`, 'utf8')
+  }
+  try {
+    const result = await reconRepo(repo, 'uniquetopic')
+    assert.ok(result.files.length > 12, `大范围改动应返回超过 12 个命中，实际 ${result.files.length}`)
+    assert.ok(result.matchedTotal >= result.files.length)
+    assert.equal(result.truncatedFiles, 0)
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+  }
+})
+
 test('reconRepo：跳过 node_modules 等目录，不把噪音当候选', async () => {
   const repo = await fixtureRepo()
   try {

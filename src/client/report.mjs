@@ -695,7 +695,7 @@ export function ReportView({ itemId, onNotice, onError }) {
             ? `已提交 ${String(submission.commit).slice(0, 8)}${submission.branch ? ` @ ${submission.branch}` : ''}`
             : `提交 ${submission.branch ?? '—'}`)
         : null,
-      summary.workspace?.name ? h(Tag, { tone: 'accent' }, `虚拟库 ${summary.workspace.name}`) : null,
+      summary.workspace?.name ? h(Tag, { tone: 'accent' }, `多库项目 ${summary.workspace.name}`) : null,
     ),
   )
 

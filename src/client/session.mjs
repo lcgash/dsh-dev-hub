@@ -2,6 +2,7 @@
  * 工作站 → DSH 会话：把 Context Pack 交给一个新会话，并切过去。
  * 单独成文件，避免 chat/index 之间互相 import 形成环。
  */
+import { DEV_STAGE_RULE } from '../shared/boundaries.mjs'
 /**
  * 工作站 → DSH 会话：新建一个会话，把 Context Pack 作为首条消息入队，
  * 然后切到那个会话。规范与约束就是这样“由工作站告知”的。
@@ -112,7 +113,8 @@ export function launchPrompt(pack, item) {
   return [
     `你是由 DevHub 开发工作站启动的开发会话。开发流程：${title}${id ? `（${id}）` : ''}。`,
     '请严格按下方的 Context Pack 开发，其中【项目约束】是本次开发的硬规则；与仓库门禁冲突时以门禁为准。',
-    '开工前先调用 devhub_get 读取该流程的最新状态；开发中用 devhub_update 回写任务、阶段与变更点；不要编造 baseline diff。',
+    `【阶段边界】${DEV_STAGE_RULE}`,
+    '开工前先调用 devhub_get 读取该流程的最新状态；开发中用 devhub_update 回写任务与变更点（阶段由工作站按事实推导）；不要编造 baseline diff。',
     '',
     '===== Context Pack =====',
     '',

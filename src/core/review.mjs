@@ -482,7 +482,7 @@ export function reviewAdvancePlan(item) {
         status: view.status,
         label: '重新评审',
         disabled: false,
-        hint: '纠偏意见已发回开发会话；完成修改并重跑本机自测后，点它重新评审（不再允许本轮人工通过）',
+        hint: '纠偏意见已发回开发会话；完成修改后点它重新评审（测试仍由工作站「测试验证」阶段执行，不再允许本轮人工通过）',
       }
     }
     return {
@@ -490,7 +490,7 @@ export function reviewAdvancePlan(item) {
       status: view.status,
       label: '提交纠偏并返工',
       disabled: false,
-      hint: `评审未通过：把 ${view.corrections.length} 位审核员的纠偏意见发回开发会话返工；修完重跑自测再评审。若要忽略拒绝，请用评审页的「人工通过本轮」并确认。`,
+      hint: `评审未通过：把 ${view.corrections.length} 位审核员的纠偏意见发回开发会话返工；修完先重新评审，测试由工作站「测试验证」阶段执行。若要忽略拒绝，请用评审页的「人工通过本轮」并确认。`,
     }
   }
   if (view.status === 'error') {
@@ -526,13 +526,41 @@ export function reviewAdvancePlan(item) {
         : '开始独立评审：自动派 1~3 位审核员复核改动与证据',
     }
   }
-  if (view.status === 'passed' && stage === 'verify') {
+  // 评审通过后，顶栏按钮直接推进到“下一步真实测试”，而不是只切个页签：
+  // 本机自测未通过 → 跑本机自测；本机过了 → 跑环境测试；都过了 → 去提交。
+  if (view.status === 'passed' && (stage === 'verify' || stage === 'submit')) {
+    const tests = item?.workflow?.tests ?? {}
+    const localValid = tests.local?.status === 'passed' && !tests.local?.stale
+    const envValid = tests.environment?.status === 'passed' && !tests.environment?.stale
+    const localSkipped = tests.local?.status === 'skipped' && !tests.local?.stale
+    const envSkipped = tests.environment?.status === 'skipped' && !tests.environment?.stale
+    if (stage === 'verify' && !localValid && !localSkipped) {
+      return {
+        action: 'verify',
+        phase: 'local',
+        status: view.status,
+        label: '跑本机自测',
+        disabled: false,
+        hint: '评审已通过：点它直接跑本机自测，通过后进入环境测试',
+      }
+    }
+    if (!envValid && !envSkipped) {
+      return {
+        action: 'verify',
+        phase: 'environment',
+        status: view.status,
+        label: '跑环境测试',
+        disabled: false,
+        hint: '评审与本机自测已通过：点它直接跑环境测试，通过后进入提交',
+      }
+    }
     return {
       action: 'verify',
+      phase: 'submit',
       status: view.status,
-      label: '去测试验证',
+      label: '提交并推送',
       disabled: false,
-      hint: '评审已通过：去「测试与提交」跑环境测试并提交',
+      hint: '验证都过了：点它直接按当前变更提交并推送（提交信息自动生成）',
     }
   }
   return { action: 'continue', status: view.status, label: '继续推进', disabled: false, hint: '' }

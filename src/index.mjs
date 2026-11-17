@@ -6,20 +6,32 @@
  * The browser half only talks to the loopback /api/dev-hub/* routes.
  */
 import { exec, execFile } from 'node:child_process'
-import { access, mkdir, readFile, stat, writeFile } from 'node:fs/promises'
+import { access, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { API, STATUS_ORDER } from './shared/api.mjs'
 import { WIZARD_STEPS } from './shared/wizard.mjs'
+import { DEV_HANDOFF_STEP } from './shared/boundaries.mjs'
 import { deriveAttention } from './core/attention.mjs'
 import { buildContext } from './core/context.mjs'
 import { detectEnvironment } from './core/detect.mjs'
 import { changesSince, git, gitInfo, hasCommit, isGitRepo, startBaseline, syncRepo } from './core/git.mjs'
 import { canonical, exists, findRepoRoot, isUnder, repoRelative, safeId } from './core/paths.mjs'
 import { scanCandidates } from './core/scan.mjs'
-import { appendHistory, buildDesignDoc, missingForChatStart, missingForStart } from './core/workflow.mjs'
+import { appendHistory, missingForChatStart, missingForStart } from './core/workflow.mjs'
+import {
+  DEFAULT_DOCS_CONFIG,
+  SUPPLEMENT_MAX,
+  applySupplementToFile,
+  buildTechDocMarkdown,
+  expandDocPath,
+  hashText,
+  mergeLocalDoc,
+  normalizeDocsConfig,
+  renderLocalDoc,
+} from './core/techdoc.mjs'
 import { run, which } from './core/detect.mjs'
 import {
   buildDefaultConventions,
@@ -32,12 +44,14 @@ import {
 } from './core/conventions.mjs'
 import { normalizeScope, suggestModules } from './core/modules.mjs'
 import { extractTokens, reconRepo } from './core/recon.mjs'
+import { ensureRepoIndex, queryRepoIndex } from './core/repo-index.mjs'
 import { candidateHintPrompt, scanWithDshAgent, scanWithLlm } from './host/agent-scan.mjs'
 import { runAgentJson, runLlmJson } from './host/agent-run.mjs'
 import { answerPendingQuestion, readPendingApprovals, readPendingQuestions } from './host/pending-questions.mjs'
 import { ASSIST_SCHEMA, applyAssistUpdates, buildAssistPrompt } from './core/assist.mjs'
 import { sessionState, sessionStates } from './host/session-state.mjs'
-import { sessionLog, sessionTimeline } from './host/session-log.mjs'
+import { sessionLog, sessionTimeline, sessionTranscript } from './host/session-log.mjs'
+import { buildSessionCatalog } from './host/session-catalog.mjs'
 import { loadLocaleBundle } from './host/locales.mjs'
 import { addCustomConstraint, installSkill, regenerateConventions, removeConstraint, uninstallSkill, updateConstraint } from './core/conventions.mjs'
 import { PROMPT_VERSION, hashOf, inputHash, normalizeAnswers, planHash, pluginVersion, recordProvenance, specHash } from './core/provenance.mjs'
@@ -61,7 +75,7 @@ import {
   suggestFlowTitle,
 } from './shared/requirement.mjs'
 import { fileDiff, flowFileChanges } from './core/diff.mjs'
-import { ensureFlowWorktree, removeFlowWorktree, worktreeExists, worktreeOf, worktreePathFor } from './core/worktree.mjs'
+import { ensureFlowWorktree, removeFlowWorktree, worktreeExists, worktreeOf, worktreePathFor, worktreeRoot } from './core/worktree.mjs'
 import { FILE_NOTE_SCHEMA, applyAgentNotes, buildFileNotePrompt, filesNeedingNotes } from './core/file-note-agent.mjs'
 import { fileNoteOf } from './core/file-notes.mjs'
 import { catalogFor, findSkill } from './core/skills.mjs'
@@ -85,6 +99,7 @@ import { renderReportHtml, renderReportMarkdown } from './core/report-render.mjs
 import { LOCAL_COMMAND_SCHEMA, buildLocalCommandPrompt, normalizeLocalCommand } from './core/local-commands.mjs'
 
 import { conflictsForScope, parallelOverview } from './core/parallel.mjs'
+import { appendRepoMemory, forgetRepoMemory, loadRepoMemory, saveRepoMemory, searchRepoMemory, selectMemoryForContext } from './core/memory.mjs'
 import { draftFromDescription, wizardSteps } from './core/wizard.mjs'
 import {
   clearItemWorkspace,
@@ -113,6 +128,7 @@ import {
   setProfileForRepo,
   summarizeItem,
   workspaceLocalDir,
+  workspacesRoot,
 } from './core/store.mjs'
 import {
   ensureWorkspaceLocalDir,
@@ -1317,6 +1333,17 @@ async function applyReworkFacts(ctx, profile, repoPath, items) {
  * - 单库：仓库分支/HEAD/基线 diff；
  * - 虚拟库：成员库平权的事实（无主库），台账/证据写本机独立目录。
  */
+const MEMORY_DIR = join(PROFILE_DIR, 'memory')
+const INDEX_DIR = join(PROFILE_DIR, 'index')
+// 每个仓库/进程只热身一次：选中代码库后在后台建索引，第一次需求扫描就不用等全量 walk
+const warmedIndexes = new Set()
+function warmRepoIndex(repo) {
+  const path = String(repo ?? '').trim()
+  if (!path || warmedIndexes.has(path)) return
+  warmedIndexes.add(path)
+  ensureRepoIndex(path, { indexDir: INDEX_DIR }).catch(() => { /* 索引失败不打扰用户，扫描会回退全量 */ })
+}
+
 async function buildFor(repo, item, profile, { workRoot = null } = {}) {
   const loaded = await loadProject(repo)
   if (!loaded) throw new Error('开发目标尚未初始化，请先完成 DevHub 初始化')
@@ -1364,6 +1391,7 @@ async function buildFor(repo, item, profile, { workRoot = null } = {}) {
           stat: info?.shortStat ?? null,
         }
   }
+  const memoryEntries = await loadRepoMemory(MEMORY_DIR, repo).catch(() => [])
   const context = buildContext({
     repoName: target ? target.workspace.name : (loaded.project.name || repoName(repo)),
     project: loaded.project,
@@ -1378,6 +1406,7 @@ async function buildFor(repo, item, profile, { workRoot = null } = {}) {
     repoProfile,
     workspace,
     worktree: worktree ? { ...worktree, path: root } : null,
+    memory: selectMemoryForContext(memoryEntries),
   })
   // 虚拟库：上下文包与证据都留档到本机独立目录（单库保持原行为，不新增落盘）
   if (target) {
@@ -1468,12 +1497,12 @@ async function probeLocalCommand(repo, command) {
     : { ok: false, kind: 'bin', token, reason: `本机没找到可执行文件：${token}` }
 }
 
-async function createLarkDoc(repo, item, title) {
+async function createLarkDoc(repo, item, title, markdown) {
   const lark = await which('lark-cli')
   if (!lark) throw new Error('本机没有找到 lark-cli，请先安装并完成登录')
-  const markdown = buildDesignDoc(item, repoName(repo))
+  const content = String(markdown ?? '') || buildTechDocMarkdown(item, { repoName: repoName(repo) })
   const temp = join(tmpdir(), `dev-hub-${item.id}-${Date.now()}.md`)
-  await writeFile(temp, markdown, 'utf8')
+  await writeFile(temp, content, 'utf8')
   const result = await run(lark, [
     'docs', '+create',
     '--title', title,
@@ -1486,6 +1515,64 @@ async function createLarkDoc(repo, item, title) {
   const url = findUrl(parsed)
   if (!url) throw new Error(`lark-cli 创建成功但没有返回文档 URL：${result.stdout.slice(0, 2000)}`)
   return { url, output: result.stdout.slice(0, 2000) }
+}
+
+/**
+ * 生成本地技术文档：合并 generated/user 段，不覆盖用户补充；冲突时不写盘。
+ * 默认路径 docs/design/{id}.md（仓库可见），也可由项目/流程覆盖。
+ */
+async function writeLocalTechDoc({ repo, item, title, pathTemplate, force = false }) {
+  const techDoc = item.workflow?.techDoc ?? {}
+  const template = String(pathTemplate ?? '').trim() || DEFAULT_DOCS_CONFIG.local.path
+  const relPath = expandDocPath(template, { id: item.id, title: item.title, repoName: repoName(repo) })
+  const absPath = join(repo, relPath)
+  let existing = null
+  try { existing = await readFile(absPath, 'utf8') } catch { /* 不存在就新建 */ }
+  const generatedAt = new Date().toISOString()
+  const merged = mergeLocalDoc(existing, item, {
+    repoName: repoName(repo),
+    supplement: techDoc.supplement ?? '',
+    generatedHash: techDoc.generatedHash,
+    force,
+    generatedAt,
+  })
+  if (merged.conflict) {
+    return { conflict: true, status: merged.status, message: merged.message, relPath, existing: existing ?? '', nextGenerated: merged.nextGenerated, supplement: merged.supplement }
+  }
+  await mkdir(dirname(absPath), { recursive: true })
+  await writeFile(absPath, merged.content, 'utf8')
+  const generated = buildTechDocMarkdown(item, { repoName: repoName(repo), generatedAt })
+  return {
+    conflict: false,
+    status: merged.status,
+    relPath,
+    absPath,
+    supplement: merged.supplement,
+    generatedHash: hashText(generated),
+    generatedAt,
+  }
+}
+
+/** 更新已有飞书文档正文（整篇 overwrite；保留台账里的用户补充，会一起写入）。 */
+async function updateLarkDoc(repo, item, url, markdown) {
+  const lark = await which('lark-cli')
+  if (!lark) throw new Error('本机没有找到 lark-cli，请先安装并完成登录')
+  if (!url) throw new Error('缺少飞书文档 URL')
+  const temp = join(tmpdir(), `dev-hub-${item.id}-${Date.now()}.md`)
+  await writeFile(temp, String(markdown ?? ''), 'utf8')
+  try {
+    const result = await run(lark, [
+      'docs', '+update',
+      '--doc', url,
+      '--command', 'overwrite',
+      '--doc-format', 'markdown',
+      '--content', `@${temp}`,
+    ], { timeout: 120000 })
+    if (!result.ok) throw new Error(`lark-cli 更新文档失败：${(result.stderr || result.stdout).slice(-2000)}`)
+    return { url, output: result.stdout.slice(0, 2000) }
+  } finally {
+    try { await unlink(temp) } catch { /* ignore */ }
+  }
 }
 
 function relativePathSafe(path) {
@@ -1511,6 +1598,305 @@ async function localItems(profile, repoPath) {
   return out
 }
 
+/** 读 Workspace 快照：优先 controller baseline（带 archived/pinned），失败回退 registry。 */
+async function workspaceRegistrySnapshot(ctx) {
+  const controller = ctx.get('workspaceController')
+  if (controller?.follow) {
+    const ac = new AbortController()
+    const timer = setTimeout(() => ac.abort(), 2500)
+    try {
+      const iterator = controller.follow(ac.signal)[Symbol.asyncIterator]()
+      const first = await iterator.next()
+      try { await iterator.return?.() } catch { /* ignore */ }
+      if (first?.value?.type === 'baseline' && first.value.value) return first.value.value
+    } catch {
+      /* fall through */
+    } finally {
+      clearTimeout(timer)
+      try { ac.abort() } catch { /* ignore */ }
+    }
+  }
+  const registry = ctx.get('workspaceRegistry')
+  const workspaces = registry?.list?.() ?? []
+  return {
+    items: workspaces.map((workspace) => ({
+      workspaceId: workspace.id,
+      path: workspace.path,
+      title: workspace.title,
+      createdAt: workspace.createdAt,
+      updatedAt: workspace.updatedAt,
+      sessionIds: workspace.sessionIds ?? [],
+    })),
+    archivedSessionIds: [],
+    pinnedSessionIds: [],
+  }
+}
+
+/**
+ * 每个 DevHub 项目自动拥有一个 DSH Workspace：
+ * - 单库：workspace 路径 = 仓库根目录（扫描/澄清等 cwd 在仓库里的会话自动归组）；
+ * - 虚拟库：workspace 路径 = 虚拟库本机台账目录。
+ * DSH 的 Workspace 成员按 canonical cwd 精确匹配，所以这里只 attach cwd 等于该路径的会话；
+ * worktree 里的开发/评审会话按 DSH 规则仍在 worktree 自己的 Workspace，工作站会话页会按项目归类。
+ */
+async function ensureProjectWorkspace(ctx, { name, path, snapshots = null } = {}) {
+  const registry = ctx.get('workspaceRegistry')
+  if (!registry?.create || !path) return null
+  try {
+    const workspace = await registry.create(path, `DevHub · ${name || repoName(path)}`)
+    let attached = 0
+    let list = snapshots
+    if (list === null) {
+      try { list = await ctx.get('sessionPersistence')?.list?.() ?? [] } catch { list = [] }
+    }
+    const wanted = resolve(String(path))
+    for (const snapshot of list ?? []) {
+      const header = snapshot?.header ?? snapshot
+      if (!header?.id || !header.cwd) continue
+      if (resolve(String(header.cwd)) !== wanted) continue
+      try {
+        await workspace.attachSession(header.id)
+        attached += 1
+      } catch { /* 已归档/已移除/路径不可解析：不阻断项目 Workspace */ }
+    }
+    return {
+      id: workspace.id,
+      title: workspace.title,
+      path: workspace.path,
+      attached,
+      sessionCount: Array.isArray(workspace.sessionIds) ? workspace.sessionIds.length : null,
+    }
+  } catch (error) {
+    return { path, name, error: String(error?.message ?? error) }
+  }
+}
+
+/** 本机所有 DevHub 项目（单库 + 虚拟库）的 DSH Workspace 投影。 */
+async function projectWorkspacesFor(ctx, profile, snapshots) {
+  const entries = []
+  for (const repoPath of Object.keys(profile.repos ?? {})) {
+    if (isWorkspaceLocalRoot(repoPath)) continue
+    const loaded = await loadProject(repoPath).catch(() => null)
+    entries.push(await ensureProjectWorkspace(ctx, {
+      name: loaded?.project?.name || repoName(repoPath),
+      path: repoPath,
+      snapshots,
+    }))
+  }
+  for (const workspace of listWorkspaces(profile)) {
+    try { await ensureWorkspaceLocalDir(workspace) } catch { /* 目录创建失败时下面显式返回错误 */ }
+    entries.push(await ensureProjectWorkspace(ctx, {
+      name: workspace.name,
+      path: workspaceLocalDir(workspace),
+      snapshots,
+    }))
+  }
+  return entries.filter(Boolean)
+}
+
+/** 扫描本机所有台账（仓库 + 虚拟库本机目录），给会话分类提供流程归属。 */
+async function collectSessionCatalogItems(profile) {
+  const roots = new Set(Object.keys(profile.repos ?? {}))
+  for (const workspace of listWorkspaces(profile)) roots.add(workspaceLocalDir(workspace))
+  const entries = []
+  for (const root of roots) {
+    const items = await listItems(root).catch(() => [])
+    const workspace = isWorkspaceLocalRoot(root)
+      ? listWorkspaces(profile).find((entry) => workspaceLocalDir(entry) === root) ?? null
+      : null
+    const name = workspace?.name ?? repoName(root)
+    for (const item of items) entries.push({ item, repoPath: root, repoName: name, workspaceName: workspace?.name ?? null })
+  }
+  return {
+    entries,
+    roots: [
+      ...roots,
+      worktreeRoot(),
+      workspacesRoot(),
+    ],
+  }
+}
+
+/** 项目 → 需求 → 会话（开发/评审/澄清/扫描）的层级投影。 */
+function buildProjectHierarchy({ catalog, entries, projectWorkspaces }) {
+  const workspacesByPath = new Map((projectWorkspaces ?? []).filter((entry) => entry?.path).map((entry) => [resolve(entry.path), entry]))
+  const projects = new Map()
+  const flows = new Map()
+  const projectOf = (path, fallbackName) => {
+    const projectPath = resolve(path)
+    if (!projects.has(projectPath)) {
+      const registered = workspacesByPath.get(projectPath) ?? null
+      projects.set(projectPath, {
+        id: registered?.id ?? null,
+        title: registered?.title ?? `DevHub · ${fallbackName || repoName(projectPath)}`,
+        path: projectPath,
+        requirements: [],
+        counts: { requirements: 0, sessions: 0 },
+      })
+    }
+    return projects.get(projectPath)
+  }
+  for (const entry of entries) {
+    const project = projectOf(entry.repoPath, entry.workspaceName || entry.repoName)
+    const item = entry.item
+    const flow = {
+      id: item.id,
+      title: item.title ?? item.id,
+      status: item.status ?? null,
+      stage: item.workflow?.stage ?? null,
+      intent: item.workflow?.intent ?? null,
+      updatedAt: item.updatedAt ?? null,
+      repoName: entry.repoName,
+      repoPath: entry.repoPath,
+      workspaceName: entry.workspaceName ?? null,
+      sessions: { development: [], review: [], clarify: [], scan: [], internal: [] },
+      counts: { total: 0, development: 0, review: 0, clarify: 0, scan: 0, internal: 0 },
+    }
+    flows.set(item.id, flow)
+    project.requirements.push(flow)
+  }
+  // 只保留「关联到需求」的会话：工作站自己不关心的 DSH 会话和未关联历史会话不进入层级
+  for (const session of catalog.sessions) {
+    if (!session.flow?.id || !flows.has(session.flow.id)) continue
+    const flow = flows.get(session.flow.id)
+    const bucket = ['development', 'review', 'clarify', 'scan', 'internal'].includes(session.category)
+      ? session.category
+      : 'internal'
+    flow.sessions[bucket].push(session)
+  }
+  for (const project of projects.values()) {
+    for (const flow of project.requirements) {
+      flow.counts = {
+        development: flow.sessions.development.length,
+        review: flow.sessions.review.length,
+        clarify: flow.sessions.clarify.length,
+        scan: flow.sessions.scan.length,
+        internal: flow.sessions.internal.length,
+      }
+      flow.counts.total = Object.values(flow.counts).reduce((sum, value) => sum + value, 0)
+    }
+    project.requirements.sort((left, right) => Number(right.updatedAt ? Date.parse(right.updatedAt) : 0) - Number(left.updatedAt ? Date.parse(left.updatedAt) : 0))
+    project.counts = {
+      requirements: project.requirements.length,
+      sessions: project.requirements.reduce((sum, flow) => sum + flow.counts.total, 0),
+    }
+  }
+  return [...projects.values()].sort((left, right) => right.counts.sessions - left.counts.sessions || left.title.localeCompare(right.title))
+}
+
+/** 会话管理页的数据：持久化快照 + 实时状态 + 流程/工作区归属。 */
+async function managedSessionsFor(ctx, profile) {
+  const persistence = ctx.get('sessionPersistence')
+  const liveSessions = ctx.get('sessions')?.list?.() ?? []
+  let snapshots = []
+  try {
+    snapshots = await persistence?.list?.() ?? []
+  } catch {
+    snapshots = []
+  }
+  const known = new Set(snapshots.map((entry) => String(entry?.header?.id ?? '')))
+  for (const session of liveSessions) {
+    const header = session?.header
+    if (!header?.id || known.has(String(header.id))) continue
+    snapshots.push({ header, eventCount: session.seq ?? null })
+    known.add(String(header.id))
+  }
+  const liveStates = new Map()
+  const liveMap = new Map()
+  for (const session of liveSessions) {
+    const id = String(session?.id ?? '')
+    if (!id) continue
+    liveMap.set(id, session)
+    liveStates.set(id, sessionState(ctx, id))
+  }
+  const workspace = await workspaceRegistrySnapshot(ctx)
+  const { entries, roots } = await collectSessionCatalogItems(profile)
+  const projectWorkspaces = await projectWorkspacesFor(ctx, profile, snapshots)
+  const rawCatalog = buildSessionCatalog({
+    snapshots,
+    liveStates,
+    liveSessions: liveMap,
+    items: entries,
+    workspaces: workspace.items ?? [],
+    archived: workspace.archivedSessionIds ?? [],
+    pinned: workspace.pinnedSessionIds ?? [],
+    roots,
+  })
+  // 工作站只管理自己创建的会话：外部 DSH 会话（未绑定/其他）不进这个页面
+  const catalog = {
+    ...rawCatalog,
+    sessions: rawCatalog.sessions.filter((session) => session.category !== 'unbound' && session.category !== 'other'),
+  }
+  catalog.categories = rawCatalog.categories
+    .filter((category) => category.id !== 'unbound' && category.id !== 'other')
+    .map((category) => ({ ...category, sessions: catalog.sessions.filter((session) => session.category === category.id) }))
+  catalog.counts = Object.fromEntries(catalog.categories.map((category) => [category.id, category.sessions.length]))
+  return {
+    projectWorkspaces,
+    ...catalog,
+    // 项目 → 需求 → 开发/评审/澄清/扫描 的层级视图
+    projects: buildProjectHierarchy({ catalog, entries, projectWorkspaces }),
+    workspaces: (workspace.items ?? []).map((entry) => ({
+      id: entry.workspaceId ?? entry.id ?? null,
+      title: entry.title ?? '',
+      path: entry.path ?? null,
+      sessionCount: (entry.sessionIds ?? []).length,
+    })),
+  }
+}
+
+/** 会话管理动作：归档/取消归档/置顶/取消置顶/显示到 Workspace。 */
+async function applyManagedSessionAction(ctx, body) {
+  const action = String(body.action ?? '').trim()
+  const ids = (Array.isArray(body.sessionIds) ? body.sessionIds : [body.sessionId])
+    .map((id) => String(id ?? '').trim())
+    .filter(Boolean)
+  if (!ids.length) throw new Error('缺少 sessionId')
+  const registry = ctx.get('workspaceRegistry')
+  const controller = ctx.get('workspaceController')
+  const persistence = ctx.get('sessionPersistence')
+  const sessions = ctx.get('sessions')
+  const results = []
+  for (const id of ids) {
+    if (action === 'archive') {
+      if (registry?.archiveSession) await registry.archiveSession(id, { stopActivity: true })
+      else if (controller?.archiveSession) await controller.archiveSession({ sessionId: id, stopActivity: true })
+      else throw new Error('当前 DSH 不支持归档会话')
+      results.push({ id, archived: true })
+    } else if (action === 'unarchive') {
+      if (registry?.unarchiveSession) await registry.unarchiveSession(id)
+      else if (controller?.unarchiveSession) await controller.unarchiveSession({ sessionId: id })
+      else throw new Error('当前 DSH 不支持取消归档')
+      results.push({ id, archived: false })
+    } else if (action === 'pin') {
+      if (registry?.pinSession) await registry.pinSession(id)
+      else if (controller?.pinSession) await controller.pinSession({ sessionId: id })
+      else throw new Error('当前 DSH 不支持置顶会话')
+      results.push({ id, pinned: true })
+    } else if (action === 'unpin') {
+      if (registry?.unpinSession) await registry.unpinSession(id)
+      else if (controller?.unpinSession) await controller.unpinSession({ sessionId: id })
+      else throw new Error('当前 DSH 不支持取消置顶')
+      results.push({ id, pinned: false })
+    } else if (action === 'reveal') {
+      if (!registry?.create) throw new Error('当前 DSH 不支持创建 Workspace')
+      let snapshot = null
+      try { snapshot = await persistence?.stat?.(id) } catch { snapshot = null }
+      const header = snapshot?.header ?? sessions?.get?.(id)?.header
+      if (!header?.cwd) throw new Error('这个会话没有可用的工作目录，无法放进 Workspace')
+      const title = String(body.title ?? '').trim() || `DevHub · ${repoName(header.cwd)}`
+      const workspace = await registry.create(header.cwd, title)
+      await workspace.attachSession?.(id)
+      // 「放入 Workspace」的目标是让它在 DSH 侧可见；已归档的先取消归档
+      try { await registry.unarchiveSession?.(id) } catch { /* 已是可见状态 */ }
+      results.push({ id, workspace: { id: workspace.id, title: workspace.title, path: workspace.path } })
+    } else {
+      throw new Error(`未知会话动作：${action || '(空)'}`)
+    }
+  }
+  return { action, results }
+}
+
 async function stateFor(repo, profile, ctx) {
   const localLedger = Boolean(repo) && isWorkspaceLocalRoot(repo)
   const loaded = repo ? await loadProject(repo) : null
@@ -1531,6 +1917,9 @@ async function stateFor(repo, profile, ctx) {
   const workspace = localLedger && active
     ? await workspaceState(profile, { ...active, members: workspaceMembers(active.repos) })
     : null
+  // 启动/切库后后台预热：索引建好后，第一次描述扫描直接用候选，不再全仓 walk+read
+  if (repo) warmRepoIndex(repo)
+  for (const member of (active?.repos ?? []).slice(0, 4)) warmRepoIndex(member)
   const views = itemViews(ctx, items)
   const memberName = localLedger
     ? (workspaceMember(profile, active?.workspace) ?? entry?.member ?? null)
@@ -1746,6 +2135,28 @@ async function repoForExec(exec) {
   throw new Error('DevHub 尚未初始化：请先在设置页选择代码库')
 }
 
+/**
+ * 需求扫描：优先用本机仓库索引筛候选文件，只读候选拿命中行；索引不可用/无命中时回退全量扫描。
+ * 索引首次构建会读一遍仓库，之后 TTL 内只做 stat 增量 + 少量候选读取。
+ */
+async function reconWithIndex(repo, description, options = {}) {
+  try {
+    const index = await ensureRepoIndex(repo, { indexDir: INDEX_DIR })
+    const candidates = queryRepoIndex(index, description, { limit: Math.max(80, Number(options.limit) || 12) })
+    if (candidates.length) {
+      const lexical = await reconRepo(repo, description, {
+        ...options,
+        fileList: candidates.map((entry) => join(repo, entry.path)),
+        scannedTotal: index.files.length,
+      })
+      if (lexical.files?.length) return lexical
+    }
+  } catch {
+    // 索引构建/读取失败不能让扫描失败：回退到原来的全量关键词扫描
+  }
+  return reconRepo(repo, description, options)
+}
+
 function textResult(value) {
   return [{ type: 'text', text: typeof value === 'string' ? value : JSON.stringify(value, null, 2) }]
 }
@@ -1821,7 +2232,7 @@ function registerTools(ctx) {
 
     tools.register(defineTool({
       name: 'devhub_update',
-      description: '更新开发项任务/风险/变更点/计划/根因。阶段与状态由事实自动推导（本机自测通过→独立评审，评审通过→测试验证，环境验证通过→待提交，提交后→完成），只有 blocked 可人工标记。只写台账：单代码库写 .dev-hub，虚拟库写本机 ~/.dev-hub/workspaces/<id>/。流程还没有绑定会话时，会自动绑定调用它的开发会话。独立评审由「继续推进」自动开始（devhub_review 的 dispatch 复用同一 runReviewRound）。',
+      description: '更新开发项任务/风险/变更点/计划/根因。阶段与状态由事实自动推导（开发完成→独立评审，评审通过→测试验证，本机自测/环境测试通过→待提交，提交后→完成），只有 blocked 可人工标记。只写台账：单代码库写 .dev-hub，虚拟库写本机 ~/.dev-hub/workspaces/<id>/。流程还没有绑定会话时，会自动绑定调用它的开发会话。独立评审由「继续推进」自动开始（devhub_review 的 dispatch 复用同一 runReviewRound）。',
       parameters: {
         id: { type: 'string', required: true, description: '开发项 id' },
         status: { type: 'string', enum: STATUS_ORDER, description: '新状态' },
@@ -1908,6 +2319,62 @@ function registerTools(ctx) {
           throw new Error(`未知评审动作：${action}`)
         }
         return { review: describeReview(saved), item: saved }
+      },
+    }))
+
+    tools.register(defineTool({
+      name: 'devhub_memory',
+      description: '本机项目记忆：write / search / list / forget。记录跨流程可复用的决策、约定与踩坑，只写本机 profile，不写仓库台账、不提交。开工前可先 search 一下。',
+      parameters: {
+        action: { type: 'string', enum: ['write', 'search', 'list', 'forget'], description: '默认 list' },
+        text: { type: 'string', description: 'write 时的记忆正文（一句到几句）' },
+        kind: { type: 'string', enum: ['decision', 'convention', 'pitfall', 'fact', 'note'], description: '默认 note' },
+        tags: { type: 'array', items: { type: 'string' }, description: '检索标签（模块/文件名/主题）' },
+        pinned: { type: 'boolean', description: '置顶：每次 Context Pack 都会带上' },
+        query: { type: 'string', description: 'search 的关键词或问题' },
+        id: { type: 'string', description: 'forget 的记忆 id' },
+        limit: { type: 'number', description: '最多返回条数（1~50，默认 8）' },
+      },
+      output: toolOutput({
+        ok: { type: 'boolean' },
+        entry: { type: 'object', additionalProperties: true },
+        entries: { type: 'array', items: { type: 'object', additionalProperties: true } },
+        removed: { type: 'number' },
+        duplicate: { type: 'boolean' },
+      }),
+      async execute(args, exec) {
+        const repo = await repoForExec(exec)
+        const profile = await loadProfile()
+        const action = String(args.action ?? 'list')
+        const limit = Number.isFinite(Number(args.limit)) ? Math.max(1, Math.min(50, Number(args.limit))) : 8
+        let entries = await loadRepoMemory(MEMORY_DIR, repo)
+        if (action === 'write') {
+          const text = String(args.text ?? '').trim()
+          if (!text) throw new Error('缺少记忆正文 text')
+          const result = appendRepoMemory(entries, {
+            text,
+            kind: args.kind,
+            tags: args.tags,
+            pinned: Boolean(args.pinned),
+            by: profileForRepo(profile, repo)?.member ?? '',
+          })
+          await saveRepoMemory(MEMORY_DIR, repo, result.entries)
+          return { ok: true, entry: result.entry, duplicate: result.duplicate }
+        }
+        if (action === 'search') {
+          return { ok: true, entries: searchRepoMemory(entries, String(args.query ?? ''), { limit }) }
+        }
+        if (action === 'forget') {
+          const id = String(args.id ?? '').trim()
+          if (!id) throw new Error('缺少记忆 id')
+          const result = forgetRepoMemory(entries, id)
+          await saveRepoMemory(MEMORY_DIR, repo, result.entries)
+          return { ok: true, removed: result.removed }
+        }
+        if (action === 'list') {
+          return { ok: true, entries: searchRepoMemory(entries, '', { limit }) }
+        }
+        throw new Error(`未知记忆动作：${action}`)
       },
     }))
 
@@ -2045,7 +2512,7 @@ function registerSystemPrompt(ctx) {
     text: 'DEVHUB: 本机已安装 dsh-dev-hub。开发前可用 devhub_list / devhub_get 读取开发项，'
       + '用 devhub_context 生成上下文包；开发中可用 devhub_parallel 判断多个流程能否并行，'
       + 'devhub_conventions 读取仓库规范约束；开发后用 devhub_update 更新任务/状态/变更点；'
-      + '本机自测通过后点「继续推进」即自动开始独立评审（核心走 devhub_review 的 dispatch/runReviewRound，pending 时不重复派发）；评审通过才进入测试验证。'
+      + '开发任务完成后点「继续推进」即自动开始独立评审（核心走 devhub_review 的 dispatch/runReviewRound，pending 时不重复派发）；评审通过才进入测试验证，本机/环境测试由工作站执行。'
       + 'EVIDENCE 必须区分仓库事实与本机差异；不要编造 baseline diff。',
   }), 'dev-hub: system prompt')
 }
@@ -2544,7 +3011,7 @@ async function createWorkspaceFlow({ profile, repo, body, conventions, loaded })
         // 分析流程只读：用工作站生成的只读步骤，不能落成“修改成员库代码”
         steps: isAnalysis
           ? canonicalPlan.steps
-          : ['分别确认各成员库要改的文件与范围', '按 Context Pack 修改成员库代码', '按成员库分别跑本机自测', '按成员库分别提交/推送并把结果回写流程'],
+          : ['分别确认各成员库要改的文件与范围', '按 Context Pack 修改成员库代码与测试代码', DEV_HANDOFF_STEP],
         estimate: estimate?.size
           ? { size: estimate.size, days: estimate.days, confidence: estimate.confidence, notes: '工作站自评（estimateWork，成员库合并画像）' }
           : { size: 'S', days: 0.5, confidence: 'low', notes: '没有探测结果，按最小改动估算' },
@@ -2708,6 +3175,11 @@ export function apply(ctx) {
               profile = await loadProfile()
             }
           }
+          // 项目自动拥有一个 DSH Workspace（扫描/澄清等 cwd 在项目目录里的会话会自动归组）
+          await ensureProjectWorkspace(ctx, {
+            name: result.project?.name || repoName(result.repo),
+            path: result.repo,
+          }).catch(() => null)
           const state = await stateFor(result.repo, profile, ctx)
           sendJson(res, 200, { ...state, skills: result.skills ?? null })
         } catch (error) {
@@ -3182,41 +3654,163 @@ export function apply(ctx) {
           if (!repo) throw new Error('尚未选择代码库')
           const item = await readItemLocal(profile, repo, body.id)
           if (!item) throw new Error(`开发项不存在：${body.id}`)
-          if (action === 'local') {
-            // 台账根分流：单库 <repo>/.dev-hub/design；虚拟库 ~/.dev-hub/workspaces/<id>/design
-            const ledgerRoot = dataDir(repo)
-            const dir = join(ledgerRoot, 'design')
-            await mkdir(dir, { recursive: true })
-            const path = join(dir, `${item.id}.md`)
-            await writeFile(path, buildDesignDoc(item, repoName(repo)), 'utf8')
-            const relBase = ledgerRelativeBase(repo)
-            item.workflow.techDoc = {
-              decision: 'existing',
-              exists: true,
-              title: body.title || `${item.title} 技术方案`,
-              url: '',
-              localPath: repoRelative(relBase, path),
-              createdBy: 'local',
-              createdAt: new Date().toISOString(),
+          const loaded = await loadProject(repo)
+          const docsConfig = normalizeDocsConfig(loaded?.project?.docs)
+          const techDoc = item.workflow?.techDoc ?? {}
+          const title = String(
+            body.title
+            ?? techDoc.title
+            ?? (docsConfig.feishu.titleTemplate || '{title} 技术方案').replaceAll('{title}', item.title),
+          ).trim()
+          const applyLocalDoc = (result, note = '') => ({
+            ...techDoc,
+            provider: 'local',
+            decision: 'existing',
+            exists: true,
+            title,
+            url: '',
+            localPath: result.relPath,
+            supplement: result.supplement,
+            supplementUpdatedAt: new Date().toISOString(),
+            generatedAt: result.generatedAt,
+            generatedHash: result.generatedHash,
+            sync: { status: 'fresh', checkedAt: new Date().toISOString(), note },
+            createdBy: 'local',
+            createdAt: techDoc.createdAt || new Date().toISOString(),
+          })
+
+          // 预览：本地文件优先，否则按当前台账渲染（不写盘）
+          if (action === 'preview') {
+            const template = String(body.path ?? '').trim() || techDoc.localPath || docsConfig.local.path
+            let relPath = ''
+            try { relPath = expandDocPath(template, { id: item.id, title: item.title, repoName: repoName(repo) }) } catch { relPath = '' }
+            let existing = null
+            if (relPath) {
+              try { existing = await readFile(join(repo, relPath), 'utf8') } catch { /* 没生成过 */ }
             }
-            const saved = await saveItem(repo, appendHistory(item, 'techdoc', `生成本地技术文档：${repoRelative(relBase, path)}`))
-            return sendJson(res, 200, { ok: true, item: saved, path: repoRelative(relBase, path) })
-          }
-          if (action === 'create') {
-            const title = String(body.title || item.workflow.techDoc?.title || `${item.title} 技术方案`).trim()
-            if (!title) throw new Error('技术文档需要标题')
-            const created = await createLarkDoc(repo, item, title)
-            item.workflow.techDoc = {
-              decision: 'existing',
-              exists: true,
+            const markdown = existing || renderLocalDoc(item, { repoName: repoName(repo), supplement: techDoc.supplement ?? '' })
+            return sendJson(res, 200, {
+              ok: true,
+              markdown,
+              provider: techDoc.provider ?? docsConfig.provider,
               title,
-              url: created.url,
-              localPath: '',
-              createdBy: 'lark-cli',
-              createdAt: new Date().toISOString(),
+              path: relPath || techDoc.localPath || '',
+              url: techDoc.url ?? '',
+            })
+          }
+
+          // 用户补充：存台账；本地文件存在时只替换 user 段，不动 generated 段
+          if (action === 'supplement') {
+            const supplement = String(body.supplement ?? '').trim().slice(0, SUPPLEMENT_MAX)
+            item.workflow.techDoc = {
+              ...techDoc,
+              provider: techDoc.provider ?? docsConfig.provider,
+              supplement,
+              supplementUpdatedAt: new Date().toISOString(),
             }
-            const saved = await saveItem(repo, appendHistory(item, 'techdoc', `lark-cli 创建技术文档：${created.url}`))
-            return sendJson(res, 200, { ok: true, item: saved, url: created.url })
+            let synced = false
+            const template = techDoc.localPath || docsConfig.local.path
+            try {
+              const relPath = expandDocPath(template, { id: item.id, title: item.title, repoName: repoName(repo) })
+              const absPath = join(repo, relPath)
+              const existing = await readFile(absPath, 'utf8')
+              const next = applySupplementToFile(existing, supplement)
+              if (next) { await writeFile(absPath, next, 'utf8'); synced = true }
+            } catch { /* 文件不存在/路径非法：只存台账 */ }
+            const saved = await saveItem(repo, appendHistory(item, 'techdoc', `更新技术方案补充（${supplement.length} 字）`))
+            return sendJson(res, 200, { ok: true, item: saved, synced })
+          }
+
+          if (action === 'local') {
+            const pathTemplate = String(body.path ?? '').trim() || techDoc.localPath || docsConfig.local.path
+            const result = await writeLocalTechDoc({ repo, item, title, pathTemplate, force: body.force === true })
+            if (result.conflict) {
+              return sendJson(res, 200, {
+                ok: true,
+                conflict: true,
+                status: result.status,
+                message: result.message,
+                path: result.relPath,
+                supplement: result.supplement,
+              })
+            }
+            item.workflow.techDoc = applyLocalDoc(result)
+            const saved = await saveItem(repo, appendHistory(item, 'techdoc', `生成本地技术方案：${result.relPath}`))
+            return sendJson(res, 200, { ok: true, item: saved, path: result.relPath, status: result.status })
+          }
+
+          if (action === 'create') {
+            const supplement = String(techDoc.supplement ?? '').trim()
+            const markdown = [
+              buildTechDocMarkdown(item, { repoName: repoName(repo) }),
+              supplement ? `## 8. 我的补充\n\n${supplement}` : '',
+            ].filter(Boolean).join('\n')
+            // 已有飞书文档：更新正文（整篇 overwrite，含台账里的我的补充），不新建
+            if (body.update === true && techDoc.url) {
+              const updated = await updateLarkDoc(repo, item, techDoc.url, markdown)
+              item.workflow.techDoc = {
+                ...techDoc,
+                provider: 'feishu',
+                decision: 'existing',
+                exists: true,
+                title,
+                url: updated.url,
+                localPath: '',
+                generatedAt: new Date().toISOString(),
+                generatedHash: hashText(markdown),
+                sync: { status: 'fresh', checkedAt: new Date().toISOString(), note: '' },
+                createdBy: 'lark-cli',
+                createdAt: techDoc.createdAt || new Date().toISOString(),
+              }
+              const saved = await saveItem(repo, appendHistory(item, 'techdoc', `更新飞书技术文档：${updated.url}`))
+              return sendJson(res, 200, { ok: true, item: saved, url: updated.url, updated: true })
+            }
+            try {
+              const created = await createLarkDoc(repo, item, title, markdown)
+              item.workflow.techDoc = {
+                ...techDoc,
+                provider: 'feishu',
+                decision: 'existing',
+                exists: true,
+                title,
+                url: created.url,
+                localPath: '',
+                generatedAt: new Date().toISOString(),
+                generatedHash: hashText(markdown),
+                sync: { status: 'fresh', checkedAt: new Date().toISOString(), note: '' },
+                createdBy: 'lark-cli',
+                createdAt: techDoc.createdAt || new Date().toISOString(),
+              }
+              const saved = await saveItem(repo, appendHistory(item, 'techdoc', `lark-cli 创建技术文档：${created.url}`))
+              return sendJson(res, 200, { ok: true, item: saved, url: created.url })
+            } catch (error) {
+              // 飞书不可用：按项目配置回退本地 md，并显式说明降级原因（不假装飞书成功）
+              if (docsConfig.fallback !== 'local') throw error
+              const pathTemplate = String(body.path ?? '').trim() || techDoc.localPath || docsConfig.local.path
+              const result = await writeLocalTechDoc({ repo, item, title, pathTemplate, force: body.force === true })
+              if (result.conflict) {
+                return sendJson(res, 200, {
+                  ok: true,
+                  conflict: true,
+                  degraded: true,
+                  reason: String(error?.message ?? error),
+                  status: result.status,
+                  message: result.message,
+                  path: result.relPath,
+                  supplement: result.supplement,
+                })
+              }
+              item.workflow.techDoc = applyLocalDoc(result, `飞书创建失败，已回退本地：${String(error?.message ?? error).slice(0, 300)}`)
+              const saved = await saveItem(repo, appendHistory(item, 'techdoc',
+                `飞书创建失败（${String(error?.message ?? error).slice(0, 160)}），已回退生成本地技术方案：${result.relPath}`))
+              return sendJson(res, 200, {
+                ok: true,
+                degraded: true,
+                reason: String(error?.message ?? error),
+                item: saved,
+                path: result.relPath,
+              })
+            }
           }
           throw new Error(`未知技术文档动作：${action}`)
         } catch (error) {
@@ -3289,9 +3883,37 @@ export function apply(ctx) {
           const phase = body.phase === 'environment' ? 'environment' : 'local'
           const item = await readItemLocal(profile, repo, body.id)
           if (!item) throw new Error(`开发项不存在：${body.id}`)
+          // 人工跳过测试：记录原因/人/时间，报告显式标注；不会被当成“通过”
+          if (body.skip === true) {
+            if (phase === 'environment') {
+              const gate = reviewGate(item)
+              if (!gate.allowed) throw new Error(`${gate.reason}；环境测试需要独立评审通过后才能跳过`)
+            }
+            const reason = String(body.reason ?? '').trim().slice(0, 500) || '人工跳过（未填写原因）'
+            const member = ledgerEntry(profile, repo)?.member ?? ''
+            const at = new Date().toISOString()
+            item.workflow.tests[phase] = {
+              status: 'skipped',
+              command: '',
+              commandSource: null,
+              output: `人工跳过：${reason}`,
+              at,
+              durationMs: null,
+              by: member,
+              skipReason: reason,
+              skippedBy: member,
+              stale: false,
+              basisHash: '',
+              codeState: [],
+            }
+            const saved = await saveItem(repo, appendHistory(item, 'test',
+              `${phase === 'local' ? '本机自测' : '环境测试'}已人工跳过：${reason}`))
+            return sendJson(res, 200, { ok: true, skipped: true, phase, item: saved, result: saved.workflow.tests[phase] })
+          }
           const localTest = item.workflow.tests.local ?? {}
-          if (phase === 'environment' && (localTest.status !== 'passed' || localTest.stale || item.workflow.rework?.at)) {
-            throw new Error('必须先在当前代码/诉求上通过本机自测，才能做环境测试（测试通过后又有改动，请重跑本机自测）')
+          if (phase === 'environment'
+            && ((!['passed', 'skipped'].includes(localTest.status)) || localTest.stale || item.workflow.rework?.at)) {
+            throw new Error('必须先在当前代码/诉求上通过或明确跳过本机自测，才能做环境测试（测试通过后又有改动，请重跑本机自测）')
           }
           if (phase === 'environment') {
             // 评审是测试验证的门禁：没评审/评审未通过/评审异常都不能进环境测试
@@ -3507,8 +4129,9 @@ export function apply(ctx) {
           if (item.workflow.gitRepo === false) {
             throw new Error('这个代码库不是 git 仓库：没有提交/推送环节，跑完本机与环境测试即视为完成')
           }
-          if (!item.workflow.tests.local || item.workflow.tests.local.status !== 'passed') {
-            throw new Error('必须先通过本机自测，才能提交')
+          const localTest = item.workflow.tests.local
+          if (!localTest || !['passed', 'skipped'].includes(localTest.status)) {
+            throw new Error('必须先通过本机自测（或在「测试与提交」明确跳过），才能提交')
           }
           const blockedChecks = (item.checks ?? []).filter((check) => check.command && check.status !== 'passed')
           if (blockedChecks.length) {
@@ -3749,7 +4372,7 @@ export function apply(ctx) {
             let truncated = false
             for (const member of memberList) {
               try {
-                const lexical = await reconRepo(member.path, description, { limit: 4 })
+                const lexical = await reconWithIndex(member.path, description, { limit: 4 })
                 scanned += Number(lexical.scanned) || 0
                 truncated = truncated || Boolean(lexical.truncated)
                 const files = (lexical.files ?? []).map((file) => ({
@@ -3812,7 +4435,7 @@ export function apply(ctx) {
           const repoProfile = await detectRepoProfile(scanRepo)
 
           // 本地关键词扫描先跑一次：既用于补齐命中行，也是 dsh 不可用时的兜底候选集
-          const lexical = await reconRepo(scanRepo, description)
+          const lexical = await reconWithIndex(scanRepo, description)
           const mergeScan = (scan) => {
             const byPath = new Map(lexical.files.map((file) => [file.path, file]))
             const files = scan.files.map((entry) => {
@@ -3823,40 +4446,57 @@ export function apply(ctx) {
                 matches: hit?.matches ?? [],
                 why: entry.why,
                 confidence: entry.confidence,
+                source: 'agent',
                 exists: entry.exists !== false,
               }
             })
-            const modules = [...new Set(files.map((file) => moduleOfPath(file.path)))]
+            // 扫描器只报少量高置信文件；本地关键词命中的其余文件不能丢（大改动会真实命中很多文件）
+            const seen = new Set(files.map((file) => file.path))
+            const keywordOnly = lexical.files
+              .filter((file) => !seen.has(file.path))
+              .map((file) => ({
+                ...file,
+                why: file.why ?? '本地关键词命中（未由扫描器确认）',
+                confidence: file.confidence ?? 'medium',
+                source: 'keyword',
+                exists: true,
+              }))
+            const union = [...files, ...keywordOnly].slice(0, 120)
+            const modules = [...new Set(union.map((file) => moduleOfPath(file.path)))]
               .filter(Boolean)
-              .map((name) => ({ name, path: '', kind: 'agent', hits: files.filter((file) => moduleOfPath(file.path) === name).length }))
+              .map((name) => ({ name, path: '', kind: 'agent', hits: union.filter((file) => moduleOfPath(file.path) === name).length }))
             const scope = scan.scope.length ? scan.scope : lexical.suggestedScope
             return {
               description,
               tokens: lexical.effectiveTokens ?? lexical.tokens,
-              files,
+              files: union,
               modules,
               suggestedScope: scope,
               scanned: lexical.scanned,
               truncated: lexical.truncated,
+              matchedTotal: Math.max(Number(lexical.matchedTotal) || 0, union.length),
+              truncatedFiles: Math.max(0, (Number(lexical.matchedTotal) || union.length) - union.length),
             }
           }
           let result = lexical
           let engine = 'local'
           let scanNotes = body.engine === 'local' ? '按本地关键词匹配（未调用 dsh）' : ''
           let elapsedMs = 0
+          let scanSessionId = null
           if (body.engine !== 'local') {
             try {
               const scan = await scanWithDshAgent(ctx, {
                 repo: scanRepo,
                 repoName: loaded?.project?.name || repoName(scanRepo),
                 description,
-                limit: 6,
+                limit: 24,
                 // 先给候选：子代理验证/收敛比从零全仓探索快得多
                 extraPrompt: [candidateHintPrompt(lexical), attachmentPrompt(attachments)].filter(Boolean).join('\n\n'),
               })
               engine = 'dsh'
               scanNotes = scan.notes || ''
               elapsedMs = scan.elapsedMs
+              scanSessionId = scan.sessionId ?? null
               result = mergeScan(scan)
             } catch (error) {
               const dshError = String(error?.message ?? error)
@@ -3868,7 +4508,7 @@ export function apply(ctx) {
                   repoName: loaded?.project?.name || repoName(scanRepo),
                   description,
                   candidates: lexical,
-                  limit: 6,
+                  limit: 24,
                 })
                 engine = 'dsh-llm'
                 elapsedMs = Date.now() - startedAt
@@ -3913,6 +4553,7 @@ export function apply(ctx) {
             provenance,
             engineLabel: engine === 'dsh' ? 'DSH 扫描' : engine === 'dsh-llm' ? 'DSH 模型筛选' : '本地关键词兜底',
             scanNotes,
+            scanSessionId,
             elapsedMs,
             repoProfile: repoProfile.language,
             questions,
@@ -4019,7 +4660,13 @@ export function apply(ctx) {
               timeoutMs: 90000,
             })
             const normalized = normalizeClarify(result.value, { round })
-            sendJson(res, 200, { ok: true, engine: 'dsh', elapsedMs: result.elapsedMs, ...normalized })
+            sendJson(res, 200, {
+              ok: true,
+              engine: 'dsh',
+              elapsedMs: result.elapsedMs,
+              sessionId: result.sessionId ?? null,
+              ...normalized,
+            })
             return
           } catch (error) {
             // 子代理不可用：先用默认模型按同一份澄清 prompt 兜底，避免直接退化成规则
@@ -4986,6 +5633,23 @@ export function apply(ctx) {
         }
       },
     },
+    // 会话管理页展开对话：不要求属于当前活动仓库，活会话/历史会话都能读
+    {
+      kind: 'exact',
+      path: API.sessionTranscript,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        try {
+          const sessionId = String(query(req.url, 'sessionId') ?? '').trim()
+          if (!sessionId) throw new Error('缺少 sessionId')
+          const limitRaw = Number(query(req.url, 'limit'))
+          const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 80
+          sendJson(res, 200, { ok: true, ...(await sessionTranscript(ctx, sessionId, { limit })) })
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
     // 内嵌会话内容：工作站直接读最近对话，不用跳到会话页
     {
       kind: 'exact',
@@ -5199,6 +5863,30 @@ export function apply(ctx) {
           if (!repo) throw new Error('尚未选择代码库')
           const items = await listItems(repo)
           sendJson(res, 200, { ok: true, ...sessionStates(ctx, items) })
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
+    // 会话管理：开发/评审/扫描/澄清等会话分类、归档、置顶、在 Workspace 中显示
+    {
+      kind: 'exact',
+      path: API.managedSessions,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        try {
+          const profile = await loadProfile()
+          if (req.method === 'GET') {
+            return sendJson(res, 200, { ok: true, ...(await managedSessionsFor(ctx, profile)) })
+          }
+          if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'GET/POST only' })
+          const body = await readBody(req)
+          const result = await applyManagedSessionAction(ctx, body)
+          return sendJson(res, 200, {
+            ok: true,
+            ...result,
+            catalog: await managedSessionsFor(ctx, profile),
+          })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }
@@ -5473,8 +6161,29 @@ export function apply(ctx) {
               if (better) title = better.slice(0, 40)
             }
 
-            // 聊天式入口：用户只给一句话，其余按“可核对的默认值”带入，之后可在流程页修改
+            // 技术文档默认值来自项目配置：默认飞书（本机 lark-cli 登录，不存 token）。
+            // 聊天式入口默认“开发中创建”，表单入口只预选 provider（决策仍要用户确认）。
+            const docsConfig = normalizeDocsConfig(loaded?.project?.docs)
             const chatEntry = body.entry === 'chat'
+            const techDocDefaults = {
+              provider: docsConfig.provider,
+              decision: chatEntry ? (docsConfig.provider === 'none' ? 'none' : 'create') : null,
+              exists: false,
+              title: docsConfig.provider === 'none'
+                ? ''
+                : (docsConfig.feishu.titleTemplate || '{title} 技术方案').replaceAll('{title}', title),
+              url: '',
+              localPath: '',
+              supplement: '',
+              supplementUpdatedAt: null,
+              generatedAt: null,
+              generatedHash: '',
+              sync: { status: null, checkedAt: null, note: '' },
+              createdBy: 'workstation',
+              createdAt: null,
+            }
+
+            // 聊天式入口：用户只给一句话，其余按“可核对的默认值”带入，之后可在流程页修改
             const goal = requirement.goal
             const rootProblem = requirement.rootProblem
             const requirementNote = requirement.source === 'manual'
@@ -5485,7 +6194,7 @@ export function apply(ctx) {
             const givenPlan = body.plan && typeof body.plan === 'object' ? body.plan : null
             const defaults = chatEntry
               ? {
-                  techDoc: { decision: 'none', exists: false, title: '', url: '', localPath: '', createdBy: 'chat-entry', createdAt: null },
+                  techDoc: techDocDefaults,
                   plan: {
                     ...(canonicalPlan?.template ? { template: canonicalPlan.template } : {}),
                     ...(canonicalPlan?.intent ? { intent: canonicalPlan.intent } : {}),
@@ -5493,7 +6202,7 @@ export function apply(ctx) {
                     // 分析流程只读：用工作站生成的只读步骤，不能落成“修改代码”
                     steps: isAnalysis
                       ? canonicalPlan.steps
-                      : ['确认识别到的目标文件与改动范围', '按 Context Pack 修改代码', '跑本机自测并把结果回写到流程'],
+                      : ['确认识别到的目标文件与改动范围', '按 Context Pack 修改代码与测试代码', DEV_HANDOFF_STEP],
                     // 工程量必须来自工作站自评（estimateWork），不接受用户手填
                     estimate: estimateWork({ recon: body.recon, scope, commands, repoNames }).size
                       ? {
@@ -5574,9 +6283,16 @@ export function apply(ctx) {
               references: canonicalPlan ? canonicalPlan.references : [],
               workflow: {
                 stage: 'discovery',
+                // 技术文档默认形式（provider/决策）；正文在技术文档卡片里生成
+                techDoc: techDocDefaults,
                 // 流程类型：bug（先复现/定位）或 feature（先对齐范围）
                 intent,
                 gitRepo,
+                // 需求关联：澄清/扫描子代理会话（评审/开发另有字段）
+                ...(body.clarifySessionId ? { clarifySessions: [String(body.clarifySessionId)] } : {}),
+                ...(body.scanSessionId || body.recon?.scanSessionId
+                  ? { scanSessions: [String(body.scanSessionId || body.recon?.scanSessionId)].filter(Boolean) }
+                  : {}),
                 entry: chatEntry ? 'chat' : undefined,
                 rootProblem,
                 ...defaults,

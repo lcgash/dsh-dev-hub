@@ -29,8 +29,10 @@ export const API = {
   review: '/api/dev-hub/review',
   session: '/api/dev-hub/session',
   sessions: '/api/dev-hub/sessions',
+  managedSessions: '/api/dev-hub/sessions/manage',
   skills: '/api/dev-hub/skills',
   sessionLog: '/api/dev-hub/session-log',
+  sessionTranscript: '/api/dev-hub/session-transcript',
   lookup: '/api/dev-hub/lookup',
   assist: '/api/dev-hub/assist',
   pending: '/api/dev-hub/pending',
@@ -86,6 +88,21 @@ export const API = {
  *   把「开发流程」与「DSH 开发会话」绑定；工作站据此追踪会话状态、跳回会话。
  *
  * GET  API.sessions -> { ok, now, sessions: SessionState[] }
+ *
+ * GET  API.managedSessions -> { ok, categories[], sessions[], projects[], projectWorkspaces[],
+ *   counts, archivedSessionIds, pinnedSessionIds, workspaces[], generatedAt }
+ *   projects: project workspace → requirements → sessions
+ *     [{ id, title, path, requirements: [{ id, title, status, stage, sessions:
+ *        { development[], review[], clarify[], scan[], internal[] }, counts }], unlinkedSessions[], counts }]
+ *   Categories: development / review / scan / clarify / internal / unbound / other.
+ *   Each session: { id, shortId, title, category, kind, running, live, archived, pinned,
+ *     visible, workspace, flow, reviewer, cwd, createdAt, eventCount, sizeBytes, preview }.
+ * POST API.managedSessions { action:'archive'|'unarchive'|'pin'|'unpin',
+ *   sessionId|sessionIds } -> { ok, action, results, catalog }
+ *
+ * GET  API.sessionTranscript?sessionId=&limit= -> { ok, sessionId, alive, persisted,
+ *   messages: [{ role, roleLabel, text, at }], total, truncated, reason }
+ *   Works for live sessions and for historical sessions read from sessionPersistence.
  *
  * GET  API.skills -> { ok, profile, installed: InstalledSkill[], catalog: CatalogSkill[], constraints: ConstraintView[] }
  * POST API.skills { action, ... } -> { ok, conventions, catalog?, constraints? }

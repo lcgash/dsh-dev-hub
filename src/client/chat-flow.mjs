@@ -269,7 +269,10 @@ export async function confirmAndStart(deps, plan) {
       description,
       tokens: plan.recon?.tokens ?? [],
       files: plan.recon?.files ?? [],
+      scanSessionId: plan.recon?.scanSessionId ?? null,
     },
+    // 需求关联的澄清子代理（评审/开发会话由 Host 另外写）
+    clarifySessionId: plan.clarifySessionId ?? null,
     // 工作站自评的计划：只透传 Host 认可的字段；没计划就不带，避免把空计划写进台账
     ...(planPayload ? { plan: planPayload } : {}),
     // 追问兜底：用户全跳过时不带该字段（Host 会按自己的默认问题兜底）

@@ -1,7 +1,7 @@
 /**
- * 虚拟库本机独立存储 + 规范/技能的本机路径读写接口。
+ * 多库项目本机独立存储 + 规范/技能的本机路径读写接口。
  *
- * 这些用例直接打 core 层：不经过 Host，验证「虚拟库数据不落成员库 .dev-hub」的底层契约。
+ * 这些用例直接打 core 层：不经过 Host，验证「多库项目数据不落成员库 .dev-hub」的底层契约。
  */
 import assert from 'node:assert/strict'
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from 'node:fs/promises'
@@ -36,14 +36,14 @@ test('local-workspace: 本机根目录跟着 DEVHUB_HOME 隔离，纯路径判�
   assert.equal(dir, join(home, 'workspaces', 'ws-1'))
   assert.equal(store.workspaceLocalDir('ws-2'), join(home, 'workspaces', 'ws-2'))
 
-  // macOS tmpdir 是 /var → /private/var 的软链：真实路径也必须识别为虚拟库目录
+  // macOS tmpdir 是 /var → /private/var 的软链：真实路径也必须识别为多库项目目录
   await mkdir(dir, { recursive: true })
   const realDir = await realpath(dir)
   assert.equal(store.isWorkspaceLocalRoot(dir), true)
   assert.equal(store.isWorkspaceLocalRoot(realDir), true)
   assert.equal(store.isWorkspaceLocalRoot('/tmp/some-repo'), false)
-  assert.equal(store.dataDir(dir), dir, '虚拟库的台账目录就是它自己的本机目录（不额外套 .dev-hub）')
-  assert.equal(store.dataDir(realDir), realDir, '真实路径同样识别为虚拟库目录')
+  assert.equal(store.dataDir(dir), dir, '多库项目的台账目录就是它自己的本机目录（不额外套 .dev-hub）')
+  assert.equal(store.dataDir(realDir), realDir, '真实路径同样识别为多库项目目录')
   assert.equal(store.dataDir('/tmp/some-repo'), '/tmp/some-repo/.dev-hub', '单库仍用仓库 .dev-hub')
 })
 
@@ -71,13 +71,13 @@ test('local-workspace: 目录布局/清单/上下文/证据都能落盘读回，
   const written = await local.writeWorkspaceContext(renamed, 'flow-1', {
     generatedAt: '2026-01-02T00:00:00.000Z',
     contextHash: 'hash-1',
-    prompt: '# 上下文\n【虚拟库】布局组合',
+    prompt: '# 上下文\n【多库项目】布局组合',
     summary: { itemId: 'flow-1' },
   })
   const savedContext = await local.readWorkspaceContext(renamed, 'flow-1')
   assert.equal(savedContext.contextHash, 'hash-1')
-  assert.match(savedContext.prompt, /【虚拟库】/)
-  assert.equal(await readFile(written.markdown, 'utf8'), '# 上下文\n【虚拟库】布局组合')
+  assert.match(savedContext.prompt, /【多库项目】/)
+  assert.equal(await readFile(written.markdown, 'utf8'), '# 上下文\n【多库项目】布局组合')
 
   // 证据留档
   await local.writeWorkspaceEvidence(renamed, 'flow-1', {
@@ -150,14 +150,14 @@ test('local-workspace: 台账分流——本机目录保留归属/每库 baselin
   }
 })
 
-test('conventions: 支持显式本机路径读写，虚拟库规范落在本机目录', async () => {
+test('conventions: 支持显式本机路径读写，多库项目规范落在本机目录', async () => {
   const repo = await mkdtemp(join(tmpdir(), 'devhub-local-conv-repo-'))
   const workspace = { id: 'ws-conv', name: '规范组合', repos: [repo] }
   const localRoot = (await local.ensureWorkspaceLocalDir(workspace)).root
   try {
     // 单库仍是 <repo>/.dev-hub/conventions.json
     assert.equal(conventions.conventionsPath(repo), join(repo, '.dev-hub', 'conventions.json'))
-    // 虚拟库是本机目录下的 conventions.json
+    // 多库项目是本机目录下的 conventions.json
     assert.equal(conventions.conventionsPath(localRoot), join(localRoot, 'conventions.json'))
 
     const pack = conventions.buildDefaultConventions({
@@ -179,7 +179,7 @@ test('conventions: 支持显式本机路径读写，虚拟库规范落在本机�
     await conventions.saveConventionsToFile(explicit, loaded)
     const copy = await conventions.loadConventionsFromFile(explicit)
     assert.equal(copy.project.name, '规范组合')
-    await assert.rejects(() => stat(join(repo, '.dev-hub')), '虚拟库规范不落成员库')
+    await assert.rejects(() => stat(join(repo, '.dev-hub')), '多库项目规范不落成员库')
 
     // 合并成员库画像：取并集，不取第一个
     const merged = conventions.mergeRepoProfiles([

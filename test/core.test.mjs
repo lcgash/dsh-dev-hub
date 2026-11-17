@@ -60,6 +60,10 @@ test('context hash is stable and includes environment and next step', () => {
   assert.match(a.prompt, /first/)
   assert.match(a.prompt, /张三/)
   assert.match(a.prompt, /sh scripts\/check.sh/)
+  // 阶段边界要写进 Context Pack：开发只改代码，测试/门禁由工作站测试阶段执行
+  assert.match(a.prompt, /【阶段边界】/)
+  assert.match(a.prompt, /只改代码与测试代码/)
+  assert.match(a.prompt, /【测试\/门禁（工作站执行，开发会话不要运行）】/)
 })
 
 test('context pack：前端仓库未装 frontend-ui 时显式提示补装，并进入 contextHash', () => {

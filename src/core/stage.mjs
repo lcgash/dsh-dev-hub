@@ -45,6 +45,9 @@ export function deriveStage(item) {
   // stale = 测试通过后代码/诉求又变了：旧结果不能再当作"已通过"
   const localPassed = tests.local?.status === 'passed' && !tests.local?.stale
   const envPassed = tests.environment?.status === 'passed' && !tests.environment?.stale
+  // 人工跳过测试：允许继续推进，但旧测试结果不能因此被当成通过（stale 仍然优先）
+  const localSkipped = tests.local?.status === 'skipped' && !tests.local?.stale
+  const envSkipped = tests.environment?.status === 'skipped' && !tests.environment?.stale
   // “完成”只能来自提交事实：手写 status=done 不算，否则又会变成手工切换
   // 分析流程只读：永远不进入提交阶段，也不认提交记录
   const intent = normalizeIntent(workflow.intent) ?? 'feature'
@@ -66,22 +69,36 @@ export function deriveStage(item) {
   // 也应该去测试验证重跑，而不是退回开发。后续新代码改动会由 invalidateReview 重新打开评审。
   if (review?.status === 'passed') {
     if (envPassed) return { stage: 'submit', reason: '评审通过，环境测试已通过，等待提交' }
-    return { stage: 'verify', reason: localPassed ? '评审通过，本机自测已通过' : '评审通过，允许进入测试验证' }
+    if (envSkipped) return { stage: 'submit', reason: '评审通过，测试已人工跳过，等待提交' }
+    return {
+      stage: 'verify',
+      reason: localPassed ? '评审通过，本机自测已通过'
+        : localSkipped ? '评审通过，本机自测已跳过，等待环境测试或跳过' : '评审通过，允许进入测试验证',
+    }
   }
   // 测试/评审通过后又检测到新改动：流程回到开发中，旧结论等重跑（不能停在验证中）
   if (workflow.rework?.at) {
     return { stage: 'develop', reason: workflow.rework.reason || '测试通过后又有新改动：已回到开发中，请重跑本机自测' }
   }
   // 分析流程没有提交环节：本机自测（只读证据）与环境测试通过即结束，阶段绝不进入 submit
+  // 人工跳过测试允许结束，但报告会显式标注“已跳过”，不会被伪装成通过
   if (isAnalysis && (localPassed || envPassed)) {
     return { stage: 'done', reason: '分析流程：只读结论已产出，不进入提交' }
   }
-  // 非 git 仓库没有提交/推送环节：两项测试通过就是终点
-  if (envPassed && !isGit) return { stage: 'done', reason: '非 git 仓库：测试通过即完成' }
+  if (isAnalysis && (localSkipped || envSkipped)) {
+    return { stage: 'done', reason: '分析流程：只读结论已产出（测试跳过情况见报告），不进入提交' }
+  }
+  // 非 git 仓库没有提交/推送环节：两项测试通过/跳过就是终点
+  if ((envPassed || envSkipped) && !isGit) return { stage: 'done', reason: '非 git 仓库：测试通过或已跳过，流程完成' }
   if (envPassed) return { stage: 'submit', reason: '环境验证通过，等待提交' }
+  if (envSkipped) return { stage: 'submit', reason: '环境测试已人工跳过，等待提交（报告会标注）' }
   // 老数据没有评审事实：保持原行为（自测通过即进入测试验证），不因为新阶段卡住旧流程
-  if ((review?.status ?? 'idle') === 'idle' && localPassed) {
-    return { stage: 'review', reason: '本机自测通过：点「继续推进」即开始独立评审' }
+  if ((review?.status ?? 'idle') === 'idle' && (localPassed || localSkipped)) {
+    return {
+      stage: 'review',
+      reason: localPassed ? '本机自测通过：点「继续推进」即开始独立评审'
+        : '本机自测已跳过：可继续推进评审（测试跳过会写进报告）',
+    }
   }
   if (started) return { stage: 'develop', reason: item?.session?.id ? '已绑定开发会话' : '已记录 baseline' }
   if (planReady) return { stage: 'plan', reason: '计划摘要与步骤齐备' }

@@ -3,6 +3,8 @@ import { groupChanges } from './git.mjs'
 import { formatWorkflow } from './workflow.mjs'
 import { describeReview } from './review.mjs'
 import { attachmentLabel, attachmentPrompt, isImageAttachment, normalizeAttachments } from '../shared/attachment.mjs'
+import { techDocSummary } from './techdoc.mjs'
+import { STAGE_BOUNDARY_LINES } from '../shared/boundaries.mjs'
 
 const STATUS_LABELS = {
   planned: '计划中',
@@ -68,12 +70,28 @@ function changeLines(changes, grouped) {
   return lines.join('\n')
 }
 
+const TEST_COMMAND_KEYS = new Set(['test', 'localTest', 'environmentTest', 'gate'])
+
 function commandLines(project) {
   const commands = project?.context?.commands && typeof project.context.commands === 'object'
     ? project.context.commands
     : {}
-  const entries = Object.entries(commands).sort(([a], [b]) => a.localeCompare(b))
+  const entries = Object.entries(commands)
+    .filter(([name]) => !TEST_COMMAND_KEYS.has(name))
+    .sort(([a], [b]) => a.localeCompare(b))
   return entries.length ? entries.map(([name, command]) => `- ${name}：${command}`).join('\n') : '- （未配置）'
+}
+
+/** 测试/门禁命令只作为“工作站执行”的门禁信息，避免开发会话拿去自己跑。 */
+function gateLines(project) {
+  const commands = project?.context?.commands && typeof project.context.commands === 'object'
+    ? project.context.commands
+    : {}
+  const labels = { localTest: '本机自测', test: '测试', environmentTest: '环境测试', gate: '仓库门禁' }
+  const rows = Object.entries(commands)
+    .filter(([name, command]) => TEST_COMMAND_KEYS.has(name) && String(command ?? '').trim())
+    .map(([name, command]) => `- ${labels[name] ?? name}：${command}（工作站「测试验证」阶段执行，开发会话不要运行）`)
+  return rows.length ? rows.join('\n') : '- （未配置测试/门禁命令）'
 }
 
 /** 模板验收：逐条给命令或人工断言（提交前必须全部有结果）。 */
@@ -118,8 +136,12 @@ function nextActions(item) {
   const pending = (item.tasks ?? []).filter((task) => !task.done).slice(0, 3)
   const actions = pending.map((task) => task.text)
   if (!actions.length) {
-    if (item.status === 'verifying') actions.push('执行验收命令，并把结果和剩余风险更新到开发项')
-    else if (item.status !== 'done') actions.push('确认验收标准，拆分下一步任务')
+    if (item.status === 'verifying') {
+      // 测试由工作站执行：开发会话等结果/修失败，不再自己跑测试或改测试结论
+      actions.push('测试由工作站「测试验证」阶段执行：先等结果；失败时按失败输出修代码，不要自行重跑或改写测试结论')
+    } else if (item.status !== 'done') {
+      actions.push('确认验收标准并拆分下一步任务；完成代码修改后回写变更点，测试/门禁由工作站后续阶段执行')
+    }
   }
   return actions.length ? actions : ['确认是否标记完成；若已完成，补充最终变更点和交接说明']
 }
@@ -155,7 +177,7 @@ export function contextHash(parts) {
 }
 
 /**
- * 虚拟库（多代码库组合）：成员库、各自 baseline/HEAD 与基线以来变更。
+ * 多库项目（多代码库组合）：成员库、各自 baseline/HEAD 与基线以来变更。
  *
  * 没有主库：所有成员库平权，台账/规范/上下文/证据都写在本机独立目录，
  * 不落在任何一个成员库里。
@@ -165,7 +187,7 @@ function workspaceLines(workspace) {
   const members = workspace.members ?? []
   const localPath = workspace.localPath || workspace.localDir || ''
   const lines = [
-    `【虚拟库】${workspace.name || '未命名'}（${members.length || workspace.repos?.length || 0} 个成员库，成员库平权）`,
+    `【多库项目】${workspace.name || '未命名'}（${members.length || workspace.repos?.length || 0} 个成员库，成员库平权）`,
     `- 本机台账：${localPath || '（未提供）'}（台账/规范/上下文/证据都写在这里，不写任何成员库）`,
   ]
   for (const member of members) {
@@ -185,7 +207,7 @@ function workspaceLines(workspace) {
   const totals = workspace.totals ?? {}
   lines.push(`- 合计：${totals.files ?? 0} 个文件改动，涉及 ${totals.changedMembers ?? 0}/${members.length} 个成员库`)
   lines.push('- 跨库约束：以各成员库自己的实际代码为准；接口/契约变更要同时说明双方仓库的落点，不编造未读取的成员库 diff。')
-  lines.push('- 提交/测试按成员库分别执行；每个成员库的结果都写进虚拟库本机台账，部分失败必须显式说明。')
+  lines.push('- 提交/测试按成员库分别执行；每个成员库的结果都写进多库项目本机台账，部分失败必须显式说明。')
   return lines.join('\n')
 }
 
@@ -194,9 +216,9 @@ function workspaceLines(workspace) {
  * function stays pure and testable; no filesystem or git access here.
  * `repoProfile` 是仓库画像（language/frontend/frameworks），用于提示
  * 「前端仓库还没装 frontend-ui」——否则 Agent 不打开技能页就发现不了。
- * `workspace` 是虚拟库成员事实（可选）；单库时保持旧输出。
+ * `workspace` 是多库项目成员事实（可选）；单库时保持旧输出。
  */
-export function buildContext({ repoName, project, item, profile, env, gitInfo, changes, conventions, repoProfile, workspace = null, worktree = null }) {
+export function buildContext({ repoName, project, item, profile, env, gitInfo, changes, conventions, repoProfile, workspace = null, worktree = null, memory = [] }) {
   const grouped = groupChanges(changes?.changes ?? [])
   const constraints = []
   // Repo-shared conventions first: they are the rules this repository actually enforces.
@@ -236,12 +258,12 @@ export function buildContext({ repoName, project, item, profile, env, gitInfo, c
     `【开发项】${item.title}（${item.id}）`,
     `【当前状态】${STATUS_LABELS[item.status] ?? item.status}`,
     ...(workspace
-      ? [`【开发目标】虚拟库「${workspace.name || '未命名'}」· ${(workspace.members ?? []).length} 个成员库（成员库平权，本机存储）`]
+      ? [`【项目】多库项目「${workspace.name || '未命名'}」· ${(workspace.members ?? []).length} 个成员库（成员库平权，本机存储）`]
       : []),
     ...(worktree
       ? [
           `【独立工作区】${worktree.path}（分支 ${worktree.branch}）`,
-          '- 本流程的代码改动、测试与提交都在这个独立工作区完成；台账位置按开发目标区分（单库 <repo>/.dev-hub，虚拟库本机独立目录）。',
+          '- 本流程的代码改动、测试与提交都在这个独立工作区完成；台账位置按开发目标区分（单库 <repo>/.dev-hub，多库项目本机独立目录）。',
           '- 不要在主工作区改本流程的文件，否则会和其他流程的改动互相污染。',
         ]
       : []),
@@ -259,8 +281,24 @@ export function buildContext({ repoName, project, item, profile, env, gitInfo, c
     '【验收标准】',
     list(item.acceptance),
     '',
+    ...(() => {
+      const doc = techDocSummary(item)
+      if (!doc.location && !doc.hasSupplement) return []
+      return [
+        '【技术方案】',
+        `- 形式：${doc.label}`,
+        ...(doc.title ? [`- 标题：${doc.title}`] : []),
+        ...(doc.location ? [`- 位置：${doc.location}`] : []),
+        ...(doc.provider === 'local' && doc.location ? ['- 开发前先读这份本地方案，实现与方案不一致时在变更点/报告里说明。'] : []),
+        ...(doc.hasSupplement ? [`- 我的补充摘要：${doc.supplementExcerpt}`] : []),
+        '',
+      ]
+    })(),
     '【工作流】',
     formatWorkflow(item),
+    '',
+    '【阶段边界】',
+    ...STAGE_BOUNDARY_LINES.map((line) => `- ${line}`),
     '',
     '【独立评审】',
     reviewLines(item),
@@ -291,11 +329,11 @@ export function buildContext({ repoName, project, item, profile, env, gitInfo, c
     '【参考实现】',
     referenceLines(item),
     '',
-    // 虚拟库不伪造“某个代表库”的分支/commit：仓库事实按成员库给（详见【虚拟库】段）
+    // 多库项目不伪造“某个代表库”的分支/commit：仓库事实按成员库给（详见【多库项目】段）
     ...(workspace
       ? [
-          '【仓库事实】（虚拟库：以各成员库为准）',
-          `- 虚拟库：${workspace.name || '未命名'}（${(workspace.members ?? []).length} 个成员库，成员库平权）`,
+          '【仓库事实】（多库项目：以各成员库为准）',
+          `- 多库项目：${workspace.name || '未命名'}（${(workspace.members ?? []).length} 个成员库，成员库平权）`,
           ...(workspace.localPath || workspace.localDir ? [`- 本机台账：${workspace.localPath || workspace.localDir}`] : []),
           `- 证据完整性：${workspace.evidenceComplete === false ? `不完整（${workspace.reason ?? '部分成员库证据不可用'}）` : '完整'}`,
           `- 基线以来变更：${workspace.totals?.files ?? changes?.changes?.length ?? 0} 个文件（按成员库前缀聚合）`,
@@ -316,8 +354,18 @@ export function buildContext({ repoName, project, item, profile, env, gitInfo, c
     '【项目约束】',
     list(constraints),
     '',
+    ...(Array.isArray(memory) && memory.length
+      ? [
+          '【项目记忆】（本机、跨流程；开工前先扫一眼，有冲突以当前验收/门禁为准）',
+          ...memory.map((entry) => `- [${entry.kind ?? 'note'}] ${entry.text}${entry.tags?.length ? `（${entry.tags.join('、')}）` : ''}`),
+          '',
+        ]
+      : []),
     '【可用命令】',
     commandLines(project),
+    '',
+    '【测试/门禁（工作站执行，开发会话不要运行）】',
+    gateLines(project),
     '',
     '【下一步】',
     list(next),
@@ -381,7 +429,7 @@ export function buildContext({ repoName, project, item, profile, env, gitInfo, c
     ...(worktree
       ? { worktree: { branch: worktree.branch ?? null, path: worktree.path ?? null } }
       : {}),
-    // 虚拟库成员事实进哈希：成员库 HEAD/baseline 变了，上下文就必须换哈希。
+    // 多库项目成员事实进哈希：成员库 HEAD/baseline 变了，上下文就必须换哈希。
     // 不含 primary/primaryName：没有主库，成员库顺序/首库不影响语义哈希。
     ...(workspace
       ? {

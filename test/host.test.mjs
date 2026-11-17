@@ -150,7 +150,8 @@ test('host setup, item ledger, context and start route', async () => {
 
     const doc = await call(routes, API.techdoc, { method: 'POST', body: { action: 'local', id: 'gerrit-source' } })
     assert.equal(doc.status, 200)
-    assert.match(doc.body.item.workflow.techDoc.localPath, /\.dev-hub\/design\/gerrit-source\.md$/)
+    assert.match(doc.body.item.workflow.techDoc.localPath, /^docs\/design\/gerrit-source\.md$/)
+    assert.equal(doc.body.item.workflow.techDoc.provider, 'local')
 
     const localTest = await call(routes, API.test, {
       method: 'POST', body: { id: 'gerrit-source', phase: 'local', command: 'node -e "process.exit(0)"' },
@@ -375,6 +376,57 @@ test('devhub_update 自动绑定调用它的会话，避免「有进展但显示
   }
 })
 
+test('项目记忆：devhub_memory 只写本机记忆，并注入 Context Pack', async () => {
+  const repo = await tempRepo()
+  const { ctx, routes, tools } = fakeContext(repo)
+  try {
+    apply(ctx)
+    await call(routes, API.setup, { method: 'POST', body: { repoPath: repo, name: '张三' } })
+    const created = await call(routes, API.items, {
+      method: 'POST',
+      body: {
+        title: '记忆注入流程',
+        goal: '验证记忆进入上下文',
+        acceptance: ['上下文包含记忆'],
+        scope: ['src'],
+        workflow: {
+          rootProblem: '跨流程经验没地方放',
+          entry: 'chat',
+          techDoc: { decision: 'none' },
+          plan: { summary: '计划', steps: ['一步'], estimate: { size: 'S', days: 1 } },
+        },
+      },
+    })
+    const id = created.body.item.id
+    const memory = tools.get('devhub_memory')
+    assert.ok(memory, '应注册 devhub_memory 工具')
+    const exec = { agent: { session: { header: { cwd: repo, id: 'session-memory' } } } }
+
+    const wrote = await memory.execute({
+      action: 'write',
+      text: 'Dockerfile 下载统一走 HttpFetcher，不新写 HTTP 客户端',
+      kind: 'convention',
+      tags: ['image-build'],
+      pinned: true,
+    }, exec)
+    assert.equal(wrote.ok, true)
+    assert.equal(wrote.duplicate, false)
+
+    const searched = await memory.execute({ action: 'search', query: 'Dockerfile 下载' }, exec)
+    assert.ok(searched.entries.some((entry) => entry.text.includes('HttpFetcher')))
+
+    const started = await call(routes, API.start, { method: 'POST', body: { id } })
+    assert.equal(started.status, 200, JSON.stringify(started.body).slice(0, 300))
+    assert.match(started.body.context.prompt, /【项目记忆】/)
+    assert.match(started.body.context.prompt, /HttpFetcher/)
+
+    const forgot = await memory.execute({ action: 'forget', id: wrote.entry.id }, exec)
+    assert.equal(forgot.removed, 1)
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+  }
+})
+
 test('host rejects non-loopback requests', async () => {
   const repo = await tempRepo()
   const { ctx, routes } = fakeContext(repo)
@@ -400,7 +452,7 @@ test('recon 显式 repoPath：切库后旧聊天不会拿 activeRepo 去扫错�
   try {
     apply(ctx)
     await call(routes, API.setup, { method: 'POST', body: { repoPath: repoA, name: '张三' } })
-    // 登记 B 后切回 A：模拟用户在开发站切换代码库
+    // 登记 B 后切回 A：模拟用户在开发站切换项目
     await call(routes, API.switchRepo, { method: 'POST', body: { repoPath: repoB, name: '张三', detect: false } })
     await call(routes, API.switchRepo, { method: 'POST', body: { repoPath: repoA, name: '张三', detect: false } })
     await mkdir(join(repoB, 'src'), { recursive: true })

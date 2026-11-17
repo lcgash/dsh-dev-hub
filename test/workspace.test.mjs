@@ -325,7 +325,7 @@ test('workspace: 成员填 git 子目录时归一到仓库根，同一仓库的�
   }
 })
 
-test('workspace: 落盘 sanitize 剥掉虚拟库成员路径、workspace 归属与每库结果里的本机 path', () => {
+test('workspace: 落盘 sanitize 剥掉多库项目成员路径、workspace 归属与每库结果里的本机 path', () => {
   const raw = {
     id: 'ledger-safe',
     title: '可提交台账',
@@ -378,7 +378,7 @@ test('workspace: removeWorkspace 清理本机流程绑定', async () => {
   }
 })
 
-test('workspace: setProfileForRepo(activate:false) 不把 activeRepo 从虚拟库切回成员库', async () => {
+test('workspace: setProfileForRepo(activate:false) 不把 activeRepo 从多库项目切回成员库', async () => {
   const repo = await tempRepo()
   try {
     const profile = { schemaVersion: 1, activeRepo: 'workspace:ws-1', repos: {}, workspaces: [] }
@@ -435,7 +435,7 @@ test('workspace: sanitizeItem 保留 baseline.repos、tests.repos 与 submission
   assert.equal(item.workflow.submission.repos[1].error, '没有 remote')
 })
 
-test('workspace: Context Pack 含【虚拟库】成员事实，成员 HEAD 变化会换 contextHash', async () => {
+test('workspace: Context Pack 含【多库项目】成员事实，成员 HEAD 变化会换 contextHash', async () => {
   const repoA = await tempRepo()
   const repoB = await tempRepo()
   try {
@@ -465,7 +465,7 @@ test('workspace: Context Pack 含【虚拟库】成员事实，成员 HEAD 变�
     }
 
     const first = buildContext(base)
-    assert.match(first.prompt, /【虚拟库】前后端组合/)
+    assert.match(first.prompt, /【多库项目】前后端组合/)
     for (const member of members) {
       assert.ok(first.prompt.includes(member.name), `prompt 缺少成员 ${member.name}`)
       assert.ok(first.prompt.includes(member.path), `prompt 缺少成员路径 ${member.path}`)
@@ -496,7 +496,7 @@ test('workspace: Context Pack 含【虚拟库】成员事实，成员 HEAD 变�
 
     // 单库上下文保持旧输出
     const single = buildContext({ ...base, workspace: null })
-    assert.doesNotMatch(single.prompt, /【虚拟库】/)
+    assert.doesNotMatch(single.prompt, /【多库项目】/)
     assert.notEqual(single.contextHash, first.contextHash)
   } finally {
     await rm(repoA, { recursive: true, force: true })

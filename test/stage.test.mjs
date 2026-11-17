@@ -192,3 +192,27 @@ test('stageIndex：评审阶段排在开发与测试验证之间', () => {
   assert.ok(STAGE_ORDER.indexOf('review') < STAGE_ORDER.indexOf('verify'))
   assert.equal(stageIndex('nope'), 0)
 })
+
+test('deriveStage：人工跳过测试允许推进，但报告/阶段会显式标注', () => {
+  const skippedLocal = base()
+  skippedLocal.workflow.tests = { local: { status: 'skipped' }, environment: { status: 'not_run' } }
+  assert.equal(deriveStage(skippedLocal).stage, 'review')
+  assert.match(deriveStage(skippedLocal).reason, /跳过/)
+
+  const reviewedSkippedLocal = base()
+  reviewedSkippedLocal.workflow.tests = { local: { status: 'skipped' }, environment: { status: 'not_run' } }
+  reviewedSkippedLocal.workflow.review = review()
+  assert.equal(deriveStage(reviewedSkippedLocal).stage, 'verify')
+
+  const bothSkipped = base()
+  bothSkipped.workflow.tests = { local: { status: 'skipped' }, environment: { status: 'skipped' } }
+  bothSkipped.workflow.review = review()
+  assert.equal(deriveStage(bothSkipped).stage, 'submit')
+  assert.match(deriveStage(bothSkipped).reason, /跳过/)
+
+  // stale 优先：跳过结果过期后不能当成“已跳过”
+  const staleSkip = base()
+  staleSkip.baseline = { commit: 'abc', startedAt: 'x' }
+  staleSkip.workflow.tests = { local: { status: 'skipped', stale: true }, environment: { status: 'not_run' } }
+  assert.equal(deriveStage(staleSkip).stage, 'develop')
+})

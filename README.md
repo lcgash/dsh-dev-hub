@@ -90,12 +90,31 @@ Every finished flow can produce a read-only report: goal, scope, review verdicts
 
 ### Worktree isolation
 
-- The first active flow can use the main working tree.
-- When another flow is already active, later flows get an isolated git worktree and branch:
-  - branch: `devhub/<flow-id>`
-  - directory: `~/.dsh/dev-hub/worktrees/<repo-hash>/<flow-id>`
-- The ledger stays in the main repository; code changes stay isolated.
-- On submission, the workstation pushes the worktree commit back to the **branch the flow started from** (or a new branch if explicitly selected), rebasing onto the latest remote tip when needed. Users do not have to merge `devhub/<flow-id>` by hand.
+- Every git development flow gets its own git worktree by default, so main-worktree changes, build output and other flows never leak into its change list.
+- Virtual workspaces create one worktree per git member repository.
+  - branch: `devhub/<flow-id>` or `devhub/<flow-id>--<member>`
+  - directory: `~/.dsh/dev-hub/worktrees/<repo-hash>/<id>` (derived locally, never written into the repository)
+- The ledger stays in the main repository (or the workstation-local ledger directory for virtual workspaces); only code lives in the worktree.
+- On submission, the workstation pushes the worktree commit back to the **branch the flow started from** (or a new branch if explicitly selected), rebasing onto the latest remote tip when needed.
+- **Sync before development:** the flow header has a `Fetch code` action that runs `git fetch --all --prune` and `git merge --ff-only @{u}` for the target repository (or every member of a virtual workspace). The chat plan card has a default-on "fetch latest code before starting" checkbox. Worktrees are created from the updated HEAD; dirty or diverged repositories fail visibly instead of being rebased/reset automatically.
+
+### Session management
+
+The workstation creates several kinds of DSH sessions: the development session bound to a flow, independent reviewer sessions, and scan/clarification subagents. The **Sessions** tab groups them by purpose:
+
+- The page follows the **project selected in the top bar**; switching repository/virtual workspace switches the managed sessions. It does not render every project at once.
+- The page only manages sessions **created by the workstation and linked to a requirement**: development, review, clarification and scan sessions under each flow. External DSH sessions, unbound sessions and unlinked historical sessions are not rendered.
+- The default **By project** view shows `project workspace → requirement → sessions`.
+- A **By category** view keeps the flat Development / Review / Scan / Clarification / Other internal / Unbound / Other grouping.
+- Shows live/running/archived/pinned state, workspace, flow/reviewer ownership, cwd, event count and a short preview.
+- Actions: open a session, **expand its conversation inline** (live and persisted sessions both work), archive/unarchive (archiving hides it from Workspace grouping and keeps the log; running sessions stop first), and pin/unpin. Opening or inspecting a session does not create a Workspace.
+- Scan/clarification/internal groups can be archived in bulk.
+
+Each dev-hub project (a single repository or a virtual workspace) automatically gets a persistent DSH **project workspace** titled `DevHub · <project>`: the repository path for a single repo, or the local ledger directory for a virtual workspace. Sessions whose `cwd` is that project path (scan/clarification/requirement/internal tasks) are attached automatically; the page shows and opens these project workspaces.
+
+DSH Workspace membership is keyed by an exact canonical session `cwd`, so a development or review session running inside a per-flow git worktree remains in that worktree's own DSH workspace. The Sessions page is project-aware and groups those sessions back under their flow/project, with open/expand/archive/pin actions.
+
+Host APIs: `GET/POST /api/dev-hub/sessions/manage` (POST actions: `archive`, `unarchive`, `pin`, `unpin`) and `GET /api/dev-hub/session-transcript?sessionId=…` for inline transcripts.
 
 ### Review before verification
 

@@ -7,7 +7,7 @@ import { Readable } from 'node:stream'
 import test from 'node:test'
 
 // 本机 profile 独立目录：测试之间 resetHome() 清空，避免互相影响。
-// 虚拟库的本机存储跟着 DEVHUB_HOME 一起隔离（<home>/workspaces/<id>）。
+// 多库项目的本机存储跟着 DEVHUB_HOME 一起隔离（<home>/workspaces/<id>）。
 const home = await mkdtemp(join(tmpdir(), 'devhub-ws-host-home-'))
 process.env.DEVHUB_HOME = home
 
@@ -85,7 +85,7 @@ async function cleanupRepos(...repos) {
   for (const repo of repos) await rm(repo, { recursive: true, force: true })
 }
 
-/** 两个 git 临时库 + 已建好的虚拟库（新建走本机目录，不初始化任何成员库）。 */
+/** 两个 git 临时库 + 已建好的多库项目（新建走本机目录，不初始化任何成员库）。 */
 async function workspaceFixture(label = '前后端组合') {
   await resetHome()
   const repoA = await tempRepo({
@@ -148,17 +148,17 @@ async function startedWorkspaceFlow(label = '前后端组合') {
   return { ...fixture, recon: recon.body, created: created.body, start: start.body, itemId: created.body.item.id }
 }
 
-/** 成员库自建库以来不能出现/改动 `.dev-hub`：虚拟库一个字节都不写成员库。 */
+/** 成员库自建库以来不能出现/改动 `.dev-hub`：多库项目一个字节都不写成员库。 */
 async function assertNoRepoDevHub(...repos) {
   for (const repo of repos) {
     await assert.rejects(
       () => stat(join(repo, '.dev-hub')),
-      `虚拟库不能写成员库 .dev-hub：${repo}`,
+      `多库项目不能写成员库 .dev-hub：${repo}`,
     )
   }
 }
 
-test('虚拟库：创建只建本机独立目录，成员库平权、不初始化任何成员库', async () => {
+test('多库项目：创建只建本机独立目录，成员库平权、不初始化任何成员库', async () => {
   const fixture = await workspaceFixture('平权组合')
   const { repoA, repoB, routes, workspace, localPath, state, memberRows, names } = fixture
   try {
@@ -168,15 +168,15 @@ test('虚拟库：创建只建本机独立目录，成员库平权、不初始�
     // 本机独立目录：台账/规范/上下文/证据都在这，state.repo 不再指向某个成员库
     const expectedPath = workspaceLocalDir(workspace)
     assert.equal(localPath, expectedPath)
-    assert.equal(state.repo.path, expectedPath, 'state.repo 是虚拟库本机目录，不是成员库')
+    assert.equal(state.repo.path, expectedPath, 'state.repo 是多库项目本机目录，不是成员库')
     assert.equal(state.repo.kind, 'virtual-workspace')
     assert.equal(state.needsSetup, false)
-    assert.equal(state.profile.activeRepo, `workspace:${workspace.id}`, '激活目标必须还是虚拟库')
+    assert.equal(state.profile.activeRepo, `workspace:${workspace.id}`, '激活目标必须还是多库项目')
     assert.ok(state.profile.repos.includes(realA), '成员库要登记本机身份')
     assert.ok(state.profile.repos.includes(realB), '成员库要登记本机身份')
-    assert.equal(state.profile.repos.some((path) => path.includes(`${join('workspaces')}`)), false, '本机虚拟库目录不能混进代码库列表')
+    assert.equal(state.profile.repos.some((path) => path.includes(`${join('workspaces')}`)), false, '本机多库项目目录不能混进项目列表')
 
-    // 虚拟库没有主库：workspace / members 都不带 primary
+    // 多库项目没有主库：workspace / members 都不带 primary
     assert.equal('primary' in workspace, false)
     assert.equal('primary' in state.workspace, false)
     assert.equal(state.workspace.path, expectedPath)
@@ -185,14 +185,14 @@ test('虚拟库：创建只建本机独立目录，成员库平权、不初始�
     assert.deepEqual(memberRows.map((member) => member.path), [realA, realB])
     for (const member of memberRows) {
       assert.equal('primary' in member, false, `成员库不能有主库标记：${member.name}`)
-      assert.equal(member.initialized, false, '虚拟库不初始化任何成员库')
+      assert.equal(member.initialized, false, '多库项目不初始化任何成员库')
       assert.equal(member.isRepo, true)
       assert.ok(member.head)
       assert.ok(member.branch)
       assert.equal(member.member, '张三')
     }
 
-    // 成员库的磁盘没有被虚拟库碰过
+    // 成员库的磁盘没有被多库项目碰过
     await assertNoRepoDevHub(repoA, repoB)
 
     // 本机目录里能看到清单/项目/规范/子目录
@@ -226,22 +226,22 @@ test('虚拟库：创建只建本机独立目录，成员库平权、不初始�
     assert.equal(back.body.profile.activeRepo, `workspace:${workspace.id}`)
     assert.equal(back.body.repo.kind, 'virtual-workspace')
     assert.equal(back.body.repo.path, expectedPath)
-    // 虚拟库自己的规范文件在切库后仍然从本机目录读（不受成员库影响）
+    // 多库项目自己的规范文件在切库后仍然从本机目录读（不受成员库影响）
     assert.equal(back.body.conventions?.constraints > 0, true)
     assert.ok(names.every((name) => typeof name === 'string' && name.length > 0))
 
-    // 从本机移除虚拟库：回到“未选择代码库”，不自动跳进某个成员库；本机台账数据不删
+    // 从本机移除多库项目：回到“未选择项目”，不自动跳进某个成员库；本机台账数据不删
     const removed = await call(routes, API.workspaces, { method: 'POST', body: { action: 'remove', id: workspace.id } })
     assert.equal(removed.status, 200, JSON.stringify(removed.body).slice(0, 300))
     assert.equal(removed.body.state.repo, null)
     assert.equal(removed.body.state.profile.activeRepo, null)
-    assert.ok((await stat(join(expectedPath, 'items'))).isDirectory(), '移除虚拟库不删除本机台账数据')
+    assert.ok((await stat(join(expectedPath, 'items'))).isDirectory(), '移除多库项目不删除本机台账数据')
   } finally {
     await cleanupRepos(repoA, repoB)
   }
 })
 
-test('虚拟库：recon/建流程/start/上下文全部落本机台账，成员库 .dev-hub 不新增', async () => {
+test('多库项目：recon/建流程/start/上下文全部落本机台账，成员库 .dev-hub 不新增', async () => {
   const fixture = await startedWorkspaceFlow('本机存储组合')
   const { repoA, repoB, routes, workspace, localPath, names, itemId } = fixture
   try {
@@ -257,11 +257,11 @@ test('虚拟库：recon/建流程/start/上下文全部落本机台账，成员�
       assert.notEqual(entry.path, await realpath(names[0] === entry.name ? repoA : repoB))
       assert.ok((await stat(join(entry.path, '.git'))).isFile())
     }
-    assert.equal(ledger.workspace?.id, workspace.id, '本机台账要自带虚拟库归属')
+    assert.equal(ledger.workspace?.id, workspace.id, '本机台账要自带多库项目归属')
     assert.deepEqual(ledger.repos, [await realpath(repoA), await realpath(repoB)])
     assert.equal(ledger.baseline.repos.length, 2, '每库 baseline 写在本机台账')
-    assert.equal(ledger.baseline.commit, null, '虚拟库没有代表库：顶层 commit 为 null')
-    assert.equal(ledger.baseline.branch, null, '虚拟库没有代表库：顶层 branch 为 null')
+    assert.equal(ledger.baseline.commit, null, '多库项目没有代表库：顶层 commit 为 null')
+    assert.equal(ledger.baseline.branch, null, '多库项目没有代表库：顶层 branch 为 null')
     for (const entry of ledger.baseline.repos) {
       assert.ok(entry.commit, `成员库 ${entry.name} 要有 baseline commit`)
       assert.ok(entry.branch)
@@ -279,7 +279,7 @@ test('虚拟库：recon/建流程/start/上下文全部落本机台账，成员�
     const contextSaved = JSON.parse(await readFile(contextFile, 'utf8'))
     assert.equal(contextSaved.itemId, itemId)
     assert.ok(contextSaved.contextHash)
-    assert.ok(contextSaved.prompt.includes('【虚拟库】'))
+    assert.ok(contextSaved.prompt.includes('【多库项目】'))
     assert.ok((await stat(join(localPath, 'context', `${itemId}.md`))).isFile())
     const evidence = JSON.parse(await readFile(join(localPath, 'evidence', `${itemId}.json`), 'utf8'))
     assert.equal(evidence.repos.length, 2)
@@ -297,7 +297,7 @@ test('虚拟库：recon/建流程/start/上下文全部落本机台账，成员�
   }
 })
 
-test('虚拟库：建流程入口与单库分流——scope 必须带成员前缀，台账写本机目录', async () => {
+test('多库项目：建流程入口与单库分流——scope 必须带成员前缀，台账写本机目录', async () => {
   const fixture = await workspaceFixture('入口组合')
   const { repoA, repoB, routes, localPath, workspace } = fixture
   try {
@@ -308,10 +308,10 @@ test('虚拟库：建流程入口与单库分流——scope 必须带成员前�
     assert.equal(wizard.body.workspace?.id, workspace.id)
     assert.ok(wizard.body.modules.length >= 2, JSON.stringify(wizard.body.modules))
     for (const module of wizard.body.modules) {
-      assert.match(module.path, /^[^:]+:/, `虚拟库模块路径要带成员前缀：${module.path}`)
+      assert.match(module.path, /^[^:]+:/, `多库项目模块路径要带成员前缀：${module.path}`)
     }
 
-    // 不带成员前缀的 scope：虚拟库入口直接拒绝（成员库平权，不默认落到第一个库）
+    // 不带成员前缀的 scope：多库项目入口直接拒绝（成员库平权，不默认落到第一个库）
     const noPrefix = await call(routes, API.wizard, {
       method: 'POST',
       body: { action: 'create', entry: 'chat', description: 'source alert retry', id: 'bad-scope', scope: ['src'] },
@@ -342,7 +342,7 @@ test('虚拟库：建流程入口与单库分流——scope 必须带成员前�
   }
 })
 
-test('虚拟库：recon 逐成员前缀 + 创建流程记录归属 + 计划按成员库分组', async () => {
+test('多库项目：recon 逐成员前缀 + 创建流程记录归属 + 计划按成员库分组', async () => {
   const fixture = await workspaceFixture('扫描组合')
   const { repoA, repoB, routes, names } = fixture
   try {
@@ -366,7 +366,7 @@ test('虚拟库：recon 逐成员前缀 + 创建流程记录归属 + 计划按�
       assert.ok(token.includes(':'), `建议 scope 要带成员前缀：${token}`)
       assert.ok(names.includes(token.split(':')[0]), `未知成员前缀：${token}`)
     }
-    assert.ok(recon.body.estimate?.size, '虚拟库 recon 也要有自评工程量')
+    assert.ok(recon.body.estimate?.size, '多库项目 recon 也要有自评工程量')
     assert.equal(recon.body.provenance?.engine, 'local')
 
     const created = await call(routes, API.wizard, {
@@ -405,7 +405,7 @@ test('虚拟库：recon 逐成员前缀 + 创建流程记录归属 + 计划按�
   }
 })
 
-test('虚拟库：编辑成员可移除/替换首个成员，已有流程 baseline 跟着收敛', async () => {
+test('多库项目：编辑成员可移除/替换首个成员，已有流程 baseline 跟着收敛', async () => {
   const fixture = await startedWorkspaceFlow('编辑组合')
   const { repoA, repoB, routes, names, itemId, workspace, localPath } = fixture
   const repoC = await tempRepo({ files: { 'src/source/Extra.java': 'class Extra {}\n' } })
@@ -454,7 +454,7 @@ test('虚拟库：编辑成员可移除/替换首个成员，已有流程 baseli
     assert.equal(ledger3.baseline.commit, null)
     await assertNoRepoDevHub(repoA, repoB, repoC)
 
-    // 仍然要求 ≥2 个不同代码库
+    // 仍然要求 ≥2 个不同项目
     const bad = await call(routes, API.workspaces, {
       method: 'POST',
       body: { action: 'update', id: workspace.id, repos: [repoB] },
@@ -467,7 +467,7 @@ test('虚拟库：编辑成员可移除/替换首个成员，已有流程 baseli
   }
 })
 
-test('虚拟库：Context Pack 无主库表述、区分单库形态，成员 HEAD 变化换 contextHash', async () => {
+test('多库项目：Context Pack 无主库表述、区分单库形态，成员 HEAD 变化换 contextHash', async () => {
   const fixture = await startedWorkspaceFlow('上下文组合')
   const { repoA, repoB, routes, names, itemId, localPath } = fixture
   const workRoots = Object.fromEntries((fixture.start.workspaceWorktrees ?? []).map((entry) => [entry.name, entry.path]))
@@ -478,10 +478,10 @@ test('虚拟库：Context Pack 无主库表述、区分单库形态，成员 HEA
     assert.equal(first.body.context.contextHash, second.body.context.contextHash, '无变化时 contextHash 稳定')
 
     const prompt = first.body.context.prompt
-    assert.match(prompt, /【虚拟库】上下文组合/)
+    assert.match(prompt, /【多库项目】上下文组合/)
     assert.match(prompt, /成员库平权/)
     assert.match(prompt, /本机台账/)
-    assert.match(prompt, /【仓库事实】（虚拟库：以各成员库为准）/)
+    assert.match(prompt, /【仓库事实】（多库项目：以各成员库为准）/)
     assert.doesNotMatch(prompt, /主库/, '上下文包不能再出现主库文案')
     assert.doesNotMatch(prompt, /写入主库/, '上下文包不能再要求写主库')
     for (const member of fixture.memberRows) {
@@ -519,7 +519,7 @@ test('虚拟库：Context Pack 无主库表述、区分单库形态，成员 HEA
   }
 })
 
-test('虚拟库：files/changes/diff/test/submit 按库聚合，成员库 .dev-hub 全程不被写', async () => {
+test('多库项目：files/changes/diff/test/submit 按库聚合，成员库 .dev-hub 全程不被写', async () => {
   const fixture = await startedWorkspaceFlow('变更组合')
   const { repoA, repoB, routes, names, itemId, localPath } = fixture
   const workRoots = Object.fromEntries((fixture.start.workspaceWorktrees ?? []).map((entry) => [entry.name, entry.path]))
@@ -553,7 +553,7 @@ test('虚拟库：files/changes/diff/test/submit 按库聚合，成员库 .dev-h
     assert.equal(changes.status, 200, JSON.stringify(changes.body).slice(0, 500))
     assert.equal(changes.body.workspace.path, localPath)
     assert.equal('primary' in changes.body.workspace, false)
-    assert.equal(changes.body.branch, null, '虚拟库没有代表库分支')
+    assert.equal(changes.body.branch, null, '多库项目没有代表库分支')
     assert.equal(changes.body.branches.length, 2)
     assert.ok(changes.body.suggestedPaths.includes(`${names[0]}/README.md`), JSON.stringify(changes.body.suggestedPaths))
     assert.ok(changes.body.suggestedPaths.includes(`${names[1]}/README.md`))
@@ -621,13 +621,13 @@ test('虚拟库：files/changes/diff/test/submit 按库聚合，成员库 .dev-h
   }
 })
 
-test('虚拟库：规范技能/本机命令/扫库都走本机目录，成员库 .dev-hub 不新增', async () => {
+test('多库项目：规范技能/本机命令/扫库都走本机目录，成员库 .dev-hub 不新增', async () => {
   const fixture = await startedWorkspaceFlow('规范组合')
   const { repoA, repoB, routes, localPath } = fixture
   try {
     const skills = await call(routes, API.skills)
     assert.equal(skills.status, 200, JSON.stringify(skills.body).slice(0, 300))
-    assert.equal(skills.body.path, 'conventions.json', '虚拟库规范路径是它自己的本机目录')
+    assert.equal(skills.body.path, 'conventions.json', '多库项目规范路径是它自己的本机目录')
     assert.ok((await stat(join(localPath, 'conventions.json'))).isFile())
 
     const installed = await call(routes, API.skills, {
@@ -646,7 +646,7 @@ test('虚拟库：规范技能/本机命令/扫库都走本机目录，成员库
     assert.equal(project.status, 200, JSON.stringify(project.body).slice(0, 300))
     assert.equal(project.body.localCommands.localTest, 'node -e "process.exit(0)"')
     const state = await call(routes, API.state)
-    assert.equal(state.body.localCommands.localTest, 'node -e "process.exit(0)"', '虚拟库本机命令记在虚拟库自身')
+    assert.equal(state.body.localCommands.localTest, 'node -e "process.exit(0)"', '多库项目本机命令记在多库项目自身')
 
     const scanned = await call(routes, API.scan)
     assert.equal(scanned.status, 200, JSON.stringify(scanned.body).slice(0, 300))
@@ -658,7 +658,7 @@ test('虚拟库：规范技能/本机命令/扫库都走本机目录，成员库
   }
 })
 
-test('虚拟库：删除流程只清本机台账与留档，不动成员库', async () => {
+test('多库项目：删除流程只清本机台账与留档，不动成员库', async () => {
   const fixture = await startedWorkspaceFlow('删除组合')
   const { repoA, repoB, routes, itemId, localPath } = fixture
   try {
@@ -673,7 +673,7 @@ test('虚拟库：删除流程只清本机台账与留档，不动成员库', as
   }
 })
 
-test('单库回归：普通流程上下文没有【虚拟库】，baseline 不写 repos，台账仍在仓库 .dev-hub', async () => {
+test('单库回归：普通流程上下文没有【多库项目】，baseline 不写 repos，台账仍在仓库 .dev-hub', async () => {
   await resetHome()
   const repo = await tempRepo({ files: { 'src/source/Alert.java': 'class Alert {}\n' } })
   const { ctx, routes } = fakeContext(repo)
@@ -692,7 +692,7 @@ test('单库回归：普通流程上下文没有【虚拟库】，baseline 不�
     const start = await call(routes, API.start, { method: 'POST', body: { id: 'single-flow' } })
     assert.equal(start.status, 200, JSON.stringify(start.body).slice(0, 300))
     assert.equal(start.body.item.baseline.repos, undefined, '单库 baseline 保持旧结构')
-    assert.doesNotMatch(start.body.context.prompt, /【虚拟库】/)
+    assert.doesNotMatch(start.body.context.prompt, /【多库项目】/)
     assert.equal(start.body.workspace, undefined)
 
     const recon = await call(routes, API.recon, { method: 'POST', body: { description: 'source alert retry', engine: 'local' } })
@@ -711,12 +711,12 @@ test('单库回归：普通流程上下文没有【虚拟库】，baseline 不�
   }
 })
 
-test('虚拟库本机目录被误登记为代码库：state/setup/switch 自动还原，不再弹初始化', async () => {
+test('多库项目本机目录被误登记为项目：state/setup/switch 自动还原，不再弹初始化', async () => {
   const fixture = await workspaceFixture('误登记修复')
   try {
     const profilePath = join(home, 'profile.json')
     const profile = JSON.parse(await readFile(profilePath, 'utf8'))
-    // 复现线上坏 profile：activeRepo 指向虚拟库本机目录，repos 里多一张假代码库卡，
+    // 复现线上坏 profile：activeRepo 指向多库项目本机目录，repos 里多一张假项目卡，
     // 且 workspace 丢了 member（旧数据），state 曾因此误判 needsSetup。
     profile.activeRepo = fixture.localPath
     profile.repos[fixture.localPath] = { member: 's', environment: {} }
@@ -727,16 +727,16 @@ test('虚拟库本机目录被误登记为代码库：state/setup/switch 自动�
 
     const state = await call(fixture.routes, API.state)
     assert.equal(state.status, 200, JSON.stringify(state.body).slice(0, 300))
-    assert.equal(state.body.needsSetup, false, '虚拟库已有台账，不应弹初始化')
+    assert.equal(state.body.needsSetup, false, '多库项目已有台账，不应弹初始化')
     assert.equal(state.body.repo.kind, 'virtual-workspace')
     assert.equal(state.body.workspace?.id, fixture.workspace.id)
     assert.equal(state.body.profile.member, '张三', 'workspace.member 丢了也要从成员库身份补回来')
 
     const repaired = JSON.parse(await readFile(profilePath, 'utf8'))
     assert.equal(repaired.activeRepo, `workspace:${fixture.workspace.id}`)
-    assert.equal(repaired.repos[fixture.localPath], undefined, '假代码库卡要清掉')
+    assert.equal(repaired.repos[fixture.localPath], undefined, '假项目卡要清掉')
 
-    // 旧界面把本机目录提交给 setup / switchRepo：应切回虚拟库，而不是初始化它
+    // 旧界面把本机目录提交给 setup / switchRepo：应切回多库项目，而不是初始化它
     const setup = await call(fixture.routes, API.setup, { method: 'POST', body: { repoPath: fixture.localPath, name: 's' } })
     assert.equal(setup.status, 200, JSON.stringify(setup.body).slice(0, 300))
     assert.equal(setup.body.repo.kind, 'virtual-workspace')

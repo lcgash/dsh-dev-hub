@@ -49,8 +49,8 @@ test('流程详情：目标还是客户原话时，显式提示待规范化并�
 })
 
 test('流程详情：已规范化时不出现"待规范化"入口，来源可追溯', () => {
-  const normalizedGoal = '在流程页与技能页头部常驻展示当前代码库/工作区'
-  const normalizedProblem = '流程页与技能页只显示「开发工作站」，看不到当前作用的代码库或工作区'
+  const normalizedGoal = '在流程页与技能页头部常驻展示当前项目/工作区'
+  const normalizedProblem = '流程页与技能页只显示「开发工作站」，看不到当前作用的项目或工作区'
   const item = baseItem({
     goal: normalizedGoal,
     description: RAW,

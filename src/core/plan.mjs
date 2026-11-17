@@ -2,6 +2,7 @@ import { estimateWork } from './estimate.mjs'
 import { checksOf, detectTemplate, templateForIntent } from './templates.mjs'
 import { detectIntent, normalizeIntent } from './intent.mjs'
 import { kindOfPath, moduleOfPath } from './modules.mjs'
+import { DEV_HANDOFF_STEP } from '../shared/boundaries.mjs'
 
 /**
  * 工作站自己出详细开发计划：用户不写计划、不填人天。
@@ -102,7 +103,7 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
     if (isAnalysis) {
       steps.push(`阅读相关测试：${names}${group.files.length > 2 ? ' 等' : ''}（只读，确认现有行为）`)
     } else {
-      steps.push(`更新对应测试：${names}${group.files.length > 2 ? ' 等' : ''}（先跑一遍确认现状）`)
+      steps.push(`更新对应测试：${names}${group.files.length > 2 ? ' 等' : ''}（只改测试代码；执行测试由工作站验证阶段统一做）`)
     }
   }
   if (docGroups.length && !isAnalysis) {
@@ -117,27 +118,22 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
   const touchpoints = (pickedTemplate?.touchpoints ?? []).slice(0, 10)
   // 命中里已经有测试文件就不再单列“补测试”，避免计划重复；分析流程不改代码，也不补测试
   if (withTests && !testGroups.length && !isAnalysis) steps.push('补充单元测试，覆盖新增分支')
-  // 分析流程不落地代码：不补测试、不同步契约、不跑仓库门禁，只跑只读自测留证据
+  // 分析流程不落地代码：不补测试、不同步契约、不跑仓库门禁
   if (!withTests && !isAnalysis) steps.push('暂不补测试（已确认后续单独处理）')
   if (syncContract && !isAnalysis) steps.push('同步契约/库表/文案变更（含基线、迁移、三语 key）')
-  if (localTest) {
-    steps.push(isAnalysis
-      ? `跑本机自测作为只读证据：${localTest}`
-      : `跑本机自测：${localTest}`)
-  }
-  if (gate && !isAnalysis) steps.push(`跑仓库门禁：${gate}`)
+  // 本机自测/门禁属于「测试验证」阶段，由工作站执行；不写进开发任务，避免同一件事在开发/测试重复做
   if (isAnalysis) {
     steps.push('输出结论：根因/影响面/证据 + 补丁建议（建议不落地，不产生提交）')
     steps.push('把分析结论、证据与剩余风险回写到开发流程')
   } else {
-    steps.push('把变更点、测试结果与剩余风险回写到开发流程')
+    steps.push(DEV_HANDOFF_STEP)
   }
 
   const estimate = estimateWork({ recon: { ...recon, files: scopedFiles }, scope, commands, repoNames })
 
   const acceptance = []
-  if (localTest) acceptance.push(isAnalysis ? `本机自测通过（只读证据）：${localTest}` : `本机自测通过：${localTest}`)
-  if (gate && !isAnalysis) acceptance.push(`仓库门禁通过：${gate}`)
+  if (localTest) acceptance.push(isAnalysis ? `本机自测通过（只读证据；工作站「测试验证」阶段执行）：${localTest}` : `本机自测通过（工作站「测试验证」阶段执行）：${localTest}`)
+  if (gate && !isAnalysis) acceptance.push(`仓库门禁通过（工作站「测试验证」阶段执行）：${gate}`)
   acceptance.push('改动文件不越出已确认的 scope')
   if (isAnalysis) {
     acceptance.push('分析结论已产出（含证据与影响面）')
@@ -145,7 +141,7 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
   }
   if (withTests && !isAnalysis) acceptance.push('新增/修改的行为有对应测试覆盖')
   if (syncContract && !isAnalysis) acceptance.push('契约/库表/文案变更已同步基线、迁移与三语 key')
-  if (acceptanceChoice === 'gate' && gate) acceptance.unshift(`验收以门禁为准：${gate}`)
+  if (acceptanceChoice === 'gate' && gate) acceptance.unshift(`验收以门禁为准（工作站「测试验证」阶段执行）：${gate}`)
 
   const risks = []
   for (const risk of estimate.risks ?? []) risks.push(`${risk.label}（${risk.sample}）`)

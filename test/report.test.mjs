@@ -271,7 +271,7 @@ test('buildReport：非 git 仓库、测试通过即完成，不要求提交记�
   assert.match(report.sections[6].blocks.find((block) => block.type === 'fields').fields.find((field) => field.label === 'git 证据').value, /不是 git 仓库/)
 })
 
-test('buildReport：虚拟库展示成员库与逐库测试/提交结果', () => {
+test('buildReport：多库项目展示成员库与逐库测试/提交结果', () => {
   const item = fixture({
     workflow: {
       ...fixture().workflow,
@@ -323,7 +323,7 @@ test('buildReport：虚拟库展示成员库与逐库测试/提交结果', () =>
   const scope = report.sections[1]
   assert.ok(scope.blocks.some((block) => block.type === 'table' && block.title === '成员库证据'))
   assert.ok(scope.blocks.some((block) => block.type === 'table' && block.title === '逐库提交结果'))
-  assert.ok(scope.blocks.some((block) => block.type === 'fields' && block.title === '虚拟库'))
+  assert.ok(scope.blocks.some((block) => block.type === 'fields' && block.title === '多库项目'))
   const testSection = report.sections[3]
   const rows = testSection.blocks.find((block) => block.type === 'table' && block.title === '成员库测试结果').rows
   assert.equal(rows.length, 2)
@@ -385,4 +385,26 @@ test('formatReportTime：ISO 转本地时间，空值给破折号，坏值原样
   assert.match(formatReportTime(AT), /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/)
   assert.equal(formatReportTime(null), '—')
   assert.equal(formatReportTime('not-a-date'), 'not-a-date')
+})
+
+test('报告：人工跳过测试显示“已跳过 + 原因”，结论不把跳过当失败', () => {
+  const item = fixture({
+    workflow: {
+      ...fixture().workflow,
+      tests: {
+        local: { status: 'skipped', skipReason: '环境依赖不可用，改为人工确认', skippedBy: '张三', at: AT },
+        environment: { status: 'skipped', skipReason: '本次只改文档', skippedBy: '张三', at: AT },
+      },
+    },
+  })
+  const report = buildReport({ item, files: fileEvidence(), git: { isRepo: true, branch: 'main', head: 'abc1234' }, generatedAt: AT })
+  assert.equal(report.verdict, 'passed')
+  assert.match(report.verdictReason, /测试人工跳过/)
+  assert.match(report.verdictReason, /本机自测/)
+  const testSection = report.sections.find((section) => section.id === 'test')
+  const fields = testSection.blocks.find((block) => block.type === 'fields').fields
+  const local = fields.find((field) => field.label === '本机自测')
+  assert.match(local.value, /已跳过/)
+  assert.match(local.value, /环境依赖不可用/)
+  assert.equal(local.tone, 'warn')
 })
