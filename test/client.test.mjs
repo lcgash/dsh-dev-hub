@@ -2037,3 +2037,14 @@ test('点代码库卡片只切换目标，不自动跳进该库上次打开的�
   assert.doesNotMatch(body, /loadPanelState\(targetRepo\)/)
   assert.match(body, /点代码库卡片是“切换目标”/)
 })
+
+test('需求澄清工作区：独立页签 + 空工作区首屏引导', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
+  assert.match(index, /value: 'clarify', label: '需求澄清'/)
+  assert.match(index, /ClarificationWorkspace/)
+  assert.match(index, /onOpenClarifications: \(\) => setTab\('clarify'\)/)
+  assert.match(home, /从一次需求澄清开始/)
+  assert.match(home, /开始需求澄清/)
+})

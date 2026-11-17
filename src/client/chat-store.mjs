@@ -222,7 +222,7 @@ export function listChats(repoPath, scope = 'new') {
 /** 读当前活跃对话；没有就造一个空的（不落盘，等首次保存）。 */
 export function getActiveChat(repoPath, scope = 'new') {
   const store = loadStore(repoPath, scope)
-  if (!store) {
+  if (!store || !store.conversations.length) {
     const conversation = emptyConversation()
     return { id: conversation.id, conversation }
   }
@@ -330,6 +330,24 @@ export function selectChat(repoPath, id, scope = 'new') {
   store.activeId = target.id
   saveStore(repoPath, store, scope)
   return target
+}
+
+/** 删除某段澄清会话；如果删的是 active，自动切到剩余最近一段（没有就留空由组件创建）。 */
+export function deleteChat(repoPath, id, scope = 'new') {
+  const targetId = String(id ?? '').trim()
+  if (!targetId) return null
+  const store = loadStore(repoPath, scope)
+  if (!store) return null
+  const before = store.conversations.length
+  store.conversations = store.conversations.filter((entry) => entry.id !== targetId)
+  if (store.conversations.length === before) return store.activeId ?? null
+  if (store.activeId === targetId) {
+    store.activeId = store.conversations
+      .slice()
+      .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))[0]?.id ?? null
+  }
+  saveStore(repoPath, store, scope)
+  return store.activeId ?? null
 }
 
 /** 清空某代码库的全部对话留存（调试/重置用）。 */

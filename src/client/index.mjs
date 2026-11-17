@@ -33,6 +33,7 @@ function nextIntentOf(value) {
   return INTENT_ORDER[(INTENT_ORDER.indexOf(current) + 1) % INTENT_ORDER.length]
 }
 import { DevHubChat } from './chat.mjs'
+import { ClarificationWorkspace } from './clarifications.mjs'
 import {
   Button,
   C,
@@ -60,7 +61,7 @@ import { DevHubSessionQuick } from './session-entry.mjs'
 import { SessionLogPanel } from './session-log.mjs'
 import { DevHubBoundary } from './error-boundary.mjs'
 import { loadLastTab, loadPanelState, saveLastTab, savePanelState } from './ui-state.mjs'
-import { startNewChat } from './chat-store.mjs'
+import { deleteChat, selectChat, startNewChat } from './chat-store.mjs'
 import { SkillsPanel } from './skills.mjs'
 import { ReportView } from './report.mjs'
 import { KEY_FILE_LIMIT, excerptLines, keyFileKind, pickKeyFiles } from './key-files.mjs'
@@ -3563,7 +3564,7 @@ import { composeAsk, continuePrompt, describeFlow, suggestNextSteps } from './ne
 
 export { launchDevSession, launchPrompt }
 
-function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonce = 0, onScopeChanged = null }) {
+function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openFlowNonce = 0, homeNonce = 0, onScopeChanged = null }) {
   const [state, setState] = useState(null)
   // 虚拟库：多代码库组合（前后端联动）
   const [wsOpen, setWsOpen] = useState(false)
@@ -4335,6 +4336,7 @@ function Panel({ ctx, onOpenChat, openFlowId = null, openFlowNonce = 0, homeNonc
         onEditWorkspace: openEditWorkspace,
         onScan: scan,
         onNewFlow: () => onOpenChat?.(null, null, { fresh: true }),
+        onOpenClarifications,
       }),
     candidates.length ? h('div', { style: styles.cardFlat },
       h('div', { style: styles.row },
@@ -4701,6 +4703,8 @@ function DevHubPage({ ctx }) {
   // 点「新建流程」时自增：即使仍在同一个 scope（都显示为 new），也必须重建聊天组件，
   // 否则旧对话的计划卡片会留在屏幕上，用户点确认就绕过澄清直接建了流程。
   const [chatNonce, setChatNonce] = useState(0)
+  // 需求澄清工作区刷新信号：新建/删除/打开草稿后重新读 chat store
+  const [clarifyNonce, setClarifyNonce] = useState(0)
   const [flowsNonce, setFlowsNonce] = useState(0)
   // 当前开发目标（代码库 / 虚拟库）变化时自增：头部徽标立刻重取 /state，不等轮询
   const [scopeNonce, setScopeNonce] = useState(0)
@@ -4812,6 +4816,31 @@ function DevHubPage({ ctx }) {
    * fresh=true 用于「新建流程」入口：先落一段新对话再进聊天，
    * 这样第二个新流程不会接着上一段流程的对话继续写（否则两段消息会串在一起）。
    */
+  /** 从澄清工作区打开一段已有草稿：先切成 active，再强制重开聊天组件。 */
+  function openExistingChat(id) {
+    const repoPath = flowList?.repo?.path
+    if (!repoPath || !id) return
+    selectChat(repoPath, id, 'new')
+    setChatScope(null)
+    setFlowHint(null)
+    setChatNonce((value) => value + 1)
+    setClarifyNonce((value) => value + 1)
+    setTab('chat')
+  }
+
+  function newClarification() {
+    openChat(null, null, { fresh: true })
+    setClarifyNonce((value) => value + 1)
+  }
+
+  /** 删除澄清草稿：只删本机对话留存，不动任何流程/代码。 */
+  function removeClarification(card) {
+    const repoPath = flowList?.repo?.path
+    if (!repoPath || !card?.id) return
+    deleteChat(repoPath, card.id, 'new')
+    setClarifyNonce((value) => value + 1)
+  }
+
   function openChat(scope = null, hint = null, { fresh = false } = {}) {
     const repoPath = flowList?.repo?.path
     if (fresh && repoPath) {
@@ -4849,9 +4878,11 @@ function DevHubPage({ ctx }) {
             style: { ...styles.pageSubtitle, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
           }, tab === 'flows'
             ? '开发流程台账 · 会话状态 · 并行开发 · 测试与提交'
-            : tab === 'skills'
-              ? '通用技能包 · 安装/卸载 · 自定义约束 · 重建默认规范'
-              : (chatScope
+            : tab === 'clarify'
+              ? '需求澄清工作区 · 草稿、追问与待确认计划都会保存在这里'
+              : tab === 'skills'
+                ? '通用技能包 · 安装/卸载 · 自定义约束 · 重建默认规范'
+                : (chatScope
                 ? `专注流程：${flowHint?.title ?? chatScope} · 一句话追问、看扫仓库与计划`
                 : '新建开发流程 · 说一句要做什么 · 工作站扫仓库、追问、自评计划')),
         ),
@@ -4930,13 +4961,22 @@ function DevHubPage({ ctx }) {
         },
         options: [
           { value: 'flows', label: '流程' },
+          { value: 'clarify', label: '需求澄清' },
           { value: 'chat', label: '新建流程' },
           { value: 'skills', label: '技能' },
         ],
       }),
       ),
     ),
-    tab === 'chat'
+    tab === 'clarify'
+      ? h(ClarificationWorkspace, {
+        repoPath: flowList?.repo?.path ?? null,
+        refreshNonce: clarifyNonce,
+        onOpen: openExistingChat,
+        onNew: newClarification,
+        onDelete: removeClarification,
+      })
+      : tab === 'chat'
       ? h(DevHubChat, {
         ctx,
         // 换代码库必须重建聊天组件：否则旧库的对话/探测结果会留在新库的聊天页里
@@ -4959,6 +4999,7 @@ function DevHubPage({ ctx }) {
           ctx,
           key: flowsNonce,
           onOpenChat: openChat,
+          onOpenClarifications: () => setTab('clarify'),
           openFlowId: openFlow?.id ?? null,
           openFlowNonce: openFlow?.nonce ?? 0,
           homeNonce,

@@ -66,6 +66,13 @@ Every finished flow can produce a read-only report: goal, scope, review verdicts
 
 ## Features
 
+### Clarification workspace
+
+- A dedicated **Requirement clarification** tab manages drafts before they become flows.
+- Each draft shows whether it is being scanned, waiting for answers, has a plan to confirm, or is a reusable draft.
+- Users can resume, start a new clarification, or delete a draft without touching code or created flows.
+- An empty workbench starts with a three-step onboarding card instead of dropping users into a blank flow list.
+
 ### Chat-first requirement intake
 
 - Scan a repository before asking questions.
