@@ -22,7 +22,7 @@ test('会话隔离：新建流程入口先落新对话，不接着上一段流�
   assert.match(index, /function openChat\(scope = null, hint = null, \{ fresh = false \} = \{\}\)/)
   assert.match(index, /if \(fresh && repoPath\) \{[\s\S]{0,200}?startNewChat\(repoPath, '新对话', 'new'\)/)
   assert.match(index, /onNewFlow: \(\) => onOpenChat\?\.\(null, null, \{ fresh: true \}\)/)
-  assert.match(index, /import \{ startNewChat \} from '\.\/chat-store\.mjs'/)
+  assert.match(index, /startNewChat[^\n]*from '\.\/chat-store\.mjs'|import \{[^\n]*startNewChat[^\n]*\} from '\.\/chat-store\.mjs'/)
 })
 
 test('会话隔离：后台结果按对话 id 回写，不再写 store.activeId', async () => {

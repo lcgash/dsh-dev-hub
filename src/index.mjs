@@ -32,7 +32,7 @@ import {
 } from './core/conventions.mjs'
 import { normalizeScope, suggestModules } from './core/modules.mjs'
 import { extractTokens, reconRepo } from './core/recon.mjs'
-import { scanWithDshAgent, scanWithLlm } from './host/agent-scan.mjs'
+import { candidateHintPrompt, scanWithDshAgent, scanWithLlm } from './host/agent-scan.mjs'
 import { runAgentJson, runLlmJson } from './host/agent-run.mjs'
 import { answerPendingQuestion, readPendingApprovals, readPendingQuestions } from './host/pending-questions.mjs'
 import { ASSIST_SCHEMA, applyAssistUpdates, buildAssistPrompt } from './core/assist.mjs'
@@ -3851,7 +3851,8 @@ export function apply(ctx) {
                 repoName: loaded?.project?.name || repoName(scanRepo),
                 description,
                 limit: 6,
-                extraPrompt: attachmentPrompt(attachments),
+                // 先给候选：子代理验证/收敛比从零全仓探索快得多
+                extraPrompt: [candidateHintPrompt(lexical), attachmentPrompt(attachments)].filter(Boolean).join('\n\n'),
               })
               engine = 'dsh'
               scanNotes = scan.notes || ''

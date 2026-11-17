@@ -247,6 +247,7 @@ function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, 
   return h('div', {
     // 选中卡作为「项目管理」的当前 tab：首页用它和下方流程列表画一条连通线
     id: active ? 'devhub-active-target' : undefined,
+    'data-devhub-target-card': '1',
     style: { position: 'relative', minWidth: 0 },
     onMouseEnter: () => setHovered(true),
     onMouseLeave: () => setHovered(false),
@@ -439,6 +440,7 @@ function WorkspaceCard({ workspace, active, busy, onSelect, onEdit, onRemove }) 
       : '点击切换'
   return h('div', {
     id: active ? 'devhub-active-target' : undefined,
+    'data-devhub-target-card': '1',
     style: { position: 'relative', minWidth: 0 },
     onMouseEnter: () => setHovered(true),
     onMouseLeave: () => setHovered(false),
@@ -1022,6 +1024,20 @@ export function HomeView(props) {
       const listRect = listNode.getBoundingClientRect()
       const height = Math.round(listRect.top - cardRect.bottom + 2)
       if (height < 2) {
+        setTabLink((current) => (current ? null : current))
+        return
+      }
+      // 目标卡换行时，选中卡下面可能压着别的卡：线不穿卡，宁可不画
+      const centerX = cardRect.left + cardRect.width / 2
+      const blocked = [...document.querySelectorAll('[data-devhub-target-card]')].some((node) => {
+        if (node === card) return false
+        const rect = node.getBoundingClientRect()
+        return rect.top >= cardRect.bottom - 2
+          && rect.top < listRect.top
+          && rect.left <= centerX
+          && rect.right >= centerX
+      })
+      if (blocked) {
         setTabLink((current) => (current ? null : current))
         return
       }
