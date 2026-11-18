@@ -80,7 +80,7 @@ export function buildTechDocMarkdown(item, { repoName = '', generatedAt = new Da
   const workflow = item?.workflow ?? {}
   const plan = workflow.plan ?? {}
   const estimate = plan.estimate ?? {}
-  const intent = workflow.intent === 'analysis' ? '分析' : workflow.intent === 'bug' ? '缺陷修复' : '功能需求'
+  const intent = workflow.intent === 'analysis' ? '分析' : workflow.intent === 'bug' ? '缺陷修复' : workflow.intent === 'refactor' ? '代码重构' : '功能需求'
   const scope = item?.scope ?? []
   const reconFiles = (item?.recon?.files ?? []).filter(Boolean)
   const changePoints = (item?.changePoints ?? []).map((point) => point?.summary).filter(Boolean)

@@ -162,7 +162,7 @@ function titleFromText(input, description = '') {
 
 /** 兜底标题：从注解名/类名/散文里拼一个动宾短语（agent 不可用时用）。 */
 function fallbackTitle(description, intent = 'feature') {
-  const verb = intent === 'bug' ? '修复' : intent === 'analysis' ? '分析' : '完善'
+  const verb = intent === 'bug' ? '修复' : intent === 'refactor' ? '重构' : intent === 'analysis' ? '分析' : '完善'
   const annotation = /@([A-Za-z_][\w.$]*)/.exec(String(description ?? ''))
   if (annotation) return `${verb} ${annotation[1]} 注解相关逻辑`.slice(0, MAX_TITLE)
   const className = /\b([A-Z][A-Za-z0-9_]{2,})\b/.exec(String(description ?? ''))

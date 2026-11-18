@@ -19,15 +19,15 @@ import { isWeakTitle, requirementStatusLabel } from '../shared/requirement.mjs'
 import { attachmentLabel, isImageAttachment, normalizeAttachments } from '../shared/attachment.mjs'
 
 // 流程类型文案（客户端本地；宿主端 core/intent.mjs 保持同义）
-const INTENT_LABEL = { bug: '定位/修复 bug', feature: '开发需求功能', analysis: '分析' }
-const INTENT_ORDER = ['bug', 'feature', 'analysis']
+const INTENT_LABEL = { bug: '定位/修复 bug', feature: '开发需求功能', refactor: '代码重构', analysis: '分析' }
+const INTENT_ORDER = ['bug', 'feature', 'refactor', 'analysis']
 
-/** 流程类型只认三态；旧数据/缺省按 feature 展示。 */
+/** 流程类型只认四态；旧数据/缺省按 feature 展示。 */
 function intentOf(value) {
   return INTENT_ORDER.includes(value) ? value : 'feature'
 }
 
-/** 点一下切换到下一类：bug → feature → analysis → bug。 */
+/** 点一下切换到下一类：bug → feature → refactor → analysis → bug。 */
 function nextIntentOf(value) {
   const current = intentOf(value)
   return INTENT_ORDER[(INTENT_ORDER.indexOf(current) + 1) % INTENT_ORDER.length]
@@ -1418,7 +1418,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         const info = await api(`${API.changes}?id=${encodeURIComponent(draft.id)}`)
         setChanges(info)
         paths = (info.suggestedPaths ?? []).filter(Boolean)
-        const prefix = draft.workflow?.intent === 'bug' ? 'fix' : 'feat'
+        const prefix = draft.workflow?.intent === 'bug' ? 'fix' : draft.workflow?.intent === 'refactor' ? 'refactor' : 'feat'
         message = `${prefix}: ${draft.title || draft.id} (${draft.id})`
         mode = 'current'
         name = ''
@@ -3678,10 +3678,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               }, '独立工作区')
               : null,
             h(WorkspaceBadge, { workspace: draft.workspace, repos: draft.repos }),
-            // 流程类型：bug / feature / analysis，点一下可手动纠正（不再标"创建方式"标签）
+            // 流程类型：bug / feature / refactor / analysis，点一下可手动纠正（不再标"创建方式"标签）
             h(Tag, {
-              tone: workflow.intent === 'bug' ? 'warn' : workflow.intent === 'analysis' ? 'accent' : 'neutral',
-              title: '点击切换流程类型（bug 先复现/定位；feature 先对齐范围；analysis 只读分析、不进入提交）',
+              tone: workflow.intent === 'bug' ? 'warn' : workflow.intent === 'refactor' ? 'info' : workflow.intent === 'analysis' ? 'accent' : 'neutral',
+              title: '点击切换流程类型（bug 先复现/定位；feature 先对齐范围；refactor 保持行为不变并补保护网；analysis 只读分析、不进入提交）',
               style: { cursor: 'pointer' },
               onClick: () => {
                 const nextIntent = nextIntentOf(workflow.intent)

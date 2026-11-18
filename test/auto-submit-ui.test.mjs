@@ -8,7 +8,7 @@ test('顶栏「提交并推送」是实际操作：自动取变更、生成提�
   assert.match(index, /submitCode\(\{ auto: true \}\)/)
   assert.match(index, /async function submitCode\(\{ pushOnly = false, auto = false \} = \{\}\)/)
   assert.match(index, /info\.suggestedPaths/)
-  assert.match(index, /const prefix = draft\.workflow\?\.intent === 'bug' \? 'fix' : 'feat'/)
+  assert.match(index, /const prefix = draft\.workflow\?\.intent === 'bug' \? 'fix' : draft\.workflow\?\.intent === 'refactor' \? 'refactor' : 'feat'/)
   assert.match(index, /没有检测到需要提交的变更/)
 })
 

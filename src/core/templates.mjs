@@ -98,6 +98,27 @@ export const TEMPLATES = [
     references: [],
   },
   {
+    id: 'refactor',
+    name: '代码重构/结构调整',
+    appliesTo: ['java', 'node', 'generic'],
+    keywords: ['重构', 'refactor', '重写', '拆分', '解耦', '提取', '抽取', '重命名', '整理代码', '清理代码', '模块化', '去重', '简化'],
+    touchpoints: [
+      '先确认边界：这次重构要保持哪些对外行为/接口不变，写进流程',
+      '补保护网：先用现有测试或补回归测试固定当前行为；测试不通过不开始大改',
+      '小步拆分：按职责提取/移动代码，每一步保持编译与测试通过',
+      '同步调用方：更新依赖方、导出/注册表与文档，删除旧入口前确认没有残留引用',
+      '不顺手改需求：重构不改业务语义；发现必须改行为时回到需求澄清确认',
+    ],
+    checks: [
+      { id: 'tests', text: '重构前后本机测试通过', command: 'mvn -o clean test' },
+      { id: 'gate', text: '仓库架构门禁通过', command: 'sh scripts/check.sh' },
+    ],
+    references: [
+      { path: 'README.md', why: '先读项目结构与运行方式，确认重构边界' },
+      { path: 'docs/code-guide/LAYERING.md', why: '按仓库分层规范调整职责，避免把依赖方向改反' },
+    ],
+  },
+  {
     id: 'bugfix',
     name: '定位/修复缺陷',
     appliesTo: ['java', 'node', 'generic'],
@@ -131,7 +152,9 @@ export const TEMPLATES = [
 
 /** 显式指定 intent 时用哪个模板：只有 analysis 需要绕过关键词（用户可在界面上手动切换类型）。 */
 export function templateForIntent(intent) {
-  return intent === 'analysis' ? (TEMPLATES.find((template) => template.id === 'analysis') ?? null) : null
+  if (intent === 'analysis') return TEMPLATES.find((template) => template.id === 'analysis') ?? null
+  if (intent === 'refactor') return TEMPLATES.find((template) => template.id === 'refactor') ?? null
+  return null
 }
 
 /** 按描述关键词命中模板（确定性：分数高者优先，平手取 generic）。excludeIds 用于按流程类型排除不合适的模板。 */

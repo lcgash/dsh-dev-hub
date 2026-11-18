@@ -40,7 +40,7 @@ export function describeFlow(item, session) {
     stageLabel: STAGE_TEXT[workflow.stage] ?? STAGE_LABELS[workflow.stage] ?? '需求澄清',
     stageReason: workflow.stageReason ?? '',
     status: item?.status ?? 'planned',
-    intent: workflow.intent === 'analysis' ? 'analysis' : workflow.intent === 'bug' ? 'bug' : 'feature',
+    intent: workflow.intent === 'analysis' ? 'analysis' : workflow.intent === 'bug' ? 'bug' : workflow.intent === 'refactor' ? 'refactor' : 'feature',
     tasks: { done, total: tasks.length },
     localTest: tests.local?.status ?? 'not_run',
     localTestSkipped: tests.local?.status === 'skipped' && !tests.local?.stale,

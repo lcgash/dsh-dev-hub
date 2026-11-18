@@ -12,6 +12,13 @@ test('缺省修复类关键词判为 bug，功能类判为 feature，都没命�
   assert.equal(detectIntent('随便弄一下'), 'feature')
 })
 
+test('重构类描述判为 refactor；不会被普通功能词淹没', () => {
+  assert.equal(detectIntent('把 source 模块拆分并解耦'), 'refactor')
+  assert.equal(detectIntent('重构上传链路，提取公共代码'), 'refactor')
+  assert.equal(detectIntent('重命名并清理旧实现'), 'refactor')
+  assert.equal(INTENT_LABEL.refactor, '代码重构')
+})
+
 test('分析类描述判为 analysis；bug/功能词同时出现时优先', () => {
   assert.equal(detectIntent('分析下这条调用链'), 'analysis')
   assert.equal(detectIntent('梳理一下上传链路的现状'), 'analysis')
@@ -23,9 +30,10 @@ test('分析类描述判为 analysis；bug/功能词同时出现时优先', () =
   assert.equal(INTENT_LABEL.analysis, '分析')
 })
 
-test('normalizeIntent：只接受三态，非法值回退', () => {
+test('normalizeIntent：只接受四态，非法值回退', () => {
   assert.equal(normalizeIntent('bug'), 'bug')
   assert.equal(normalizeIntent('feature'), 'feature')
+  assert.equal(normalizeIntent('refactor'), 'refactor')
   assert.equal(normalizeIntent('analysis'), 'analysis')
   assert.equal(normalizeIntent('other'), null)
   assert.equal(normalizeIntent(undefined, 'feature'), 'feature')
@@ -73,4 +81,13 @@ test('显式 analysis 生成只读计划：不修改代码、不补测试、不�
   assert.ok(plan.acceptance.some((text) => /不改代码、不建 worktree、不产生提交/.test(text)))
   assert.ok(plan.acceptance.some((text) => /分析结论已产出/.test(text)))
   assert.ok(plan.acceptance.some((text) => /本机自测通过（只读证据/.test(text)))
+})
+
+test('显式 refactor 生成行为不变的重构计划，使用重构模板', () => {
+  const plan = buildPlan({ description: '重构上传链路', intent: 'refactor', recon: null, scope: ['src'] })
+  assert.equal(plan.intent, 'refactor')
+  assert.equal(plan.template.id, 'refactor')
+  assert.match(plan.steps[0], /重构边界|行为/)
+  assert.match(plan.steps[1], /保护网|测试/)
+  assert.ok(plan.checks.some((check) => check.id === 'tests'))
 })

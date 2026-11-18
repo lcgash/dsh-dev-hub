@@ -1349,7 +1349,11 @@
     "小改动免独立评审：先跑本机自测，通过后进入环境测试": "Independent review skipped for this small change: run the local test first, then the environment test",
     "小改动免评审：环境验证通过后进入「待提交」": "Review skipped for this small change: after environment verification the flow moves to Submit",
     "小改动免独立评审，直接进入测试验证": "Independent review skipped for this small change; go straight to verification",
-    "可多选": "Multi-select"
+    "可多选": "Multi-select",
+    "代码重构": "Code refactor",
+    "重构": "Refactor",
+    "代码重构：先补保护网，保持对外行为不变": "Code refactor: add a safety net first and keep external behavior unchanged",
+    "点击切换流程类型（bug 先复现/定位；feature 先对齐范围；refactor 保持行为不变并补保护网；analysis 只读分析、不进入提交）": "Click to switch the flow type (bug reproduces and locates first; feature aligns scope first; refactor keeps behavior unchanged and adds a safety net; analysis is read-only and never reaches commit)"
   },
   "templates": {
     "成员 {name}": "Member {name}",

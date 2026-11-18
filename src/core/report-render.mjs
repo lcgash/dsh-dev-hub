@@ -722,6 +722,7 @@ ${body}
 function intentLabel(intent) {
   if (intent === 'feature') return '功能需求'
   if (intent === 'bug') return '缺陷修复'
+  if (intent === 'refactor') return '代码重构'
   if (intent === 'analysis') return '只读分析'
   return ''
 }

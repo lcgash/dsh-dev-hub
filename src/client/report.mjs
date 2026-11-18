@@ -652,7 +652,7 @@ export function ReportView({ itemId, onNotice, onError }) {
   const verdict = VERDICT_STYLE[report.verdict] ?? VERDICT_STYLE.incomplete
   const summary = report.summary ?? {}
   const isAnalysis = report.intent === 'analysis'
-  const intentText = report.intent === 'bug' ? 'bug' : isAnalysis ? '分析' : 'feature'
+  const intentText = report.intent === 'bug' ? 'bug' : report.intent === 'refactor' ? '重构' : isAnalysis ? '分析' : 'feature'
   const baseline = summary.baseline ?? null
   const submission = summary.submission ?? null
   const testTone = summary.testsTotal > 0 && summary.testsPassed >= summary.testsTotal

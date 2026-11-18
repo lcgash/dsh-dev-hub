@@ -42,7 +42,7 @@ function shortModule(path) {
  *   project?: object,
  *   conventions?: object,
  *   repoNames?: string[],
- *   intent?: 'bug'|'feature'|'analysis',
+ *   intent?: 'bug'|'feature'|'refactor'|'analysis',
  * }} input
  */
 export function buildPlan({ description, recon, scope = [], answers = {}, project, conventions, template, language, repoNames = [], intent: intentInput } = {}) {
@@ -83,6 +83,11 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
   if (intent === 'bug') {
     steps.push('先复现问题：拿到最小输入/日志，确认失败现象可以稳定重现')
     steps.push('定位根因：沿调用链找到真正出错的分支并记录证据（不要只改现象）')
+  }
+  // 重构流程：先确认行为不变的边界，再小步改；不要顺手改需求
+  if (intent === 'refactor') {
+    steps.push('先确认重构边界：明确哪些对外行为/接口必须保持不变，并记进流程')
+    steps.push('补保护网：用现有测试或补回归测试固定当前行为，测试未通过不开始大改')
   }
   // 分析流程只读：先读代码/日志，不做任何修改
   if (isAnalysis) {

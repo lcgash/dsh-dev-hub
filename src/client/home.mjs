@@ -884,10 +884,12 @@ function FlowRow({ item, session, selected, last, onClick, onOpenReport }) {
           : null,
         h(StatusPill, { status: item?.status }),
         showStageTag ? h(Tag, { tone: 'neutral' }, stageLabel) : null,
-        // 流程类型：bug（先复现/定位）/ feature（先对齐范围）/ analysis（只读分析）
+        // 流程类型：bug（先复现/定位）/ feature（先对齐范围）/ refactor（行为不变的整理）/ analysis（只读分析）
         item?.intent === 'bug'
           ? h(Tag, { tone: 'warn' }, 'bug')
-          : item?.intent === 'analysis' ? h(Tag, { tone: 'accent', title: '只读分析：结论产出即结束，不进入提交' }, '分析') : null,
+          : item?.intent === 'refactor'
+            ? h(Tag, { tone: 'info', title: '代码重构：先补保护网，保持对外行为不变' }, '重构')
+            : item?.intent === 'analysis' ? h(Tag, { tone: 'accent', title: '只读分析：结论产出即结束，不进入提交' }, '分析') : null,
         // 标题还是用户输入/代码片段：点进去可一键自动生成
         item?.titleNeedsWork ? h(Tag, { tone: 'warn', title: '标题像原始输入或代码片段，进详情可自动生成' }, '标题待整理') : null,
         (item?.repos ?? []).length > 1 ? h(Tag, { tone: 'neutral' }, '多库') : null,
