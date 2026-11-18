@@ -4656,9 +4656,17 @@ export function apply(ctx) {
           const spec = body.spec && typeof body.spec === 'object' ? body.spec : {}
           const attachments = normalizeAttachments(body.attachments)
 
-          const clarifyPrompt = [attachmentPrompt(attachments), buildClarifyPrompt({ description, history, recon, spec, round })]
+          // 贴进来的日志/代码可能非常长：限制送进模型的上下文，避免还没问问题就先撑爆输出。
+          // 完整 description 仍保留给本地降级与标题生成。
+          const promptDescription = description.slice(0, 6000)
+          const promptHistory = history.slice(-8).map((turn) => ({ role: turn.role, text: turn.text.slice(0, 1200) }))
+          const clarifyPrompt = [attachmentPrompt(attachments), buildClarifyPrompt({ description: promptDescription, history: promptHistory, recon, spec, round })]
             .filter(Boolean)
             .join('\n')
+          const compactClarifyPrompt = [attachmentPrompt(attachments), buildClarifyPrompt({ description: promptDescription.slice(0, 3000), history: promptHistory.slice(-4), recon, spec, round })]
+            .filter(Boolean)
+            .join('\n')
+          const shortError = (error) => String(error?.message ?? error).replace(/\s+/g, ' ').slice(0, 600)
           try {
             const result = await runAgentJson(ctx, {
               cwd: repo,
@@ -4680,7 +4688,8 @@ export function apply(ctx) {
             // 子代理不可用：先用默认模型按同一份澄清 prompt 兜底，避免直接退化成规则
             try {
               const startedAt = Date.now()
-              const llmResult = await runLlmJson(ctx, { prompt: clarifyPrompt, maxTokens: 1600 })
+              // 兜底用更短的上下文与更大的输出预算；JSON 截断时 runLlmJson 也会尝试修复。
+              const llmResult = await runLlmJson(ctx, { prompt: compactClarifyPrompt, maxTokens: 2600, timeoutMs: 60000 })
               const normalized = normalizeClarify(llmResult.value, { round })
               sendJson(res, 200, {
                 ok: true,
@@ -4691,7 +4700,7 @@ export function apply(ctx) {
               return
             } catch (llmError) {
               // 最后一层：规则化追问；/clarify 的局部降级继续走下面
-              const reason = `${String(error?.message ?? error)}；模型澄清兜底也不可用：${String(llmError?.message ?? llmError)}`
+              const reason = `工作站澄清未完成：${shortError(error)}；模型澄清兜底也不可用：${shortError(llmError)}`
               var fallbackReason = reason
             }
             // 降级：用规则化追问，不让创建流程卡死；明确告诉界面这是本地规则

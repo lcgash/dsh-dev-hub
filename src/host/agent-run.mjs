@@ -115,14 +115,18 @@ export async function runAgentJson(ctx, { cwd, prompt, schema, label = 'devhub-a
       try { await onStarted({ sessionId: childSessionId, parentSessionId: sessionId, provider }) } catch { /* 进度记录失败不影响任务本身 */ }
     }
     const result = await activation.result
-    if (result?.stopReason && result.stopReason !== 'completed') {
-      throw new Error([
-        `agent 未正常完成：${result.stopReason}`,
-        result.diagnostic ? `（${result.diagnostic}）` : '',
-        textOf(result?.output).slice(-300),
-      ].join(''))
-    }
+    // 即使 stopReason 不是 completed，只要已经拿到结构化结果就先用：
+    // 模型常把 JSON 写完才在收尾/工具阶段报错，直接丢弃会让澄清无谓降级。
     const value = result?.structured ?? extractJson(textOf(result?.output))
+    if (result?.stopReason && result.stopReason !== 'completed') {
+      if (!value) {
+        throw new Error([
+          `agent 未正常完成：${result.stopReason}`,
+          result.diagnostic ? `（${result.diagnostic}）` : '',
+          textOf(result?.output).slice(-300),
+        ].join(''))
+      }
+    }
     if (!value) throw new Error('agent 输出不是可解析的 JSON')
     return { value, sessionId: childSessionId, parentSessionId: sessionId, elapsedMs: Date.now() - startedAt, provider }
   } finally {
@@ -189,12 +193,48 @@ export function extractJson(text) {
       else if (ch === '}') {
         depth -= 1
         if (depth === 0) {
-          try { return JSON.parse(candidate.slice(start, i + 1)) } catch { break }
+          const block = candidate.slice(start, i + 1)
+          try { return JSON.parse(block) } catch {
+            const repaired = repairJsonBlock(block)
+            if (repaired) return repaired
+            break
+          }
         }
       }
     }
+    // 输出被 token 上限截断：尝试补齐未闭合的字符串/对象，至少把已生成的内容救回来
+    const repaired = repairJsonBlock(candidate.slice(start))
+    if (repaired) return repaired
   }
   return null
+}
+
+/** 宽松修复模型常见的 JSON 小毛病（尾逗号、截断、Markdown 智能引号）。 */
+function repairJsonBlock(text) {
+  let value = String(text ?? '').trim()
+  if (!value) return null
+  // 只把明显用于 JSON 语法的弯引号拉直，避免动正文里的中文引号
+  value = value.replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
+  value = value.replace(/,\s*([}\]])/g, '$1')
+  // 截断在字符串中间：补一个闭合引号
+  let inString = false
+  let escape = false
+  const stack = []
+  for (const ch of value) {
+    if (inString) {
+      if (escape) escape = false
+      else if (ch === '\\') escape = true
+      else if (ch === '"') inString = false
+      continue
+    }
+    if (ch === '"') inString = true
+    else if (ch === '{' || ch === '[') stack.push(ch)
+    else if (ch === '}' || ch === ']') stack.pop()
+  }
+  if (inString) value += '"'
+  value = value.replace(/,\s*$/, '')
+  while (stack.length) value += stack.pop() === '{' ? '}' : ']'
+  try { return JSON.parse(value) } catch { return null }
 }
 
 /** 校对路径是否真实存在（agent 会"按命名习惯"编出不存在的文件）。 */
