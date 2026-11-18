@@ -85,3 +85,21 @@ test('buildClarifyPrompt：要求同时给出流程标题，并声明以用户�
   assert.match(prompt, /10~20 字/)
   assert.match(prompt, /以用户为准/)
 })
+
+test('多选：prompt 教模型声明 multiSelect，normalize 兼容只写“可多选”的问题', () => {
+  const prompt = buildClarifyPrompt({ description: '给源加告警', round: 1 })
+  assert.match(prompt, /multiSelect/)
+  assert.match(prompt, /可多选/)
+
+  const result = normalizeClarify({
+    reply: 'r',
+    questions: [
+      { id: 'q1', question: '涉及哪些场景？（可多选）', options: [{ label: 'a' }, { label: 'b' }] },
+      { id: 'q2', question: '选一个方案', options: [{ label: 'x' }] },
+      { id: 'q3', question: '勾选全部', multiSelect: true, options: [{ label: 'y' }] },
+    ],
+  })
+  assert.equal(result.questions.find((q) => q.id === 'q1').multiSelect, true)
+  assert.equal(result.questions.find((q) => q.id === 'q2').multiSelect, false)
+  assert.equal(result.questions.find((q) => q.id === 'q3').multiSelect, true)
+})

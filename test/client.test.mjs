@@ -2114,3 +2114,11 @@ test('需求澄清工作区取代「新建流程」顶层页签：聊天页归�
   const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
   assert.match(home, /children: '开始需求澄清'/)
 })
+
+test('需求澄清多选：题目标注可多选，选项按 toggle 合并而不是单选', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
+  assert.match(chat, /multi \? h\(Pill/)
+  assert.match(chat, /toggle: option\.label/)
+  assert.match(chat, /hasOwnProperty\.call\(patch, 'toggle'\)/)
+})

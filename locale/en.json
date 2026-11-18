@@ -1348,7 +1348,8 @@
     "免独立评审": "Independent review skipped",
     "小改动免独立评审：先跑本机自测，通过后进入环境测试": "Independent review skipped for this small change: run the local test first, then the environment test",
     "小改动免评审：环境验证通过后进入「待提交」": "Review skipped for this small change: after environment verification the flow moves to Submit",
-    "小改动免独立评审，直接进入测试验证": "Independent review skipped for this small change; go straight to verification"
+    "小改动免独立评审，直接进入测试验证": "Independent review skipped for this small change; go straight to verification",
+    "可多选": "Multi-select"
   },
   "templates": {
     "成员 {name}": "Member {name}",

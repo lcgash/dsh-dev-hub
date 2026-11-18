@@ -826,8 +826,12 @@ function ClarifyCard({ card, answers, busy, title, onTitleChange, onPick, onSubm
         const id = String(question?.id ?? `q${index + 1}`)
         const answer = answers?.[id] && typeof answers[id] === 'object' ? answers[id] : { selected: [], custom: '' }
         const options = Array.isArray(question?.options) ? question.options : []
+        // 兼容旧消息/模型只写“可多选”没置 flag 的情况
+        const multi = Boolean(question?.multiSelect) || /(?:可多选|多选)/.test(String(question?.question ?? ''))
         return h('div', { key: id, style: { display: 'flex', flexDirection: 'column', gap: 6 } },
-          h('div', { style: { fontWeight: 600, fontSize: T.font.base, color: T.text, lineHeight: 1.6 } }, String(question?.question ?? '')),
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', fontWeight: 600, fontSize: T.font.base, color: T.text, lineHeight: 1.6 } },
+            h('span', null, String(question?.question ?? '')),
+            multi ? h(Pill, { tone: 'neutral' }, '可多选') : null),
           question?.why ? h('div', { style: { ...styles.smallMuted, lineHeight: 1.6 } }, `为什么问：${question.why}`) : null,
           options.length
             ? h('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } },
@@ -837,11 +841,9 @@ function ClarifyCard({ card, answers, busy, title, onTitleChange, onPick, onSubm
                   key: `${optionIndex}-${option.label}`,
                   title: option.description ?? '',
                   style: { ...(on ? styles.chipOn : styles.chip), cursor: busy ? 'default' : 'pointer' },
-                  onClick: busy ? undefined : () => onPick(id, {
-                    selected: question.multiSelect
-                      ? (on ? answer.selected.filter((item) => item !== option.label) : [...answer.selected, option.label])
-                      : (on ? [] : [option.label]),
-                  }),
+                  onClick: busy ? undefined : () => onPick(id, multi
+                    ? { toggle: option.label }
+                    : { selected: on ? [] : [option.label] }),
                 }, `${on ? '✓ ' : ''}${option.label}`)
               }))
             : null,
@@ -1899,6 +1901,15 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   function setClarifyAnswer(id, patch) {
     setAnswers((current) => {
       const prev = current[id] && typeof current[id] === 'object' ? current[id] : { selected: [], custom: '' }
+      // 多选走函数式 toggle：连续快速点选时不会拿旧 render 的 selected 覆盖前一次
+      if (patch && Object.prototype.hasOwnProperty.call(patch, 'toggle')) {
+        const selected = Array.isArray(prev.selected) ? prev.selected : []
+        const next = selected.includes(patch.toggle)
+          ? selected.filter((item) => item !== patch.toggle)
+          : [...selected, patch.toggle]
+        const { toggle, ...rest } = patch
+        return { ...current, [id]: { ...prev, ...rest, selected: next } }
+      }
       return { ...current, [id]: { ...prev, ...patch } }
     })
   }
