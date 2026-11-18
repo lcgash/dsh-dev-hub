@@ -354,6 +354,65 @@ export function correctionsOf(review) {
  * 评审门禁：唯一的放行判断。stage.mjs 只消费这里的事实，不再自己判断。
  * @returns {{ allowed: boolean, status: string, stage: 'develop'|'review'|'verify', reason: string, corrections: object[] }}
  */
+
+/**
+ * 按工程量决定是否值得引入独立评审。
+ *
+ * 经验规则：S（<1.5 人日）的小改动直接进测试验证，避免每次都为一个小修调用
+ * 1~3 个审核员；M/L/XL 仍保留评审。没有估算或旧台账按需要评审处理，保持原行为。
+ * 也允许台账显式写 reviewRequired=true/false 覆盖（审计/特殊流程）。
+ */
+export function reviewPolicy(item) {
+  const workflow = item?.workflow ?? {}
+  const estimate = workflow.plan?.estimate ?? {}
+  const size = String(estimate.size ?? '').trim().toUpperCase()
+  const days = Number(estimate.days)
+  if (typeof workflow.reviewRequired === 'boolean') {
+    return {
+      required: workflow.reviewRequired,
+      reviewers: workflow.reviewRequired ? 2 : 0,
+      size: size || null,
+      days: Number.isFinite(days) ? days : null,
+      reason: workflow.reviewRequired ? '台账显式要求独立评审' : '台账显式跳过独立评审',
+      source: 'explicit',
+    }
+  }
+  if (workflow.intent === 'analysis') {
+    return { required: false, reviewers: 0, size: size || null, days: Number.isFinite(days) ? days : null, reason: '分析流程只读，产出结论即可', source: 'intent' }
+  }
+  if (size === 'S' || (Number.isFinite(days) && days < 1.5)) {
+    return {
+      required: false,
+      reviewers: 0,
+      size: size || 'S',
+      days: Number.isFinite(days) ? days : null,
+      reason: '小改动（S / 少于 1.5 人日）：默认跳过独立评审，直接进入测试验证',
+      source: 'size',
+    }
+  }
+  if (size === 'M' || (Number.isFinite(days) && days < 4)) {
+    return {
+      required: true,
+      reviewers: 1,
+      size: size || 'M',
+      days: Number.isFinite(days) ? days : null,
+      reason: '中等改动（M）：保留 1 位审核员的轻量评审，控制成本',
+      source: 'size',
+    }
+  }
+  if (['L', 'XL'].includes(size) || (Number.isFinite(days) && days >= 4)) {
+    return {
+      required: true,
+      reviewers: 2,
+      size: size || null,
+      days: Number.isFinite(days) ? days : null,
+      reason: `${size || 'L'} 规模改动：保留 2 位审核员复核方向与风险`,
+      source: 'size',
+    }
+  }
+  return { required: true, reviewers: 2, size: null, days: null, reason: '没有可用的工程量估算：保留独立评审', source: 'default' }
+}
+
 export function reviewGate(item) {
   const review = normalizeReview(item?.workflow?.review)
   const status = review?.status ?? 'idle'
@@ -383,12 +442,28 @@ export function reviewGate(item) {
   if (status === 'pending') {
     return { allowed: false, status, stage: 'review', reason: '独立评审进行中', corrections: [] }
   }
+  const policy = reviewPolicy(item)
+  if (!policy.required) {
+    return {
+      allowed: true,
+      status,
+      stage: 'verify',
+      reason: policy.reason,
+      corrections: [],
+      required: false,
+      skipped: true,
+      policy,
+    }
+  }
   return {
     allowed: false,
     status,
     stage: 'review',
     reason: '继续推进即开始独立评审：自动派 1~3 位审核员复核改动与证据',
     corrections: [],
+    required: true,
+    skipped: false,
+    policy,
   }
 }
 
@@ -420,6 +495,9 @@ export function describeReview(item) {
     finished: reviewers.length - pending,
     allowed: gate.allowed,
     gateReason: gate.reason,
+    required: gate.required !== false,
+    skipped: gate.skipped === true,
+    policy: gate.policy ?? reviewPolicy(item),
     corrections: gate.corrections,
     reviewers,
     history: review?.history ?? [],
@@ -515,6 +593,16 @@ export function reviewAdvancePlan(item) {
   // 不能因为「还没跑本机自测」把流程永远卡在开发中、点「继续推进」却只往会话里发消息。
   const tasks = Array.isArray(item?.tasks) ? item.tasks : []
   const devDone = tasks.length > 0 && tasks.every((task) => Boolean(task?.done))
+  if (view.status === 'idle' && view.required === false
+    && (stage === 'review' || stage === 'verify' || (stage === 'develop' && devDone))) {
+    return {
+      action: 'verify',
+      status: view.status,
+      label: '去测试验证',
+      disabled: false,
+      hint: view.policy?.reason || '小改动免独立评审：直接进入测试验证',
+    }
+  }
   if (view.status === 'idle' && (stage === 'review' || (stage === 'develop' && devDone))) {
     return {
       action: 'dispatch',

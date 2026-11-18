@@ -485,7 +485,9 @@ function analysisSection(item, files, reportSet) {
  */
 function reviewSection(item) {
   const review = describeReview(item)
-  const statusLabel = REVIEW_STATUS_LABELS[review.status] ?? review.status
+  const statusLabel = !review.required && review.status === 'idle'
+    ? '免评审'
+    : (REVIEW_STATUS_LABELS[review.status] ?? review.status)
   const conclusion = review.verdict === 'pass'
     ? '通过（允许进入测试验证）'
     : review.verdict === 'fail'
@@ -494,11 +496,18 @@ function reviewSection(item) {
         ? '待处理：有审核员异常或未返回结论，不能视为通过'
         : review.status === 'pending'
           ? '评审进行中'
-          : '未评审'
+          : review.required === false
+            ? `免评审（${review.policy?.reason ?? '小改动自动跳过'}）`
+            : '未评审'
   const basis = review.basis
   const fields = [
     { label: '结论', value: conclusion, tone: review.verdict === 'pass' ? 'ok' : review.verdict === 'fail' ? 'danger' : review.status === 'error' ? 'warn' : 'neutral' },
     { label: '轮次', value: review.round ? `第 ${review.round} 轮` : '—' },
+    {
+      label: '评审策略',
+      value: review.required === false ? `免独立评审 · ${review.policy?.reason ?? '按规模自动判定'}` : '需要独立评审',
+      tone: review.required === false ? 'warn' : 'neutral',
+    },
     {
       label: '审核员',
       value: review.total

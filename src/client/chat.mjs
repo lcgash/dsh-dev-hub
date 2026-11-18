@@ -1128,6 +1128,9 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   // 任务归属：发起任务时所在的对话 id + 运行令牌；切到别的对话后，旧任务的结果不能再写进当前界面
   const activeChatIdRef = useRef(null)
   const runTokenRef = useRef(0)
+  // 组件是否还挂着：切走页签后旧请求仍可能返回，不能写进已卸载组件的 state
+  // （否则结果“看起来丢了”，再回来只剩旧卡片）。必须改为写回 chat store。
+  const mountedRef = useRef(false)
   ensureSpinKeyframes()
   const [clarifyOrigin, setClarifyOrigin] = useState('')
   // 右侧详情面板（像 DSH 的右区）：最终候选文件 + 计划 + 澄清规格
@@ -1168,6 +1171,11 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   const [chats, setChats] = useState([])
   const [activeChatId, setActiveChatId] = useState(null)
   const [historyOpen, setHistoryOpen] = useState(false)
+
+  useEffect(() => {
+    mountedRef.current = true
+    return () => { mountedRef.current = false }
+  }, [])
 
   useEffect(() => { loadState() }, [])
 
@@ -1538,6 +1546,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   }
 
   function runIsCurrent(run) {
+    if (!mountedRef.current) return false
     if (!run || run.token !== runTokenRef.current || run.conversationId !== activeChatIdRef.current) return false
     // 组件卸载后本地 ref 不会变；再对一次 store 里真正 active 的对话 id。
     // 用户在别的入口开了新流程时，旧组件的结果必须走"写回原对话"而不是写当前界面。
@@ -1596,6 +1605,36 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       ],
       ...(origin.pending ? { pending: { ...origin.pending, questionsId: card.id } } : {}),
       clarify: { ...(origin.clarify ?? {}), description, history, ...payload },
+      job: null,
+    }, scope)
+  }
+
+  /**
+   * 计划结果晚到、用户已经切走：把计划与已确认的卡片写回原对话。
+   * 不这样做的话，切页签回来会停留在 confirm 阶段，但计划已经生成过，看起来“按钮点不动”。
+   */
+  function persistPlanToOrigin(run, { plan, files, answers, scopeList, pending }) {
+    const repoPath = state?.repo?.path
+    if (!repoPath || !run?.conversationId || !plan) return
+    const origin = getConversation(repoPath, run.conversationId, scope)
+    if (!origin) return
+    // 澄清阶段总结出来的标题：用户改过就以用户为准（和在线路径保持一致）
+    if (currentTitle()) plan.name = currentTitle()
+    const card = planMessage(plan)
+    const snapshot = { ...(answers ?? {}) }
+    const messages = (origin.messages ?? []).map((item) => {
+      if (item.id === pending?.messageId) return { ...item, resolved: true, confirmedFiles: files, confirmedScope: scopeList }
+      if (pending?.questionsId && item.id === pending.questionsId) return { ...item, resolved: true, answers: snapshot }
+      return item
+    })
+    messages.push(stationMessage(summarizePlan(plan)), card)
+    saveChat(repoPath, run.conversationId, {
+      messages,
+      pendingPlan: { id: card.id, plan },
+      phase: PHASE.plan,
+      selectedFiles: files,
+      scopeList,
+      answers: snapshot,
       job: null,
     }, scope)
   }
@@ -1830,10 +1869,26 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       return
     }
     // 记住这一轮的答案并锁住卡片：重新进对话时可以回看，但不能再提交
-    setMessages((current) => current.map((msg) => (msg.id === card?.id
+    const nextMessages = messages.map((msg) => (msg.id === card?.id
       ? { ...msg, resolved: true, answers: { ...answers } }
-      : msg)))
-    push(userMessage(reply))
+      : msg)).concat(userMessage(reply))
+    setMessages(nextMessages)
+    // 副作用落盘要等下一次 render；如果用户点完答案立刻切页签，等不到那次 effect。
+    // 这里先同步写一次，保证“已提交的卡片 + 用户回答”在切走前就进了 chat store。
+    const repoPath = state?.repo?.path
+    const conversationId = activeChatIdRef.current
+    if (repoPath && conversationId) {
+      saveChat(repoPath, conversationId, {
+        messages: nextMessages,
+        pending,
+        answers,
+        selectedFiles,
+        scopeList,
+        attachments,
+        clarify,
+        phase,
+      }, scope)
+    }
     const history = [...(clarify?.history ?? []), { role: 'assistant', text: card?.reply ?? '' }, { role: 'user', text: reply }]
     const nextRound = (card?.round ?? 1) + 1
     const round = card?.ready || nextRound > MAX_CLARIFY_ROUNDS ? MAX_CLARIFY_ROUNDS : nextRound
@@ -1894,28 +1949,55 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     // 这段对话已经不是 store 里的 active：很可能是“新建流程”后旧组件还没卸载，
     // 不能再拿旧 pending 去生成计划/建流程。
     const activeId = repoPath ? getActiveConversationId(repoPath, scope) : null
-    if (activeId && conversationId && activeId !== conversationId) return
+    if (activeId && conversationId && activeId !== conversationId) {
+      push(stationMessage('这段对话已经切走了：请回到最新对话再继续，或点「重新描述」开一段新的。', { tone: 'warn' }))
+      return
+    }
+    // 恢复旧对话时 pending 可能字段不全：从 clarify/首条用户消息/扫描结果兜底，
+    // 否则切页回来点「继续，生成计划」会静默失败。
+    const description = String(
+      pending.description || clarify?.description || clarifyOrigin || originDescription(),
+    ).trim()
+    if (!description) {
+      push(stationMessage('原始描述丢了：请在下面重新说一句「要做什么」。', { tone: 'danger' }))
+      return
+    }
+    const scopes = scopeList.length
+      ? scopeList
+      : uniqueTokens(Array.isArray(pending.recon?.suggestedScope) ? pending.recon.suggestedScope : [])
+    if (!scopes.length) {
+      push(stationMessage('还没有可用的改动范围：请在上方确认目录/模块，或点「重新描述」再扫一次。', { tone: 'warn' }))
+      return
+    }
     const key = runKey(repoPath, scope, conversationId, 'plan')
-    if (!beginRun(key)) return
+    if (!beginRun(key)) {
+      push(stationMessage('上一次生成计划还没结束：稍等它收尾再试，避免重复生成。', { tone: 'warn' }))
+      return
+    }
     const run = startRun(conversationId)
-    const files = confirmedFiles()
+    const files = confirmedFiles().length
+      ? confirmedFiles()
+      : (pending.recon?.files ?? []).map((file) => String(file?.path ?? '')).filter(Boolean)
     setPhase(PHASE.planning)
-    setJob({ kind: 'plan', description: pending.description, scope: [...scopeList], files, answers: { ...answers }, tokens: pending.recon?.tokens ?? [], at: Date.now() })
+    setJob({ kind: 'plan', description, scope: [...scopes], files, answers: { ...answers }, tokens: pending.recon?.tokens ?? [], at: Date.now() })
     try {
       const plan = await generatePlan(makeDeps(ctx), {
-        description: pending.description,
-        scope: scopeList,
+        description,
+        scope: scopes,
         recon: { tokens: pending.recon?.tokens ?? [], files },
         answers,
         // 澄清过的规格带进计划：摘要与目标用规范化后的说法
         spec: clarify?.spec ?? {},
       })
-      // 用户已经切到别的对话：计划只属于发起它的那段对话，不能写进当前界面
-      if (!runIsCurrent(run)) return
+      // 用户已经切走（换对话或换页签）：计划只属于发起它的那段对话，写回 store，不能只丢在已卸载组件里
+      if (!runIsCurrent(run)) {
+        persistPlanToOrigin(run, { plan, files, answers, scopeList: scopes, pending })
+        return
+      }
       // 把当时的勾选与回答快照进消息：之后清空交互态，历史卡片仍显示“当时确认了什么”
       const snapshot = { ...answers }
       setMessages((current) => current.map((item) => {
-        if (item.id === pending.messageId) return { ...item, resolved: true, confirmedFiles: files, confirmedScope: [...scopeList] }
+        if (item.id === pending.messageId) return { ...item, resolved: true, confirmedFiles: files, confirmedScope: [...scopes] }
         if (pending.questionsId && item.id === pending.questionsId) return { ...item, resolved: true, answers: snapshot }
         return item
       }))

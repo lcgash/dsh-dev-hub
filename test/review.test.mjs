@@ -13,6 +13,8 @@ const {
   normalizeReviewerCount,
   normalizeReviewerVerdict,
   reviewAdvancePlan,
+  reviewGate,
+  reviewPolicy,
   reviewFailureHint,
   reviewerPrompt,
   reviewerRolesFor,
@@ -233,6 +235,15 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
   assert.equal(reworking.label, '重新评审')
   assert.match(reworking.hint, /不再允许本轮人工通过/)
 
+  // 小改动：评审未开始时直接去测试验证，不自动派审核员
+  const small = reviewAdvancePlan(item({
+    stage: 'review',
+    review: null,
+    plan: { summary: '小修', steps: ['a'], estimate: { size: 'S', days: 0.5 } },
+  }))
+  assert.equal(small.action, 'verify')
+  assert.match(small.hint, /小改动/)
+
   // 自动评审达到 3 轮上限：不再自动返工/复审，把选择权交给用户
   const exhausted = reviewAdvancePlan(item({
     review: normalizeReview({ round: 3, reviewers: [reviewer('reviewer-1', 'failed')] }),
@@ -305,6 +316,29 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
 
   // 失败原因可单独取用（按钮旁内联提示复用同一口径）
   assert.match(reviewFailureHint(describeReview(item({ review: normalizeReview({ reviewers: [reviewer('reviewer-1', 'error', { error: 'timeout' })] }) }))), /timeout/)
+})
+
+test('reviewPolicy：小改动自动免评审，M/L/XL 保留评审，可显式覆盖', () => {
+  const small = item({ plan: { summary: '小修', steps: ['a'], estimate: { size: 'S', days: 0.5 } } })
+  assert.equal(reviewPolicy(small).required, false)
+  assert.match(reviewPolicy(small).reason, /小改动/)
+  const gate = reviewGate(small)
+  assert.equal(gate.allowed, true)
+  assert.equal(gate.skipped, true)
+  assert.equal(gate.required, false)
+  const medium = reviewPolicy(item({ plan: { summary: '中', steps: ['a'], estimate: { size: 'M', days: 2 } } }))
+  assert.equal(medium.required, true)
+  assert.equal(medium.reviewers, 1, 'M 只派 1 位审核员，避免过重')
+  const large = reviewPolicy(item({ plan: { summary: '大', steps: ['a'], estimate: { size: 'L', days: 6 } } }))
+  assert.equal(large.required, true)
+  assert.equal(large.reviewers, 2)
+  // 旧台账没有 estimate：保持默认评审，不静默跳过
+  assert.equal(reviewPolicy(item({ plan: { summary: '旧', steps: ['a'] } })).required, true)
+  // 显式覆盖优先于规模
+  const forced = item({ plan: { summary: '小', steps: ['a'], estimate: { size: 'S', days: 0.5 } }, reviewRequired: true })
+  assert.equal(reviewPolicy(forced).required, true)
+  const skipped = item({ plan: { summary: '大', steps: ['a'], estimate: { size: 'L', days: 6 } }, reviewRequired: false })
+  assert.equal(reviewPolicy(skipped).required, false)
 })
 
 test('describeReview：票数、轮次、依据与来源都能在界面/报告里还原', () => {
@@ -506,9 +540,10 @@ test('流程详情：阶段条/概览/页签都能看到独立评审与纠偏意
   const continueBody = index.slice(continueStart, index.indexOf('async function', continueStart + 10))
   assert.match(continueBody, /reviewAdvancePlan\(draft\)/)
   assert.match(continueBody, /startReview\(\)/)
-  const reviewStart = index.indexOf('async function startReview()')
+  const reviewStart = index.indexOf('async function startReview(')
   const reviewBody = index.slice(reviewStart, index.indexOf('async function', reviewStart + 10))
-  assert.doesNotMatch(reviewBody, /window\.confirm/)
+  // 开发会话还在跑时，评审前允许确认一次，而不是让按钮看起来“点了没反应”
+  assert.match(reviewBody, /window\.confirm/)
   assert.match(reviewBody, /current\.status === 'pending'/)
   assert.match(reviewBody, /reviewFailureHint\(view\)/)
 })

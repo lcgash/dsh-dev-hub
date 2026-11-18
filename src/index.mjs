@@ -3219,6 +3219,14 @@ export function apply(ctx) {
           }
           if (req.method === 'POST') {
             const body = await readBody(req)
+            // 更新已有流程必须提交完整 item；拒绝 {id} 之类的部分写入，
+            // 避免把 workflow/tasks/review 覆盖成新建默认值（台账不可恢复）。
+            if (body?.id) {
+              const existing = await getItem(repo, body.id)
+              if (existing && (!body.title || !body.workflow || !Array.isArray(body.tasks))) {
+                throw new Error('更新流程必须提交完整 item（含 title/workflow/tasks）；已拒绝部分更新')
+              }
+            }
             const active = activeWorkspace(profile)
             let draft = newItem(body.title || '未命名开发项', body)
             // 虚拟库：归属直接写进本机台账，不挑任何成员库

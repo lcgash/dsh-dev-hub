@@ -72,6 +72,9 @@ export function describeFlow(item, session) {
       errored: review.errored,
       pending: review.pending,
       allowed: review.allowed,
+      required: review.required,
+      skipped: review.skipped,
+      policyReason: review.policy?.reason ?? '',
       label: REVIEW_STATUS_LABELS[review.status] ?? review.status,
       corrections: review.corrections,
       reworkAt: review.reworkAt ?? null,
@@ -148,6 +151,8 @@ export function suggestNextSteps(item, session) {
   // 只有真正的下一步事实才给建议（评审纠偏、测试、提交、计划/风险）；
   // 会话正在跑时不提示测试：工具正在改代码，此时跑测试既抢资源又容易误判。
   const review = summary.review
+  // 评审通过，或小改动自动免评审且尚未派发过：都算评审已清关
+  const reviewCleared = review.status === 'passed' || (review.required === false && review.status === 'idle')
   if (summary.session.bound && !summary.session.running) {
     if (review.status === 'failed') {
       if (review.exhausted) {
@@ -166,15 +171,17 @@ export function suggestNextSteps(item, session) {
       if (!localTestDone) {
         push('local-test', '跑本机自测', `分析流程用本机自测作为只读证据（当前${summary.localTestLabel}）；通过即结束，不进入提交；也可以跳过（原因会进报告）`)
       }
-    } else if (review.status === 'passed') {
-      // 评审通过后才进入测试验证：测试统一由工作站按钮执行，不催开发会话自己跑
+    } else if (reviewCleared) {
+      // 评审通过或小改动免评审后进入测试验证：测试统一由工作站按钮执行，不催开发会话自己跑
       if (!localTestDone) {
         push(
           'local-test',
           summary.localTestStale ? '重跑本机自测' : '跑本机自测',
           summary.localTestStale
             ? '测试通过后代码/诉求又有变化，旧结果已过期；重跑后才会继续验证'
-            : '评审已通过：测试由工作站执行，通过后进入环境测试；也可以跳过（原因会写进报告）',
+            : review.status === 'passed'
+              ? '评审已通过：测试由工作站执行，通过后进入环境测试；也可以跳过（原因会写进报告）'
+              : '小改动免独立评审：先跑本机自测，通过后进入环境测试',
         )
       } else if (!environmentTestDone) {
         push(
@@ -182,15 +189,18 @@ export function suggestNextSteps(item, session) {
           summary.environmentTestStale ? '重跑环境测试' : '跑环境测试',
           summary.environmentTestStale
             ? '本机自测已重跑，之前的环境结果基于旧代码，需要重跑'
-            : '评审已通过、本机自测已通过或已跳过；环境验证通过后阶段会进入「待提交」；也可以跳过（原因会写进报告）',
+            : review.status === 'passed'
+              ? '评审已通过、本机自测已通过或已跳过；环境验证通过后阶段会进入「待提交」；也可以跳过（原因会写进报告）'
+              : '小改动免评审：环境验证通过后进入「待提交」',
         )
       } else if (summary.stage !== 'done') {
         push('submit', '提交代码', '验证都过了（含人工跳过）：勾选变更文件、写提交信息')
       }
-    } else if (review.status === 'idle' && summary.stage === 'review') {
+    } else if (review.status === 'idle' && review.required !== false && summary.stage === 'review') {
       // 已进入评审阶段：直接开始评审，不能把流程卡在“等测试”上
       push('start-review', '继续推进即开始评审', '点它即自动开始独立评审（审核员按默认配置产生）；全部通过才进入测试验证')
     } else if (review.status === 'idle'
+      && review.required !== false
       && summary.stage === 'develop'
       && summary.tasks.total > 0
       && summary.tasks.done >= summary.tasks.total) {

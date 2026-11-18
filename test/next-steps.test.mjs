@@ -287,3 +287,32 @@ test('suggestNextSteps：人工跳过测试后不再催跑本机自测，下一�
   )
   assert.ok(bothSkipped.steps.some((step) => step.action === 'submit'))
 })
+
+test('suggestNextSteps：小改动自动免评审，直接进入测试验证', () => {
+  const small = flow({
+    workflow: {
+      stage: 'review',
+      plan: { summary: '小修', steps: ['a'], estimate: { size: 'S', days: 0.5 } },
+      tests: { local: { status: 'passed' }, environment: { status: 'not_run' } },
+    },
+    tasks: [{ text: 'a', done: true }],
+  })
+  const summary = describeFlow(small, { sessionId: 's1', running: false })
+  assert.equal(summary.review.required, false)
+  assert.equal(summary.stage, 'review')
+  const steps = suggestNextSteps(small, { sessionId: 's1', running: false })
+  assert.ok(steps.steps.some((step) => step.action === 'env-test'))
+  assert.ok(!steps.steps.some((step) => step.action === 'start-review'), '小改动不应再自动建议评审')
+
+  const smallNoTest = flow({
+    workflow: {
+      stage: 'develop',
+      plan: { summary: '小修', steps: ['a'], estimate: { size: 'S', days: 0.5 } },
+      tests: { local: { status: 'not_run' }, environment: { status: 'not_run' } },
+    },
+    tasks: [{ text: 'a', done: true }],
+  })
+  const local = suggestNextSteps(smallNoTest, { sessionId: 's1', running: false })
+  assert.ok(local.steps.some((step) => step.action === 'local-test'))
+  assert.ok(!local.steps.some((step) => step.action === 'start-review'))
+})

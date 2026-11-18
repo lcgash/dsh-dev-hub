@@ -850,6 +850,10 @@ test('回归：提交必须选分支并真正推送，台账一起提交，失�
   assert.match(index, /重试推送/)
   assert.match(index, /提交后会立即执行 git push/)
   assert.doesNotMatch(index, /提交后立即 git push',/)
+  // 提交前自动补齐模板验收项，避免到了推送环节才被 Host 门禁拒绝
+  assert.match(index, /async function runPendingChecksBeforeSubmit/)
+  assert.match(index, /!pushOnly && !\(await runPendingChecksBeforeSubmit\(\)\)/)
+  assert.match(index, /postAllowingFailure\(API\.check, \{ id: draft\.id, checkId: check\.id \}\)/)
 })
 
 test('回归：会话动作只保留一个（开启/继续推进），重发上下文收进「更多」', async () => {
@@ -879,11 +883,14 @@ test('回归：会话动作只保留一个（开启/继续推进），重发上�
   assert.match(index, /换一条开发会话/)
 })
 
-test('回归：会话运行中主按钮变成禁用的「正在开发…」，不再提供继续推进', async () => {
+test('回归：会话运行中主按钮变成禁用的「正在开发…」，不再提供继续推进；评审可确认覆盖', async () => {
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /const sessionRunning = Boolean\(draft\.session\?\.id\) && Boolean\(session\?\.running\)/)
-  assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| sessionRunning/)
+  assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| reviewBusy \|\| advance\.disabled \|\| \(sessionRunning && !reviewAction\)/)
+  assert.match(index, /开发会话还在运行。现在开始评审可能读到半成品代码/)
+  assert.match(index, /sessionRunning && reviewAction/)
+  assert.match(index, /advance\.label \|\| '评审'/)
   assert.match(index, /sessionRunning\s*\?\s*\[h\(Spinner/)
   // 顶栏按钮不参与收缩：标题/标签再长也不会把「正在开发…」挤成和旁边按钮重叠
   assert.match(index, /gap: T\.gap\.sm, flexWrap: 'wrap', flex: '0 0 auto' \}/)

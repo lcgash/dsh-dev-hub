@@ -143,6 +143,14 @@ test('host setup, item ledger, context and start route', async () => {
     const raw = JSON.parse(await readFile(join(repo, '.dev-hub/items/gerrit-source.json'), 'utf8'))
     assert.equal(raw.status, 'developing')
 
+    // 防御性回归：只传 id 的部分 POST 不能把已有台账覆盖成「未命名/planned」
+    const partial = await call(routes, API.items, { method: 'POST', body: { id: 'gerrit-source' } })
+    assert.equal(partial.status, 400)
+    assert.match(partial.body.error, /完整 item/)
+    const unchanged = await call(routes, API.item, { queryParams: { id: 'gerrit-source' } })
+    assert.equal(unchanged.body.item.title, 'Gerrit source')
+    assert.equal(unchanged.body.item.tasks.length, 1)
+
     const contextTool = tools.get('devhub_context')
     assert.ok(contextTool)
     const toolResult = await contextTool.execute({ id: 'gerrit-source' }, { agent: { session: { header: { cwd: repo } } } })

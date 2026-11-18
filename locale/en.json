@@ -1332,7 +1332,23 @@
     "请先在顶部选择项目或多库项目": "Select a project or multi-repo project at the top first",
     "请先在顶部选择一个项目或多库项目。": "Select a project or multi-repo project at the top first.",
     "多库项目本机独立目录（不是任何成员库）": "Multi-repo project's local standalone directory (not any member repository)",
-    "请先到「流程」页完成项目初始化，再回来管理技能与约束。": "Initialize a project on the \"Flows\" page first, then manage skills and constraints here."
+    "请先到「流程」页完成项目初始化，再回来管理技能与约束。": "Initialize a project on the \"Flows\" page first, then manage skills and constraints here.",
+    "这段对话已经切走了：请回到最新对话再继续，或点「重新描述」开一段新的。": "This conversation was switched away: return to the latest conversation to continue, or click \"Describe again\" to start a new one.",
+    "上一次生成计划还没结束：稍等它收尾再试，避免重复生成。": "The previous plan generation has not finished yet; wait for it to complete before retrying to avoid duplicates.",
+    "原始描述丢了：请在下面重新说一句「要做什么」。": "The original description was lost: say what you want to do again below.",
+    "还没有可用的改动范围：请在上方确认目录/模块，或点「重新描述」再扫一次。": "No change scope is available yet: confirm the directories/modules above, or click \"Describe again\" to rescan.",
+    "开发会话还在运行。现在开始评审可能读到半成品代码。\n\n仍要现在开始评审吗？": "The development session is still running; review may read a half-finished change.\n\nStart review now anyway?",
+    "已取消评审：等开发会话结束后再点「重新评审」。": "Review cancelled: wait for the development session to finish, then click Re-review.",
+    "开发会话还在运行：点击会先确认是否现在评审": "The development session is still running; clicking asks whether to review now.",
+    "小改动免独立评审": "Small change: independent review skipped",
+    "免评审": "Review skipped",
+    "需要独立评审": "Independent review required",
+    "评审策略": "Review policy",
+    "按工程量自动判定为小改动": "Automatically classified as a small change by effort estimate",
+    "免独立评审": "Independent review skipped",
+    "小改动免独立评审：先跑本机自测，通过后进入环境测试": "Independent review skipped for this small change: run the local test first, then the environment test",
+    "小改动免评审：环境验证通过后进入「待提交」": "Review skipped for this small change: after environment verification the flow moves to Submit",
+    "小改动免独立评审，直接进入测试验证": "Independent review skipped for this small change; go straight to verification"
   },
   "templates": {
     "成员 {name}": "Member {name}",
@@ -1772,7 +1788,15 @@
     "多库项目 {value1}": "Multi-repo project {value1}",
     "多库项目「{value1}」：{value2} 个代码库；规范技能只写入本机 {value3}": "Multi-repo project \"{value1}\": {value2} repositories; conventions and skills are written only to local {value3}",
     "多库项目的成员库不共享规范：技能与约束只写入多库项目本机目录 {value1}": "Member repos of a multi-repo project do not share conventions: skills and constraints are written only to the multi-repo project's local directory {value1}",
-    "项目 · {value1}": "Project · {value1}"
+    "项目 · {value1}": "Project · {value1}",
+    "{label}（开发中）": "{label} (developing)",
+    "提交前运行 {count} 个验收项…": "Running {count} acceptance checks before submit…",
+    "正在运行验收项：{text}": "Running acceptance check: {text}",
+    "验收未通过：{text}{output}": "Acceptance check failed: {text}{output}",
+    "验收项已全部通过（{count} 个）": "All acceptance checks passed ({count}).",
+    "提交前验收失败：{error}": "Pre-submit acceptance failed: {error}",
+    "{value1}；流程直接进入测试验证。": "{value1}; the flow goes directly to verification.",
+    "{value1} 位审核员": "{value1} reviewer(s)"
   },
   "templateValues": {
     "通过": "passed",

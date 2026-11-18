@@ -42,7 +42,7 @@ test('deriveStage：开发 → 独立评审 → 测试验证 → 提交 → 完�
   assert.equal(deriveStage(started).stage, 'develop')
 
   // 本机自测通过只是评审的入口：没有评审事实时停在独立评审，不直接进测试验证
-  const local = base()
+  const local = base({ plan: { summary: '计划', steps: ['a'], estimate: { size: 'M', days: 2 } } })
   local.workflow.tests = { local: { status: 'passed' } }
   assert.equal(deriveStage(local).stage, 'review')
   assert.match(deriveStage(local).reason, /「继续推进」即开始独立评审/)
@@ -67,6 +67,17 @@ test('deriveStage：开发 → 独立评审 → 测试验证 → 提交 → 完�
   assert.equal(deriveStage(manual).stage, 'verify')
   manual.workflow.tests.environment = { status: 'passed' }
   assert.equal(deriveStage(manual).stage, 'submit')
+
+  // 小改动（S）自动免评审：本机自测通过即进入测试验证，不再卡在评审
+  const small = base({ plan: { summary: '小修', steps: ['a'], estimate: { size: 'S', days: 0.5 } } })
+  small.workflow.tests = { local: { status: 'passed' } }
+  assert.equal(deriveStage(small).stage, 'verify')
+  assert.match(deriveStage(small).reason, /小改动|免.*评审/)
+
+  // 小改动但还没跑本机自测：仍在开发中，不能空降到验证
+  const smallNoTest = base({ plan: { summary: '小修', steps: ['a'], estimate: { size: 'S', days: 0.5 } } })
+  smallNoTest.baseline = { commit: 'abc', startedAt: 'x' }
+  assert.equal(deriveStage(smallNoTest).stage, 'develop')
 
   // 评审进行中 / 异常：停在评审，不能静默通过
   const pending = base()
@@ -194,7 +205,7 @@ test('stageIndex：评审阶段排在开发与测试验证之间', () => {
 })
 
 test('deriveStage：人工跳过测试允许推进，但报告/阶段会显式标注', () => {
-  const skippedLocal = base()
+  const skippedLocal = base({ plan: { summary: '计划', steps: ['a'], estimate: { size: 'M', days: 2 } } })
   skippedLocal.workflow.tests = { local: { status: 'skipped' }, environment: { status: 'not_run' } }
   assert.equal(deriveStage(skippedLocal).stage, 'review')
   assert.match(deriveStage(skippedLocal).reason, /跳过/)

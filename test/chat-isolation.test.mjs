@@ -101,3 +101,15 @@ test('按计划开工成功后自动跳到对应流程详情', async () => {
   // 点 hub 回首页要同时清掉 openFlow，避免重挂载时又跳回旧流程
   assert.match(index, /setTab\('flows'\); setOpenFlow\(null\); setHomeNonce\(\(value\) => value \+ 1\)/)
 })
+
+test('切走页签：未返回的澄清/计划结果写回 chat store，不写已卸载组件', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
+  // 卸载后旧请求仍可能返回：runIsCurrent 必须知道组件已卸载，改走 persist*ToOrigin
+  assert.match(chat, /const mountedRef = useRef\(false\)/)
+  assert.match(chat, /mountedRef\.current = true[\s\S]{0,120}mountedRef\.current = false/)
+  assert.match(chat, /function runIsCurrent\(run\) \{\n    if \(!mountedRef\.current\) return false/)
+  assert.match(chat, /function persistPlanToOrigin\(run, \{ plan, files, answers, scopeList, pending \}\)/)
+  assert.match(chat, /persistPlanToOrigin\(run, \{ plan, files, answers, scopeList: scopes, pending \}\)/)
+  assert.match(chat, /persistClarifyToOrigin\(run, payload/)
+})

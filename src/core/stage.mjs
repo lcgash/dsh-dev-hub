@@ -92,6 +92,13 @@ export function deriveStage(item) {
   if ((envPassed || envSkipped) && !isGit) return { stage: 'done', reason: '非 git 仓库：测试通过或已跳过，流程完成' }
   if (envPassed) return { stage: 'submit', reason: '环境验证通过，等待提交' }
   if (envSkipped) return { stage: 'submit', reason: '环境测试已人工跳过，等待提交（报告会标注）' }
+  // 小改动自动免评审：测试通过/跳过即可进入测试验证，不再卡在「独立评审」
+  if ((review?.status ?? 'idle') === 'idle' && gate.required === false && (localPassed || localSkipped)) {
+    return {
+      stage: 'verify',
+      reason: gate.reason || '小改动免独立评审，直接进入测试验证',
+    }
+  }
   // 老数据没有评审事实：保持原行为（自测通过即进入测试验证），不因为新阶段卡住旧流程
   if ((review?.status ?? 'idle') === 'idle' && (localPassed || localSkipped)) {
     return {

@@ -749,6 +749,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const showStageTag = stageLabelText !== statusLabelText
   // 会话正在跑时当前这步还没完：主按钮不应再给「继续推进」（否则会重复排队一次推进）
   const sessionRunning = Boolean(draft.session?.id) && Boolean(session?.running)
+  const reviewAction = advance.action === 'dispatch' || advance.action === 'retry'
   const questions = workflow.questions ?? []
   const answered = questions.filter((question) => String(question.answer ?? '').trim()).length
   const tasks = draft.tasks ?? []
@@ -1266,16 +1267,26 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
    * - 派发失败或评审 failed/error：按钮保持可点，再点即重试派发，并把上次失败原因内联在按钮旁；
    * - 审核员数量沿用现有默认配置（上一轮人数或默认值），不再提供人数选择入口。
    */
-  async function startReview() {
+  async function startReview(options = {}) {
     const current = describeReview(draft)
     if (current.status === 'pending') {
       setNotice('独立评审进行中：等审核员返回结论，不重复派发')
       return
     }
     if (reviewBusy || busy) return
+    // 开发会话还在跑时，审核员可能读到半成品：默认先确认，而不是让按钮看起来“点了没反应”
+    if (sessionRunning && options !== true && options?.force !== true) {
+      const ok = typeof window !== 'undefined' && typeof window.confirm === 'function'
+        ? window.confirm('开发会话还在运行。现在开始评审可能读到半成品代码。\n\n仍要现在开始评审吗？')
+        : false
+      if (!ok) {
+        setNotice('已取消评审：等开发会话结束后再点「重新评审」。')
+        return
+      }
+    }
     setReviewBusy(true); setError(''); setNotice(''); setAdvanceError('')
     try {
-      const count = current.total || undefined
+      const count = current.total || current.policy?.reviewers || undefined
       const body = await postAllowingFailure(API.review, { id: draft.id, action: 'dispatch', count })
       if (body.item) { setDraft(body.item); onSaved(body.item) }
       const view = body.review ?? describeReview(body.item ?? draft)
@@ -1363,11 +1374,42 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     return [...map.entries()]
   }
 
+  /**
+   * 提交前补齐模板验收项：Host 的 /submit 会用 check 状态做门禁，
+   * 但测试阶段不自动执行这些命令；到提交按钮时统一按顺序跑完，失败就停在当前流程。
+   */
+  async function runPendingChecksBeforeSubmit() {
+    const pending = (draft.checks ?? []).filter((check) => check.command && check.status !== 'passed')
+    if (!pending.length) return true
+    if (busy) return false
+    setBusy(true); setError(''); setNotice(`提交前运行 ${pending.length} 个验收项…`)
+    try {
+      let latest = draft
+      for (const check of pending) {
+        setNotice(`正在运行验收项：${check.text}`)
+        const body = await postAllowingFailure(API.check, { id: draft.id, checkId: check.id })
+        if (body.item) { latest = body.item; setDraft(body.item); onSaved?.(body.item) }
+        if (body.result?.status !== 'passed') {
+          throw new Error(`验收未通过：${check.text}${body.result?.output ? `\n${String(body.result.output).slice(-1200)}` : ''}`)
+        }
+      }
+      setNotice(`验收项已全部通过（${pending.length} 个）`)
+      return true
+    } catch (err) {
+      setError(`提交前验收失败：${errorText(err)}`)
+      setTab('plan')
+      return false
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function submitCode({ pushOnly = false, auto = false } = {}) {
     let paths = selectedPaths
     let message = commitMessage
     let mode = branchMode
     let name = branchName.trim()
+    if (!pushOnly && !(await runPendingChecksBeforeSubmit())) return
     if (auto) {
       // 自动化提交：按当前变更自动选文件、生成提交信息、当前分支直接 push，不弹确认
       if (busy) return
@@ -2586,6 +2628,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       h('div', { style: styles.row },
         h('span', { style: styles.sectionTitle }, '独立评审'),
         h(Tag, { tone }, `${REVIEW_STATUS_LABELS[view.status] ?? view.status}${view.total ? ` · ${view.passed}/${view.total}` : ''}`),
+        view.status === 'idle'
+          ? h(Tag, { tone: view.required === false ? 'warn' : 'neutral' }, view.required === false ? '免评审' : `${view.policy?.reviewers || 2} 位审核员`)
+          : null,
         h('div', { style: styles.spacer }),
         h(Button, { style: mini, onClick: () => setTab('review'), children: '查看评审' }),
       ),
@@ -2683,6 +2728,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           h('span', { style: styles.sectionTitle }, '独立评审'),
           h(Tag, { tone }, REVIEW_STATUS_LABELS[view.status] ?? view.status),
           view.round ? h(Tag, { tone: 'neutral' }, `第 ${view.round} 轮`) : null,
+          view.status === 'idle'
+            ? h(Tag, { tone: view.required === false ? 'warn' : 'neutral' }, view.required === false ? '免评审' : `${view.policy?.reviewers || 2} 位审核员`)
+            : null,
           h('div', { style: styles.spacer }),
           view.status === 'pending'
             ? h(Button, { style: mini, disabled: reviewBusy, onClick: resetReview, children: '重置本轮' })
@@ -2753,9 +2801,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       view.total
         ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: T.gap.sm } }, view.reviewers.map(renderReviewerCard))
         : h('div', { style: sectionBox },
-          h('div', { style: styles.sectionTitle }, '还没有开始评审'),
+          h('div', { style: styles.sectionTitle }, view.required === false ? '小改动免独立评审' : '还没有开始评审'),
           h('div', { style: { ...styles.sectionHint, marginTop: 4 } },
-            '开发任务完成后，点顶栏「继续推进」即自动开始评审（审核员按默认配置产生）。审核员只读，不会改代码；他们给的结论会写进台账与开发报告。')),
+            view.required === false
+              ? `${view.policy?.reason ?? '按工程量自动判定为小改动'}；流程直接进入测试验证。`
+              : '开发任务完成后，点顶栏「继续推进」即自动开始评审（审核员按默认配置产生）。审核员只读，不会改代码；他们给的结论会写进台账与开发报告。')),
       view.history.length
         ? h('details', { style: sectionBox },
           h('summary', { style: { cursor: 'pointer', fontSize: T.font.sm, fontWeight: 600 } }, `历史轮次（${view.history.length}）`),
@@ -3677,8 +3727,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                 flex: '0 0 auto',
               },
               // 评审 running（pending）时禁用并显示「评审中」；失败/异常时保持可点，再点即重试派发
-              disabled: busy || Boolean(launchBusy) || sessionRunning || reviewBusy || advance.disabled,
-              title: sessionRunning ? '开发会话正在工作：等当前这步结束再继续推进' : (advanceHint || undefined),
+              // 评审动作即使开发会话还在跑也允许点击：先确认是否接受“可能审到半成品”
+              disabled: busy || Boolean(launchBusy) || reviewBusy || advance.disabled || (sessionRunning && !reviewAction),
+              title: sessionRunning
+                ? (reviewAction ? '开发会话还在运行：点击会先确认是否现在评审' : '开发会话正在工作：等当前这步结束再继续推进')
+                : (advanceHint || undefined),
               onClick: () => {
                 if (advance.action === 'manual') { setTab('review'); setNotice(advance.hint); return }
                 if (advance.action === 'rework') { runLaunch('rework', reworkFromReview); return }
@@ -3694,6 +3747,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               },
               children: reviewBusy || launchBusy === 'review'
                 ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '评审中…']
+                : sessionRunning && reviewAction
+                  ? `${advance.label || '评审'}（开发中）`
                 : advance.action === 'wait'
                   ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '评审中']
                   : launchBusy === 'continue'
