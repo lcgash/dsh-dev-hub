@@ -14,6 +14,7 @@
   <a href="#工作方式">工作方式</a> ·
   <a href="#截图">截图</a> ·
   <a href="README.md">English</a> ·
+  <a href="CHANGELOG.zh-CN.md">更新日志</a> ·
   <a href="LICENSE">Apache-2.0</a>
 </p>
 
@@ -262,6 +263,10 @@ npm test            # node:test 测试
 - 虚拟库是本机组合，不是远程仓库服务；
 - Worktree 隔离适用于 Git 仓库，不适用于虚拟库本机台账；
 - 测试和评审质量仍取决于配置的模型与仓库自身的命令。
+
+## 更新日志
+
+功能变化见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
 
 ## 贡献
 

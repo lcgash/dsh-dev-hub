@@ -14,6 +14,7 @@
   <a href="#how-it-works">How it works</a> ·
   <a href="#screenshots">Screenshots</a> ·
   <a href="README.zh-CN.md">中文</a> ·
+  <a href="CHANGELOG.md">Release notes</a> ·
   <a href="LICENSE">Apache-2.0</a>
 </p>
 
@@ -281,6 +282,10 @@ The repository is intentionally small and dependency-light. Core modules should 
 - Virtual workspaces are a local composition, not a remote repository service.
 - Worktree isolation applies to Git repositories, not to virtual workspace local ledgers.
 - Test and review quality still depends on the configured model and the repository's own commands.
+
+## Release notes
+
+See [CHANGELOG.md](CHANGELOG.md) for user-visible changes.
 
 ## Contributing
 

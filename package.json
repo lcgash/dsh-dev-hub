@@ -60,6 +60,8 @@
     "docs",
     "README.md",
     "README.zh-CN.md",
+    "CHANGELOG.md",
+    "CHANGELOG.zh-CN.md",
     "LICENSE",
     "cordis.patch.yml"
   ]
