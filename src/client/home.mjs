@@ -781,11 +781,9 @@ function ProjectBar({ repo, repos, workspaces, activeWorkspace, switchingRepo, o
         id: 'devhub-target-tabs',
         style: {
           display: 'grid',
-          gridAutoFlow: 'column',
-          gridAutoColumns: 'minmax(232px, 252px)',
+          // 项目多时换行，而不是横向滚动把最后几张卡裁掉：每张卡最小 230px，剩余空间均分
+          gridTemplateColumns: 'repeat(auto-fill, minmax(min(230px, 100%), 1fr))',
           gap: T.gap.xs,
-          overflowX: 'auto',
-          scrollbarWidth: 'none',
           marginTop: 2,
         },
       }, [

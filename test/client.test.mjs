@@ -1063,9 +1063,9 @@ test('回归：新增项目/新建多库项目收进「项目管理」旁的 + �
   assert.match(home, /'▣ 新建多库项目'/)
   assert.match(home, /onAddRepo\?\.\(\)/)
   assert.match(home, /onNewWorkspace\?\.\(\)/)
-  // 平铺成一行横向卡片，而不是多行网格
-  assert.match(home, /gridAutoFlow: 'column'/)
-  assert.match(home, /overflowX: 'auto'/)
+  // 项目多时网格换行，不再横向滚动裁掉最后一张卡
+  assert.match(home, /repeat\(auto-fill, minmax\(min\(230px, 100%\), 1fr\)\)/)
+  assert.doesNotMatch(home, /gridAutoFlow: 'column'/)
   assert.match(home, /const GRID_CARD_MIN_HEIGHT = 120/)
   assert.doesNotMatch(home, /function AddRepoCard/)
 })
@@ -1548,7 +1548,7 @@ test('项目：多库项目与项目同一网格；激活多库项目时不再�
   const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
   assert.match(home, /\.\.\.workspaceViews\.map/)
   assert.match(home, /active: !activeWorkspace &&/)
-  assert.match(home, /gridAutoFlow: 'column'/)
+  assert.match(home, /repeat\(auto-fill, minmax\(min\(230px, 100%\), 1fr\)\)/)
 
   // 重复点击当前多库项目/同一目标切换中不再发请求、不再弹「已切到」提示
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
@@ -2140,4 +2140,11 @@ test('自动化设置：默认完全自动化，详情页自动评审并自动�
   assert.match(index, /runTest\('local', \{ auto: true \}\)/)
   assert.match(index, /runTest\('environment', \{ auto: true \}\)/)
   assert.match(index, /startReview\(\)\.finally\(\(\) => \{ autoNextRef\.current = '' \}\)/)
+})
+
+test('项目管理：项目多时网格换行，不横向裁掉最后一张卡', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const home = await readFile(new URL('../src/client/home.mjs', import.meta.url), 'utf8')
+  assert.match(home, /repeat\(auto-fill, minmax\(min\(230px, 100%\), 1fr\)\)/)
+  assert.doesNotMatch(home, /gridAutoFlow: 'column'/)
 })
