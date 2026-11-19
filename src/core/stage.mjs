@@ -65,6 +65,11 @@ export function deriveStage(item) {
   if (review?.status === 'failed') return { stage: 'develop', reason: gate.reason }
   if (review?.status === 'pending') return { stage: 'review', reason: gate.reason }
   if (review?.status === 'error') return { stage: 'review', reason: gate.reason }
+  // 非 git 仓库没有提交/推送环节：环境测试通过/人工跳过后就是终点。
+  // 这一步必须放在 review passed 之前，否则评审通过的非 git 流程会错误进入 verify/submit。
+  if (!isGit && (envPassed || envSkipped)) {
+    return { stage: 'done', reason: '非 git 仓库：测试通过或已跳过，流程完成' }
+  }
   // 评审通过（包括人工确认忽略）后，直接进入评审之后的路线；即使之前有测试 rework 标记，
   // 也应该去测试验证重跑，而不是退回开发。后续新代码改动会由 invalidateReview 重新打开评审。
   if (review?.status === 'passed') {
@@ -88,8 +93,6 @@ export function deriveStage(item) {
   if (isAnalysis && (localSkipped || envSkipped)) {
     return { stage: 'done', reason: '分析流程：只读结论已产出（测试跳过情况见报告），不进入提交' }
   }
-  // 非 git 仓库没有提交/推送环节：两项测试通过/跳过就是终点
-  if ((envPassed || envSkipped) && !isGit) return { stage: 'done', reason: '非 git 仓库：测试通过或已跳过，流程完成' }
   if (envPassed) return { stage: 'submit', reason: '环境验证通过，等待提交' }
   if (envSkipped) return { stage: 'submit', reason: '环境测试已人工跳过，等待提交（报告会标注）' }
   // 小改动自动免评审：测试通过/跳过即可进入测试验证，不再卡在「独立评审」

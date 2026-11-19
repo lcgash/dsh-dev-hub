@@ -114,6 +114,13 @@ test('deriveStage：开发 → 独立评审 → 测试验证 → 提交 → 完�
   envReviewed.workflow.review = review()
   assert.equal(deriveStage(envReviewed).stage, 'submit')
 
+  // 非 git 仓库 + 评审已通过 + 测试人工跳过：直接完成，不能停在 verify/submit
+  const nonGitReviewed = base({ gitRepo: false })
+  nonGitReviewed.workflow.review = review()
+  nonGitReviewed.workflow.tests = { local: { status: 'skipped' }, environment: { status: 'skipped' } }
+  assert.equal(deriveStage(nonGitReviewed).stage, 'done')
+  assert.match(deriveStage(nonGitReviewed).reason, /非 git 仓库/)
+
   const done = base()
   done.workflow.submission = { commit: 'deadbeef' }
   assert.equal(deriveStage(done).stage, 'done')
