@@ -1304,8 +1304,36 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       }
     }
     setReviewBusy(true); setError(''); setNotice(''); setAdvanceError('')
+    // 评审 POST 会等到审核员返回才返回（可能几分钟）。在这之前先把 UI 推到 pending，
+    // 否则顶栏显示“评审中”，阶段条/评审页却还停在“开发中 / 未评审”。
+    const beforeReview = draft
+    const count = current.total || current.policy?.reviewers || 2
+    const optimisticReviewers = Array.from({ length: Math.max(1, Math.min(3, count)) }, (_, index) => ({
+      id: `reviewer-${index + 1}`,
+      label: `审核员 ${index + 1}（${REVIEWER_ROLES[index]?.label ?? '正确性'}）`,
+      role: REVIEWER_ROLES[index]?.id ?? 'correctness',
+      status: 'pending',
+      verdict: null,
+      summary: '',
+      findings: [],
+      sessionId: '',
+    }))
+    setDraft((value) => value ? {
+      ...value,
+      workflow: {
+        ...value.workflow,
+        stage: 'review',
+        review: {
+          ...current,
+          status: 'pending',
+          round: (current.round ?? 0) + 1,
+          dispatchedAt: new Date().toISOString(),
+          decidedAt: null,
+          reviewers: optimisticReviewers,
+        },
+      },
+    } : value)
     try {
-      const count = current.total || current.policy?.reviewers || undefined
       const body = await postAllowingFailure(API.review, { id: draft.id, action: 'dispatch', count })
       if (body.item) { setDraft(body.item); onSaved(body.item) }
       const view = body.review ?? describeReview(body.item ?? draft)
@@ -1320,6 +1348,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         setNotice(`独立评审进行中：${view.passed}/${view.total} 位已返回，等审核员结论`)
       }
     } catch (err) {
+      // 乐观 pending 只用于界面等待；请求失败要回到真实状态，不能假装评审还在跑。
+      setDraft(beforeReview)
       setAdvanceError(`自动开始评审失败：${errorText(err)}（再点「继续推进」重试）`)
       setTab('review')
     } finally { setReviewBusy(false) }

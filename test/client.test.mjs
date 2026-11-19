@@ -2148,3 +2148,12 @@ test('项目管理：项目多时网格换行，不横向裁掉最后一张卡',
   assert.match(home, /repeat\(auto-fill, minmax\(min\(230px, 100%\), 1fr\)\)/)
   assert.doesNotMatch(home, /gridAutoFlow: 'column'/)
 })
+
+test('评审启动：POST 未返回前先显示 pending，避免顶栏评审中而阶段还停在开发中', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(index, /const beforeReview = draft/)
+  assert.match(index, /const optimisticReviewers = Array\.from/)
+  assert.match(index, /status: 'pending'/)
+  assert.match(index, /setDraft\(beforeReview\)/)
+})
