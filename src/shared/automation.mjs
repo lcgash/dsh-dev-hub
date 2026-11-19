@@ -10,5 +10,7 @@ export function normalizeAutomation(raw) {
   const value = raw && typeof raw === 'object' ? raw : {}
   return {
     mode: AUTOMATION_MODES.includes(value.mode) ? value.mode : 'full',
+    // 是否引入独立评审环节；默认开启。关闭后小改动/大改动都直接进入测试验证。
+    reviewEnabled: value.reviewEnabled === false ? false : true,
   }
 }

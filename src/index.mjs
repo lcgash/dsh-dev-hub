@@ -3245,6 +3245,8 @@ export function apply(ctx) {
               }
             }
             const active = activeWorkspace(profile)
+            // 新建流程继承当前自动化设置；已有流程由 /settings 统一回写。
+            body.workflow = { ...(body.workflow ?? {}), reviewEnabled: profile.automation?.reviewEnabled !== false }
             let draft = newItem(body.title || '未命名开发项', body)
             // 虚拟库：归属直接写进本机台账，不挑任何成员库
             if (isWorkspaceLocalRoot(repo)) draft = stampWorkspaceItem(draft, active)
@@ -5724,6 +5726,7 @@ export function apply(ctx) {
         if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
         try {
           const profile = await loadProfile()
+          const repoPathForSettings = await activeRepo(profile)
           if (req.method === 'GET') {
             return sendJson(res, 200, { ok: true, automation: normalizeAutomation(profile.automation) })
           }
@@ -5731,6 +5734,24 @@ export function apply(ctx) {
           const body = await readBody(req)
           profile.automation = normalizeAutomation(body?.automation ?? body)
           await saveProfile(profile)
+          // 开关要立刻影响已有流程，而不是只影响下一条新建流程。
+          // 只改 workflow.reviewEnabled，不碰评审历史/测试结论。
+          const enabled = profile.automation.reviewEnabled !== false
+          const paths = new Set([
+            repoPathForSettings,
+            ...Object.keys(profile.repos ?? {}),
+            ...(profile.workspaces ?? []).map((entry) => workspaceLocalDir(entry)),
+          ].filter(Boolean))
+          for (const path of paths) {
+            let items = []
+            try { items = await listItems(path) } catch { continue }
+            for (const item of items) {
+              if (!item?.workflow) continue
+              if (item.workflow.reviewEnabled === enabled) continue
+              item.workflow.reviewEnabled = enabled
+              await saveItem(path, item).catch(() => {})
+            }
+          }
           return sendJson(res, 200, { ok: true, automation: profile.automation })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })

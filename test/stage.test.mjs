@@ -74,6 +74,12 @@ test('deriveStage：开发 → 独立评审 → 测试验证 → 提交 → 完�
   assert.equal(deriveStage(small).stage, 'verify')
   assert.match(deriveStage(small).reason, /小改动|免.*评审/)
 
+  // 设置关闭独立评审：大改动也不进评审，本机自测通过即进入验证
+  const reviewOff = base()
+  reviewOff.workflow.reviewEnabled = false
+  reviewOff.workflow.tests = { local: { status: 'passed' } }
+  assert.equal(deriveStage(reviewOff).stage, 'verify')
+
   // 小改动但还没跑本机自测：仍在开发中，不能空降到验证
   const smallNoTest = base({ plan: { summary: '小修', steps: ['a'], estimate: { size: 'S', days: 0.5 } } })
   smallNoTest.baseline = { commit: 'abc', startedAt: 'x' }

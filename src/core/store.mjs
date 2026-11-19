@@ -347,8 +347,10 @@ function normalizeWorkflow(raw, status, { keepLocalWorkspace = true } = {}) {
     entry: ['chat', 'form'].includes(value.entry) ? value.entry : null,
     // 是否 git 仓库：非 git 时没有提交/推送环节（测试通过即完成）；旧数据缺省按 git 处理
     gitRepo: value.gitRepo === false ? false : true,
-    // 流程类型：bug（定位/修复）、feature（开发需求）或 analysis（只读分析）；缺省按 feature
+    // 流程类型：bug（定位/修复）、feature（开发需求）、refactor（代码重构）或 analysis（只读分析）；缺省按 feature
     intent: normalizeIntent(value.intent) ?? 'feature',
+    // 全局设置落到每条流程上：关闭后跳过独立评审；缺省不改旧行为
+    reviewEnabled: value.reviewEnabled === false ? false : true,
     // 虚拟库流程：归属与成员库（前后端联动）；普通流程为空
     ...(Array.isArray(value.repos) && value.repos.length
       ? { repos: value.repos.map(String).filter(Boolean).slice(0, 8) }

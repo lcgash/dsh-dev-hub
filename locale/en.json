@@ -1365,7 +1365,10 @@
     "人工触发每个节点": "Manual step-by-step",
     "评审、本机自测、环境测试都由你点按钮触发；工作站只提示下一步，不自动执行。": "Review, local test and environment test are triggered by your clicks; the workstation only suggests the next step.",
     "保存设置": "Save settings",
-    "说明：自动化在开发站打开并读取到流程状态时生效；开发会话还在跑时不会抢跑。默认完全自动化，但不会自动提交/推送。": "Note: automation runs while the workstation is open and has the flow state; it will not race a running development session. The default is full automation, but submit/push remains manual."
+    "说明：自动化在开发站打开并读取到流程状态时生效；开发会话还在跑时不会抢跑。默认完全自动化，但不会自动提交/推送。": "Note: automation runs while the workstation is open and has the flow state; it will not race a running development session. The default is full automation, but submit/push remains manual.",
+    "已保存：完全自动化 + 已关闭独立评审，流程直接进入测试验证": "Saved: full automation with independent review disabled; flows go straight to verification",
+    "启用独立评审环节": "Enable independent review",
+    "默认开启。开启时按工程量决定评审强度（S 免评审，M 1 位，L/XL 2 位）；关闭后所有流程跳过独立评审，直接进入测试验证。已经失败的评审仍会保留，不会替你忽略。": "Enabled by default. When on, review strength follows the effort estimate (S skipped, M one reviewer, L/XL two). When off, all flows skip independent review and go straight to verification. Existing failed reviews are kept and are not silently ignored."
   },
   "templates": {
     "成员 {name}": "Member {name}",

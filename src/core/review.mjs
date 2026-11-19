@@ -364,6 +364,9 @@ export function correctionsOf(review) {
  */
 export function reviewPolicy(item) {
   const workflow = item?.workflow ?? {}
+  if (workflow.reviewEnabled === false) {
+    return { required: false, reviewers: 0, size: null, days: null, reason: '设置已关闭独立评审环节', source: 'setting' }
+  }
   const estimate = workflow.plan?.estimate ?? {}
   const size = String(estimate.size ?? '').trim().toUpperCase()
   const days = Number(estimate.days)

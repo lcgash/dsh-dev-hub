@@ -2134,6 +2134,8 @@ test('自动化设置：默认完全自动化，详情页自动评审并自动�
   assert.match(automation, /mode: AUTOMATION_MODES\.includes\(value\.mode\) \? value\.mode : 'full'/)
   assert.match(settings, /完全自动化（默认）/)
   assert.match(settings, /人工触发每个节点/)
+  assert.match(settings, /启用独立评审环节/)
+  assert.match(settings, /reviewEnabled/)
   assert.match(index, /automation\?\.mode !== 'full'/)
   assert.match(index, /runTest\('local', \{ auto: true \}\)/)
   assert.match(index, /runTest\('environment', \{ auto: true \}\)/)

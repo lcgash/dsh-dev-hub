@@ -637,12 +637,14 @@ test('自动化设置：默认完全自动化，可切换人工触发并持久�
     const defaults = await call(routes, API.settings)
     assert.equal(defaults.status, 200, JSON.stringify(defaults.body))
     assert.equal(defaults.body.automation.mode, 'full')
+    assert.equal(defaults.body.automation.reviewEnabled, true)
 
-    const manual = await call(routes, API.settings, { method: 'POST', body: { automation: { mode: 'manual' } } })
+    const manual = await call(routes, API.settings, { method: 'POST', body: { automation: { mode: 'manual', reviewEnabled: false } } })
     assert.equal(manual.status, 200)
     assert.equal(manual.body.automation.mode, 'manual', JSON.stringify(manual.body))
     const reread = await call(routes, API.settings)
     assert.equal(reread.body.automation.mode, 'manual')
+    assert.equal(reread.body.automation.reviewEnabled, false)
 
     const invalid = await call(routes, API.settings, { method: 'POST', body: { automation: { mode: 'whatever' } } })
     assert.equal(invalid.status, 200)

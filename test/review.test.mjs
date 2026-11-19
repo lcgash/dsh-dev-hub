@@ -339,6 +339,9 @@ test('reviewPolicy：小改动自动免评审，M/L/XL 保留评审，可显式�
   assert.equal(reviewPolicy(forced).required, true)
   const skipped = item({ plan: { summary: '大', steps: ['a'], estimate: { size: 'L', days: 6 } }, reviewRequired: false })
   assert.equal(reviewPolicy(skipped).required, false)
+  const disabled = item({ reviewEnabled: false, plan: { summary: '大', steps: ['a'], estimate: { size: 'L', days: 6 } } })
+  assert.equal(reviewPolicy(disabled).required, false)
+  assert.equal(reviewPolicy(disabled).reviewers, 0)
 })
 
 test('describeReview：票数、轮次、依据与来源都能在界面/报告里还原', () => {

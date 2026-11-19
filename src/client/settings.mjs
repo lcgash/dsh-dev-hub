@@ -59,7 +59,9 @@ export function AutomationSettings() {
       const body = await api(API.settings, { method: 'POST', body: JSON.stringify({ automation: next }) })
       setAutomation(normalizeAutomation(body?.automation ?? next))
       setNotice(next.mode === 'full'
-        ? '已开启完全自动化：评审、本机自测、环境测试会按阶段自动推进，停在提交前'
+        ? (next.reviewEnabled === false
+          ? '已保存：完全自动化 + 已关闭独立评审，流程直接进入测试验证'
+          : '已开启完全自动化：评审、本机自测、环境测试会按阶段自动推进，停在提交前')
         : '已切换为人工触发：每个节点都需要你确认')
     } catch (err) {
       setError(errorText(err))
@@ -86,6 +88,21 @@ export function AutomationSettings() {
             hint: '评审、本机自测、环境测试都由你点按钮触发；工作站只提示下一步，不自动执行。',
             onSelect: () => setAutomation({ mode: 'manual' }),
           })),
+      h('div', { style: { ...styles.card, marginTop: 10, padding: '12px 14px' } },
+        h('label', { style: { display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' } },
+          h('input', {
+            type: 'checkbox',
+            checked: automation.reviewEnabled !== false,
+            onChange: (event) => setAutomation((current) => ({ ...current, reviewEnabled: event.target.checked })),
+            style: { marginTop: 3 },
+          }),
+          h('span', { style: { display: 'flex', flexDirection: 'column', gap: 3 } },
+            h('span', { style: { fontSize: T.font.base, fontWeight: 600, color: T.text } }, '启用独立评审环节'),
+            h('span', { style: { ...styles.sectionHint, lineHeight: 1.65 } },
+              '默认开启。开启时按工程量决定评审强度（S 免评审，M 1 位，L/XL 2 位）；关闭后所有流程跳过独立评审，直接进入测试验证。已经失败的评审仍会保留，不会替你忽略。'),
+          ),
+        ),
+      ),
       h('div', { style: { ...styles.row, marginTop: 14 } },
         h(Button, { primary: true, disabled: loading || saving, onClick: () => save(), children: saving ? '保存中…' : '保存设置' }),
         notice ? h('span', { style: { color: T.ok, fontSize: T.font.sm } }, notice) : null,
