@@ -93,6 +93,7 @@ import {
   normalizeReviewerVerdict,
   reviewGate,
   reviewerPrompt,
+  staleReviewerFailures,
   startReviewRound,
 } from './core/review.mjs'
 import { sessionActiveAfter, verificationBasisHash } from './core/verification.mjs'
@@ -1908,6 +1909,12 @@ async function stateFor(repo, profile, ctx) {
   if (repo && !localLedger) items = await localItems(profile, repo)
   // 测试通过后又有代码/诉求变化 → 标记重新开发（阶段回到 develop）
   if (repo) items = await applyReworkFacts(ctx, profile, repo, items)
+  // 审核会话异常结束/超时：轮询 state 时也逐位核对，避免评审永远停在「待返回」
+  if (repo) {
+    const reconciled = []
+    for (const item of items) reconciled.push(await reconcileStaleReview(ctx, repo, item))
+    items = reconciled
+  }
   let active = activeWorkspace(profile)
   if (!active && localLedger) {
     const matched = listWorkspaces(profile).find((entry) => {
@@ -2716,36 +2723,36 @@ function reviewHistoryMessage(view) {
  * 或多开一个页面重复触发，都不会重复消耗审核员。
  */
 
-const REVIEW_STALE_MS = 4 * 60 * 1000
-
 /**
- * 评审协程不是持久任务：DSH 重启/浏览器断开时，台账可能永远停在 pending。
- * 超过审核员超时窗口后，如果没有活着的审核 agent，就把 pending 标成异常，
- * 让「重置本轮」/重试评审有明确入口，而不是让用户一直等。
+ * 评审协程不是持久任务：DSH 重启/浏览器断开/子代理异常退出时，台账可能永远停在 pending。
+ * 这里逐位核对 pending 审核员：会话死了就标异常，会话活着但超时才标超时；
+ * 不会因为“还有一位审核员活着”就把另一位已结束的审核员一直挂在待返回。
  */
 async function reconcileStaleReview(ctx, repo, item) {
   const view = describeReview(item)
-  if (view.status !== 'pending') return item
-  const dispatchedAt = Date.parse(view.dispatchedAt ?? '')
-  if (!Number.isFinite(dispatchedAt) || Date.now() - dispatchedAt < REVIEW_STALE_MS) return item
+  if (!['pending', 'error'].includes(view.status)) return item
   const agents = ctx.get('agents')
-  // sessions.get 可能仍能读到已结束的持久会话；判断“还在跑”必须看 live agent registry。
-  const live = (view.reviewers ?? []).some((reviewer) => reviewer.sessionId && agents?.get?.(reviewer.sessionId))
-  if (live) return item
-  for (const reviewer of view.reviewers ?? []) {
-    if (reviewer.status !== 'pending') continue
-    item.workflow.review = applyReviewerOutput(item.workflow.review, reviewer.id, {
-      error: '评审会话超过 4 分钟未返回，可能已随 DSH 重启中断；请重置本轮后重试',
-    })
+  const sessions = ctx.get('sessions')
+  const failures = staleReviewerFailures(item.workflow?.review, {
+    // 新评审有外层 root（parentSessionId），它才是协程句柄；
+    // 旧台账只有 child sessionId，用 sessions 兜底避免把还挂着的会话误判成死亡。
+    isLive: (reviewer) => reviewer.parentSessionId
+      ? Boolean(agents?.get?.(reviewer.parentSessionId))
+      : (Boolean(agents?.get?.(reviewer.sessionId)) || Boolean(sessions?.get?.(reviewer.sessionId))),
+  })
+  if (!failures.length) return item
+  for (const failure of failures) {
+    item.workflow.review = applyReviewerOutput(item.workflow.review, failure.reviewerId, { error: failure.reason })
   }
-  const saved = await saveItem(repo, appendHistory(item, 'review', '评审会话超时/中断，已标记为异常'))
-  return saved
+  appendHistory(item, 'review', '审核会话异常结束/超时，已标记为待处理；可重试评审')
+  return saveItem(repo, item)
 }
 
 async function runReviewRound({ ctx, repo, item, profile, count }) {
   item = await reconcileStaleReview(ctx, repo, item)
   const before = describeReview(item)
-  if (before.status === 'pending') return item
+  // pending 幂等；error 但还有审核员在返回时也不能开新一轮，否则会把活着的审核员结果丢掉
+  if (before.status === 'pending' || (before.status === 'error' && before.pending > 0)) return item
   const evidence = await reviewEvidenceOf({ repo, item, profile })
   const started = startReviewRound(item.workflow.review, { count, basis: evidence.basis })
   item.workflow.review = started
@@ -2772,16 +2779,21 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
       // 大改动的审核员要读多个文件/调用方；150s 很容易在读完前被 abort。
       // 允许用环境变量覆盖，默认给 5 分钟。
       timeoutMs: Number(process.env.DEVHUB_REVIEW_TIMEOUT_MS) || 300000,
-      onStarted: async ({ sessionId }) => {
-        // 先落 sessionId，UI 轮询时立刻能看到“审核会话已启动”，而不是永远显示 —
-        const current = saved.workflow?.review
+      onStarted: async ({ sessionId, parentSessionId }) => {
+        // 先落 sessionId/parentSessionId：UI 立刻能看到“审核会话已启动”，
+        // 失联时也能用 parentSessionId 判断协程是不是真的还在。
+        // 写回前确认还是本轮：超时重试/重置后，旧协程的启动回调不能覆盖新轮次。
+        const latest = await readItemLocal(profile, repo, item.id)
+        if (!latest || latest.workflow?.review?.dispatchedAt !== started.dispatchedAt) return
+        const current = latest.workflow?.review
         if (!current || !Array.isArray(current.reviewers)) return
-        saved.workflow.review = {
+        latest.workflow.review = {
           ...current,
           reviewers: current.reviewers.map((entry, position) => (position === index
-            ? { ...entry, sessionId, dispatchedAt: new Date().toISOString() }
+            ? { ...entry, sessionId, parentSessionId, dispatchedAt: new Date().toISOString() }
             : entry)),
         }
+        saved = latest
         await saveItem(repo, saved)
       },
     })
@@ -2791,7 +2803,7 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
     } catch (error) {
       // subagent 偶尔会在启动/收尾阶段被 abort；同一轮自动重试一次，
       // 避免整轮评审直接变成“审核员异常”，让用户只能手工重试。
-      if (!/aborted|未正常完成|超时|中断/i.test(String(error?.message ?? error))) throw error
+      if (!/aborted|未正常完成|超时|中断|不是可解析的 JSON|没有输出|没有可用输出|无输出|空输出|会话.*异常结束/i.test(String(error?.message ?? error))) throw error
       await new Promise((resolve) => setTimeout(resolve, 800))
       try {
         result = await runOnce(2)
@@ -2817,7 +2829,16 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
     }
   }))
 
-  let review = saved.workflow.review
+  // 旧协程收尾时可能已经超时重试/重置：只把结果并回“仍属于本轮”的最新台账，
+  // 不能拿启动时的 saved 覆盖掉新轮次或用户刚做的修改。
+  saved = await readItemLocal(profile, repo, item.id)
+  const latestReview = saved?.workflow?.review
+  if (!saved || !latestReview
+    || latestReview.dispatchedAt !== started.dispatchedAt
+    || Number(latestReview.round) !== Number(started.round)) {
+    return saved ?? item
+  }
+  let review = latestReview
   for (const [index, settled] of outcomes.entries()) {
     const reviewer = started.reviewers[index]
     if (settled.status === 'fulfilled') {
@@ -3279,9 +3300,11 @@ export function apply(ctx) {
           if (req.method !== 'GET') return sendJson(res, 405, { ok: false, error: 'GET only' })
           const item = await readItemLocal(profile, repo, query(req.url, 'id'))
           if (!item) return sendJson(res, 404, { ok: false, error: '开发项不存在' })
+          // 审核会话异常结束/超时：详情轮询时标成待处理，而不是一直显示「等待审核员返回」
+          const reconciled = await reconcileStaleReview(ctx, repo, item)
           // 详情刷新/重新打开时也做一次过期检测，保证阶段及时回到开发中
-          const [fresh] = await applyReworkFacts(ctx, profile, repo, [item])
-          sendJson(res, 200, { ok: true, item: fresh ?? item })
+          const [fresh] = await applyReworkFacts(ctx, profile, repo, [reconciled])
+          sendJson(res, 200, { ok: true, item: fresh ?? reconciled })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }

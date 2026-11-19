@@ -1227,8 +1227,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
 
   // 评审是异步子代理：只靠一次 POST 返回时看不到中间态。pending 时轮询 /review，
   // 让审核员 sessionId、异常与最新结论能进界面；完成后自动停。
+  const reviewerSessionsKey = (draft?.workflow?.review?.reviewers ?? [])
+    .map((reviewer) => `${reviewer.id}:${reviewer.status}:${reviewer.sessionId ?? ''}`)
+    .join(',')
   useEffect(() => {
-    const pending = draft?.workflow?.review?.status === 'pending' || reviewBusy
+    // 一位审核员异常后整体状态会变 error，但另一位可能还在返回：只要还有 pending 审核员就继续轮询
+    const pending = draft?.workflow?.review?.status === 'pending'
+      || reviewBusy
+      || (draft?.workflow?.review?.reviewers ?? []).some((reviewer) => reviewer.status === 'pending')
     if (!pending || !draft?.id) return undefined
     let stop = false
     const load = async () => {
@@ -1243,14 +1249,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     const timer = setInterval(load, 3000)
     load()
     return () => { stop = true; clearInterval(timer) }
-  }, [draft?.id, draft?.workflow?.review?.status, reviewBusy])
+  }, [draft?.id, draft?.workflow?.review?.status, reviewBusy, reviewerSessionsKey])
 
   // 审核员子会话的最新动态：不等结论落盘，直接把最近 assistant/tool 事件拉回来展示。
   // 只轮询当前轮仍在 pending 的 reviewer，避免无意义请求。
-  const reviewerSessionsKey = (draft?.workflow?.review?.reviewers ?? []).map((reviewer) => reviewer.sessionId ?? '').join(',')
   useEffect(() => {
-    const active = reviewBusy || draft?.workflow?.review?.status === 'pending'
-    const reviewers = (draft?.workflow?.review?.reviewers ?? []).filter((reviewer) => reviewer.sessionId)
+    const active = reviewBusy
+      || (draft?.workflow?.review?.reviewers ?? []).some((reviewer) => reviewer.status === 'pending')
+    const reviewers = (draft?.workflow?.review?.reviewers ?? []).filter((reviewer) => reviewer.status === 'pending' && reviewer.sessionId)
     if (!active || !draft?.id || !reviewers.length) {
       setReviewerProgress({})
       return undefined
@@ -2706,10 +2712,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           : lastAssistant
             ? '已收到审核员的最新输出'
             : '审核会话已启动，等待第一条输出…'
+    const dead = Boolean(progress.reason) || progress.alive === false
     return h('div', { style: { ...styles.infoCard, marginTop: 6 } },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 } },
-        h(Spinner, { size: 10, tone: 'accent' }),
-        h('span', { style: { fontSize: T.font.xs, fontWeight: 600, color: T.brand } }, '审核会话动态'),
+        // 会话已经失联/结束时不能再转圈，否则看起来还“在跑”
+        dead
+          ? h('span', { 'aria-hidden': true, style: { width: 6, height: 6, borderRadius: '50%', background: T.warn, display: 'inline-block' } })
+          : h(Spinner, { size: 10, tone: 'accent' }),
+        h('span', { style: { fontSize: T.font.xs, fontWeight: 600, color: dead ? T.warnText : T.brand } }, '审核会话动态'),
         h('span', { style: { ...styles.sectionHint, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, statusText),
       ),
       lastAssistant?.text
@@ -2783,7 +2793,13 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           view.status === 'pending'
             ? h(Button, { style: mini, disabled: reviewBusy, onClick: resetReview, children: '重置本轮' })
             : (view.status === 'failed' || view.status === 'error')
-              ? h(Button, { style: mini, disabled: reviewBusy || busy, onClick: startReview, children: '重新评审' })
+              ? h(Button, {
+                style: mini,
+                disabled: reviewBusy || busy || (view.status === 'error' && view.pending > 0),
+                title: view.status === 'error' && view.pending > 0 ? '还有审核员在返回中：等本轮结束或重置后再重试' : undefined,
+                onClick: startReview,
+                children: '重新评审',
+              })
               : null,
           view.total ? h('span', { style: styles.sectionHint }, `${view.passed} 通过 / ${view.failed} 不通过 / ${view.errored} 异常 / ${view.pending} 待返回${reviewElapsed !== null ? ` · 已用时 ${reviewElapsed}s` : ''}`) : null,
         ),

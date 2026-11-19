@@ -19,6 +19,9 @@ const {
   reviewerPrompt,
   reviewerRolesFor,
   startReviewRound,
+  staleReviewerFailures,
+  REVIEW_STALE_MS,
+  REVIEW_START_GRACE_MS,
 } = await import('../src/core/review.mjs')
 const { deriveAttention } = await import('../src/core/attention.mjs')
 const { buildReport } = await import('../src/core/report.mjs')
@@ -259,6 +262,17 @@ test('reviewAdvancePlan：继续推进即开始评审；pending 幂等禁用；f
   assert.equal(errored.action, 'retry')
   assert.equal(errored.disabled, false)
   assert.match(errored.hint, /provider down/)
+
+  // 一位异常、另一位还在返回：先等，不要重试开新一轮把活着的审核员丢掉
+  const mixedPending = reviewAdvancePlan(item({
+    review: normalizeReview({
+      round: 1,
+      reviewers: [reviewer('reviewer-1', 'error', { error: 'provider down' }), reviewer('reviewer-2', 'pending')],
+    }),
+  }))
+  assert.equal(mixedPending.action, 'wait')
+  assert.equal(mixedPending.disabled, true)
+  assert.match(mixedPending.hint, /在返回中/)
 
   // 评审通过且阶段到 verify：顶栏直接推进“下一步测试”，不是只切页签
   const verify = reviewAdvancePlan(item({
@@ -610,11 +624,68 @@ test('评审可观测性：派发时落 sessionId，pending 轮询 /review，并
   const run = await fs.readFile(new URL('../src/host/agent-run.mjs', import.meta.url), 'utf8')
   const index = await fs.readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(run, /onStarted/)
-  assert.match(host, /onStarted: async \(\{ sessionId \}\) =>/)
+  assert.match(host, /onStarted: async \(\{ sessionId, parentSessionId \}\) =>/)
+  assert.match(host, /parentSessionId, dispatchedAt: new Date\(\)\.toISOString\(\)/)
   assert.match(host, /reconcileStaleReview/)
+  // 轮询 state / 详情时也要逐位核对审核会话，不能只在点「继续推进」时才清理
+  assert.match(host, /for \(const item of items\) reconciled\.push\(await reconcileStaleReview\(ctx, repo, item\)\)/)
+  assert.match(host, /const reconciled = await reconcileStaleReview\(ctx, repo, item\)/)
+  assert.match(host, /staleReviewerFailures/)
+  assert.match(host, /parentSessionId/)
+  assert.match(host, /before\.status === 'error' && before\.pending > 0/)
   assert.match(index, /API\.review\}\?id=/)
   assert.match(index, /setInterval\(load, 3000\)/)
   assert.match(index, /重置本轮/)
   assert.match(index, /API\.sessionLog\}\?itemId=.*sessionId=/)
   assert.match(index, /renderReviewerProgress/)
+})
+
+
+test('staleReviewerFailures：逐位判断会话异常/超时，活着的审核员不误判', () => {
+  const now = Date.parse(AT)
+  const old = new Date(now - 60_000).toISOString()
+  const review = normalizeReview({
+    round: 1,
+    dispatchedAt: old,
+    reviewers: [
+      reviewer('reviewer-1', 'pending', { sessionId: 'dead', dispatchedAt: old }),
+      reviewer('reviewer-2', 'pending', { sessionId: 'alive', dispatchedAt: old }),
+    ],
+  })
+  const live = new Set(['alive'])
+  const dead = staleReviewerFailures(review, { now, isLive: (r) => live.has(r.sessionId), deadGraceMs: 15_000 })
+  assert.deepEqual(dead.map((entry) => entry.reviewerId), ['reviewer-1'], '只标已经结束的那位')
+  assert.match(dead[0].reason, /异常结束且没有返回可用结论/)
+
+  // 会话还活着但超过 4 分钟没结论：才按超时处理
+  const stale = staleReviewerFailures(review, {
+    now: now + REVIEW_STALE_MS,
+    isLive: () => true,
+    deadGraceMs: 15_000,
+  })
+  assert.deepEqual(stale.map((entry) => entry.reviewerId), ['reviewer-1', 'reviewer-2'])
+  assert.match(stale[0].reason, /超过 4 分钟未返回结论/)
+
+  // 没拿到 sessionId：启动宽限期内不误判，之后标“没有启动成功”
+  const noSession = normalizeReview({
+    round: 1,
+    dispatchedAt: new Date(now).toISOString(),
+    reviewers: [reviewer('reviewer-1', 'pending')],
+  })
+  assert.equal(staleReviewerFailures(noSession, { now, isLive: () => false }).length, 0)
+  const notStarted = staleReviewerFailures(noSession, { now: now + REVIEW_START_GRACE_MS, isLive: () => false })
+  assert.match(notStarted[0].reason, /没有启动成功/)
+
+  // 整体 status 已经是 error 时，另一个 pending 审核员死掉也必须能标出来
+  const mixed = normalizeReview({
+    round: 1,
+    dispatchedAt: old,
+    reviewers: [
+      reviewer('reviewer-1', 'error', { sessionId: 'dead', dispatchedAt: old }),
+      reviewer('reviewer-2', 'pending', { sessionId: 'dead-2', dispatchedAt: old }),
+    ],
+  })
+  assert.equal(mixed.status, 'error')
+  const remaining = staleReviewerFailures(mixed, { now, isLive: () => false, deadGraceMs: 15_000 })
+  assert.deepEqual(remaining.map((entry) => entry.reviewerId), ['reviewer-2'])
 })

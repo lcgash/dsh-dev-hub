@@ -97,6 +97,8 @@ function normalizeReviewer(raw, index) {
     // 结论来源：审核员会话自动评审 vs 会话不可用时的人工记录（不混淆两种证据强度）
     source: raw?.source === 'manual' ? 'manual' : 'agent',
     sessionId: str(raw?.sessionId, 120),
+    // runAgentJson 的外层 root agent（真正能用来判断“协程还在不在”的 live 句柄）
+    parentSessionId: str(raw?.parentSessionId, 120),
     provider: str(raw?.provider, 40),
     elapsedMs: Number.isFinite(Number(raw?.elapsedMs)) ? Number(raw.elapsedMs) : null,
     error: str(raw?.error, 1200),
@@ -163,6 +165,68 @@ export function normalizeReview(raw) {
       .filter((entry) => entry.round > 0)
       .slice(-MAX_HISTORY_ROUNDS),
   }
+}
+
+/**
+ * 审核会话异常/超时的判定窗口。
+ * - 派发后迟迟拿不到 sessionId：启动失败，30s 后标异常；
+ * - 子代理从 live registry 消失：会话已结束却没回写结论（常见于无输出/被清理），15s 后标异常；
+ * - 会话还活着但长时间没结论：4 分钟后标异常（runAgentJson 自身 5 分钟超时，留余量）。
+ */
+export const REVIEW_START_GRACE_MS = 30_000
+export const REVIEW_DEAD_GRACE_MS = 15_000
+export const REVIEW_STALE_MS = 4 * 60_000
+
+/**
+ * 找出“已经不可能再返回结论”的 pending 审核员。
+ * 只做纯计算：是否还活着由调用方传入 isLive(sessionId)，避免 core 依赖宿主。
+ *
+ * 注意不能因为整体 review.status 是 error 就跳过——一个审核员异常后，
+ * 另一个 pending 审核员仍可能已经死掉；必须逐位核对，否则整轮会永远卡住。
+ */
+export function staleReviewerFailures(review, {
+  now = Date.now(),
+  isLive = () => false,
+  startGraceMs = REVIEW_START_GRACE_MS,
+  deadGraceMs = REVIEW_DEAD_GRACE_MS,
+  staleMs = REVIEW_STALE_MS,
+} = {}) {
+  const normalized = normalizeReview(review)
+  if (!normalized || !['pending', 'error'].includes(normalized.status)) return []
+  const outcomes = []
+  for (const reviewer of normalized.reviewers ?? []) {
+    if (reviewer.status !== 'pending') continue
+    const dispatchedAt = Date.parse(reviewer.dispatchedAt ?? normalized.dispatchedAt ?? '')
+    if (!Number.isFinite(dispatchedAt)) continue
+    const age = now - dispatchedAt
+    const sessionId = reviewer.sessionId
+    if (!sessionId) {
+      if (age >= startGraceMs) {
+        outcomes.push({
+          reviewerId: reviewer.id,
+          reason: '审核会话没有启动成功（未拿到 sessionId）；请重试评审',
+        })
+      }
+      continue
+    }
+    const alive = Boolean(isLive(reviewer))
+    if (!alive) {
+      if (age >= deadGraceMs) {
+        outcomes.push({
+          reviewerId: reviewer.id,
+          reason: '审核会话已异常结束且没有返回可用结论（可能没有输出或已被清理）；请重试评审',
+        })
+      }
+      continue
+    }
+    if (age >= staleMs) {
+      outcomes.push({
+        reviewerId: reviewer.id,
+        reason: `审核会话超过 ${Math.round(staleMs / 60_000)} 分钟未返回结论；请重试评审`,
+      })
+    }
+  }
+  return outcomes
 }
 
 /** 结论聚合：不通过 > 异常 > 进行中 > 通过；没有审核员就是未评审。 */
@@ -299,6 +363,7 @@ export function applyReviewerOutput(review, reviewerId, output = {}) {
         // 结论来源：人工记录必须留痕，不能冒充审核员会话自动评审
         source: output.source === 'manual' ? 'manual' : (reviewer.source ?? 'agent'),
         sessionId: str(output.sessionId, 120) || reviewer.sessionId,
+        parentSessionId: str(output.parentSessionId, 120) || reviewer.parentSessionId,
         provider: str(output.provider, 40) || reviewer.provider,
         elapsedMs: Number.isFinite(Number(output.elapsedMs)) ? Number(output.elapsedMs) : reviewer.elapsedMs,
         error: str(output.error, 1200),
@@ -582,6 +647,15 @@ export function reviewAdvancePlan(item) {
         label: '人工决定评审',
         disabled: false,
         hint: `自动返工/评审已达到 ${view.maxRounds} 轮上限：请人工决定重试、重置或人工通过。`,
+      }
+    }
+    if (view.pending > 0) {
+      return {
+        action: 'wait',
+        status: view.status,
+        label: '等待未返回审核员',
+        disabled: true,
+        hint: `还有 ${view.pending} 位审核员在返回中；已异常结束的会自动标记，等本轮全部结束后再重试`,
       }
     }
     return {

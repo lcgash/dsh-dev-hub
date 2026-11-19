@@ -558,6 +558,53 @@ test('独立评审：不通过退回开发并附纠偏意见；异常显式待�
   }
 })
 
+test('独立评审：审核会话异常结束且无输出时，轮询即标异常，不再永远停在待返回', async () => {
+  const repo = await tempRepo()
+  const a = fakeContext(repo, { withReviewAgents: true })
+  try {
+    apply(a.ctx)
+    await createFlowForReview(repo, a.routes)
+    const read = await call(a.routes, API.item, { queryParams: { id: 'review-gate' } })
+    const item = read.body.item
+    const at = new Date(Date.now() - 60_000).toISOString()
+    item.workflow.review = {
+      status: 'pending',
+      round: 2,
+      dispatchedAt: at,
+      history: item.workflow.review?.history ?? [],
+      reviewers: [
+        { id: 'reviewer-1', label: '审核员 1（方向）', role: 'direction', status: 'pending', sessionId: 'dead-reviewer-1', dispatchedAt: at },
+        { id: 'reviewer-2', label: '审核员 2（正确性）', role: 'correctness', status: 'pending', sessionId: 'dead-reviewer-2', dispatchedAt: at },
+      ],
+    }
+    await call(a.routes, API.items, { method: 'POST', body: item })
+
+    // 不点「继续推进」：列表轮询 state 时就要发现两个审核会话都已不在进程内
+    const state = await call(a.routes, API.state)
+    assert.equal(state.status, 200)
+    const row = state.body.items.find((entry) => entry.id === 'review-gate')
+    assert.equal(row.reviewState, 'error', '轮询 state 即应把死掉的审核会话标成异常')
+    assert.equal(row.stage, 'review', ' abnormality 不能伪装成通过或进入测试')
+
+    const review = await call(a.routes, API.review, { queryParams: { id: 'review-gate' } })
+    assert.equal(review.status, 200)
+    assert.equal(review.body.review.status, 'error')
+    for (const reviewerId of ['reviewer-1', 'reviewer-2']) {
+      const reviewer = review.body.review.reviewers.find((entry) => entry.id === reviewerId)
+      assert.equal(reviewer.status, 'error')
+      assert.match(reviewer.error, /异常结束且没有返回可用结论/)
+    }
+
+    // 重试入口：error 且没有 pending 审核员时，继续推进应允许重试评审
+    const { reviewAdvancePlan } = await import('../src/core/review.mjs')
+    const plan = reviewAdvancePlan(review.body.item)
+    assert.equal(plan.action, 'retry')
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('独立评审：已有 pending 评审时再派发保持幂等，不重复起审核员、不开启新轮次', async () => {
   const repo = await tempRepo()
   const a = fakeContext(repo, { withReviewAgents: true })
