@@ -15,6 +15,7 @@ import { h, confirmText, LocaleProvider, LOCALE_NAMESPACE, installLocaleDictiona
 import { API, STATUS_LABELS } from '../shared/api.mjs'
 import { REVIEWER_ROLES, REVIEW_STATUS_LABELS, REVIEW_STATUS_TONES, STAGE_LABELS, WORKFLOW_STAGES } from '../shared/workflow.mjs'
 import { describeReview, reviewAdvancePlan, reviewFailureHint } from '../core/review.mjs'
+import { normalizeAutomation } from '../shared/automation.mjs'
 import { isWeakTitle, requirementStatusLabel } from '../shared/requirement.mjs'
 import { attachmentLabel, isImageAttachment, normalizeAttachments } from '../shared/attachment.mjs'
 
@@ -34,6 +35,7 @@ function nextIntentOf(value) {
 }
 import { DevHubChat } from './chat.mjs'
 import { ClarificationWorkspace } from './clarifications.mjs'
+import { AutomationSettings } from './settings.mjs'
 import {
   Button,
   C,
@@ -636,6 +638,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 独立评审：派发中（审核会话要跑几十秒到几分钟，期间按钮必须锁住）；
   // advanceError 保存「自动开始评审失败」的原因，按钮旁内联展示，直到下次推进成功。
   const [reviewBusy, setReviewBusy] = useState(false)
+  // 自动化模式：null = 尚未读到设置；读到 full 才允许自动推进
+  const [automation, setAutomation] = useState(null)
+  const autoNextRef = useRef('')
   // reviewerId -> { alive, items, reason }：审核员子会话的最新动态（轮询，不跳会话也能看进度）
   const [reviewerProgress, setReviewerProgress] = useState({})
   const [advanceError, setAdvanceError] = useState('')
@@ -1161,15 +1166,15 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     )
   }
 
-  async function runTest(phase) {
+  async function runTest(phase, { auto = false } = {}) {
     // 阶段边界：功能流程先评审再测试；本机自测只在评审通过后的测试验证阶段执行
     const isAnalysisFlow = draft.workflow?.intent === 'analysis'
-    if (phase === 'local' && !isAnalysisFlow && reviewView.status !== 'passed') {
+    if (phase === 'local' && !isAnalysisFlow && reviewView.status !== 'passed' && reviewView.required !== false) {
       setError('独立评审通过后才进入测试验证：开发阶段请只改代码与测试代码，不要在开发会话里跑测试')
       return
     }
     const command = tests[phase]?.command || (phase === 'local' ? '项目配置的 localTest' : '项目配置的 environmentTest')
-    if (!confirmText(`执行${phase === 'local' ? '本机自测' : '环境测试'}？\n\n${command}`)) return
+    if (!auto && !confirmText(`执行${phase === 'local' ? '本机自测' : '环境测试'}？\n\n${command}`)) return
     setBusy(true); setError(''); setNotice('')
     try {
       await persistDraft()
@@ -1211,6 +1216,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       setSyncBusy(false)
     }
   }
+
+  useEffect(() => {
+    let alive = true
+    api(API.settings)
+      .then((body) => { if (alive) setAutomation(normalizeAutomation(body?.automation)) })
+      .catch(() => { if (alive) setAutomation({ mode: 'manual' }) })
+    return () => { alive = false }
+  }, [])
 
   // 评审是异步子代理：只靠一次 POST 返回时看不到中间态。pending 时轮询 /review，
   // 让审核员 sessionId、异常与最新结论能进界面；完成后自动停。
@@ -1305,6 +1318,41 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       setTab('review')
     } finally { setReviewBusy(false) }
   }
+
+  // 完全自动化：有评审的流程自动开始评审；通过后自动跑本机自测、环境测试，停在提交前。
+  // 只在流程详情打开、会话空闲、没有失败/待人工处理时推进，避免和开发会话抢跑。
+  useEffect(() => {
+    if (automation?.mode !== 'full' || busy || reviewBusy || sessionRunning) return
+    if (!draft?.id || draft.status === 'done' || draft.status === 'blocked') return
+    if (draft.workflow?.intent === 'analysis') return
+    const view = describeReview(draft)
+    if (['pending', 'failed', 'error', 'manual'].includes(view.status)) return
+    const taskList = Array.isArray(draft.tasks) ? draft.tasks : []
+    const allDone = taskList.length > 0 && taskList.every((task) => Boolean(task?.done))
+    const stage = draft.workflow?.stage ?? 'develop'
+    if (view.required && view.status === 'idle' && allDone && (stage === 'develop' || stage === 'review')) {
+      if (autoNextRef.current === 'review') return
+      autoNextRef.current = 'review'
+      startReview().finally(() => { autoNextRef.current = '' })
+      return
+    }
+    if (view.status !== 'passed' && view.required !== false) return
+    const local = tests.local ?? {}
+    const localDone = (local.status === 'passed' || local.status === 'skipped') && !local.stale
+    if (!localDone && local.status !== 'failed' && tests.local?.command) {
+      if (autoNextRef.current === 'local') return
+      autoNextRef.current = 'local'
+      runTest('local', { auto: true }).finally(() => { autoNextRef.current = '' })
+      return
+    }
+    const environment = tests.environment ?? {}
+    const envDone = (environment.status === 'passed' || environment.status === 'skipped') && !environment.stale
+    if (localDone && !envDone && environment.status !== 'failed' && tests.environment?.command) {
+      if (autoNextRef.current === 'environment') return
+      autoNextRef.current = 'environment'
+      runTest('environment', { auto: true }).finally(() => { autoNextRef.current = '' })
+    }
+  }, [automation, draft, sessionRunning, busy, reviewBusy, tests])
 
   /** 评审卡在 pending（常见于 DSH 重启/请求中断）：允许用户显式重置本轮后重试。 */
   async function resetReview() {
@@ -5304,11 +5352,14 @@ function DevHubPage({ ctx }) {
           { value: 'sessions', label: '会话' },
           { value: 'clarify', label: '需求澄清' },
           { value: 'skills', label: '技能' },
+          { value: 'settings', label: '设置' },
         ],
       }),
       ),
     ),
-    tab === 'clarify'
+    tab === 'settings'
+      ? h(AutomationSettings)
+      : tab === 'clarify'
       ? h(ClarificationWorkspace, {
         repoPath: flowList?.repo?.path ?? null,
         refreshNonce: clarifyNonce,

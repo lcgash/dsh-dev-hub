@@ -10,6 +10,7 @@ import { SUPPLEMENT_MAX, normalizeDocsConfig } from './techdoc.mjs'
 import { applyDerivedProgress } from './stage.mjs'
 import { normalizeReview } from './review.mjs'
 import { normalizeIntent } from './intent.mjs'
+import { normalizeAutomation } from '../shared/automation.mjs'
 
 /** Current schema version for both repo and local data. */
 export const SCHEMA_VERSION = 1
@@ -144,6 +145,8 @@ export async function loadProfile() {
     itemWorkspaces: raw.itemWorkspaces && typeof raw.itemWorkspaces === 'object' && !Array.isArray(raw.itemWorkspaces)
       ? raw.itemWorkspaces
       : {},
+    // 自动化推进设置：本机偏好，不写仓库；缺省为完全自动化
+    automation: normalizeAutomation(raw.automation),
   }
   // 迁移结果落盘一次，后续所有入口（state/setup/switchRepo）都看到干净 profile
   if (dirty) await writeJsonAtomic(PROFILE_PATH, profile)

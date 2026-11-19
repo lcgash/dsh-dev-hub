@@ -57,6 +57,7 @@ import { addCustomConstraint, installSkill, regenerateConventions, removeConstra
 import { PROMPT_VERSION, hashOf, inputHash, normalizeAnswers, planHash, pluginVersion, recordProvenance, specHash } from './core/provenance.mjs'
 import { reproPlan } from './core/repro.mjs'
 import { detectIntent, normalizeIntent } from './core/intent.mjs'
+import { normalizeAutomation } from './shared/automation.mjs'
 import { DISPATCH_SCHEMA, buildDispatchPrompt, fallbackDispatch, normalizeDispatch } from './core/dispatch.mjs'
 import { CLARIFY_SCHEMA, MAX_ROUNDS, buildClarifyPrompt, normalizeClarify } from './core/clarify.mjs'
 import {
@@ -5714,6 +5715,28 @@ export function apply(ctx) {
     },
     // ---------------------------------------------------------------- skills
     // 通用 skills（本工作站自带的规范包）：安装/卸载/自定义约束，直接写 .dev-hub/conventions.json
+    // 自动化设置：默认完全自动化；只控制工作站推进（评审/本机自测/环境测试），
+    // 提交与推送仍由人确认。
+    {
+      kind: 'exact',
+      path: API.settings,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        try {
+          const profile = await loadProfile()
+          if (req.method === 'GET') {
+            return sendJson(res, 200, { ok: true, automation: normalizeAutomation(profile.automation) })
+          }
+          if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'GET/POST only' })
+          const body = await readBody(req)
+          profile.automation = normalizeAutomation(body?.automation ?? body)
+          await saveProfile(profile)
+          return sendJson(res, 200, { ok: true, automation: profile.automation })
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
     {
       kind: 'exact',
       path: API.skills,

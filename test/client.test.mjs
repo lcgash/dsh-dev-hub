@@ -2125,3 +2125,17 @@ test('需求澄清多选：题目标注可多选，选项按 toggle 合并而不
   assert.match(chat, /toggle: option\.label/)
   assert.match(chat, /hasOwnProperty\.call\(patch, 'toggle'\)/)
 })
+
+test('自动化设置：默认完全自动化，详情页自动评审并自动跑测试到提交前', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const settings = await readFile(new URL('../src/client/settings.mjs', import.meta.url), 'utf8')
+  const automation = await readFile(new URL('../src/shared/automation.mjs', import.meta.url), 'utf8')
+  assert.match(automation, /mode: AUTOMATION_MODES\.includes\(value\.mode\) \? value\.mode : 'full'/)
+  assert.match(settings, /完全自动化（默认）/)
+  assert.match(settings, /人工触发每个节点/)
+  assert.match(index, /automation\?\.mode !== 'full'/)
+  assert.match(index, /runTest\('local', \{ auto: true \}\)/)
+  assert.match(index, /runTest\('environment', \{ auto: true \}\)/)
+  assert.match(index, /startReview\(\)\.finally\(\(\) => \{ autoNextRef\.current = '' \}\)/)
+})

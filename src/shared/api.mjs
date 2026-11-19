@@ -46,6 +46,7 @@ export const API = {
   clarify: '/api/dev-hub/clarify',
   requirement: '/api/dev-hub/requirement',
   attach: '/api/dev-hub/attach',
+  settings: '/api/dev-hub/settings',
   attachment: '/api/dev-hub/attachment',
   capabilities: '/api/dev-hub/capabilities',
   removeRepo: '/api/dev-hub/repo/remove',

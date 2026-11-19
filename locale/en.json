@@ -1353,7 +1353,19 @@
     "代码重构": "Code refactor",
     "重构": "Refactor",
     "代码重构：先补保护网，保持对外行为不变": "Code refactor: add a safety net first and keep external behavior unchanged",
-    "点击切换流程类型（bug 先复现/定位；feature 先对齐范围；refactor 保持行为不变并补保护网；analysis 只读分析、不进入提交）": "Click to switch the flow type (bug reproduces and locates first; feature aligns scope first; refactor keeps behavior unchanged and adds a safety net; analysis is read-only and never reaches commit)"
+    "点击切换流程类型（bug 先复现/定位；feature 先对齐范围；refactor 保持行为不变并补保护网；analysis 只读分析、不进入提交）": "Click to switch the flow type (bug reproduces and locates first; feature aligns scope first; refactor keeps behavior unchanged and adds a safety net; analysis is read-only and never reaches commit)",
+    "设置": "Settings",
+    "已开启完全自动化：评审、本机自测、环境测试会按阶段自动推进，停在提交前": "Full automation enabled: review, local test and environment test advance automatically by stage, stopping before submit",
+    "已切换为人工触发：每个节点都需要你确认": "Switched to manual: every step needs your confirmation",
+    "自动化推进": "Automation",
+    "控制工作站自己的推进动作：评审、本机自测、环境测试。提交与推送始终由你确认，默认不会自动改远端分支。": "Controls the workstation’s own steps: review, local test and environment test. Submit/push always needs your confirmation; the remote branch is not changed automatically by default.",
+    "正在读取设置…": "Loading settings…",
+    "完全自动化（默认）": "Full automation (default)",
+    "开发任务完成 → 自动开始评审；评审通过 → 自动跑本机自测 → 自动跑环境测试；到「待提交」停下。评审未通过仍会退回开发，不会自动改代码。": "When development tasks finish, review starts automatically; after review passes, the local test and environment test run automatically; it stops at “ready to submit”. A failed review still returns to development and never edits code automatically.",
+    "人工触发每个节点": "Manual step-by-step",
+    "评审、本机自测、环境测试都由你点按钮触发；工作站只提示下一步，不自动执行。": "Review, local test and environment test are triggered by your clicks; the workstation only suggests the next step.",
+    "保存设置": "Save settings",
+    "说明：自动化在开发站打开并读取到流程状态时生效；开发会话还在跑时不会抢跑。默认完全自动化，但不会自动提交/推送。": "Note: automation runs while the workstation is open and has the flow state; it will not race a running development session. The default is full automation, but submit/push remains manual."
   },
   "templates": {
     "成员 {name}": "Member {name}",
@@ -1801,7 +1813,8 @@
     "验收项已全部通过（{count} 个）": "All acceptance checks passed ({count}).",
     "提交前验收失败：{error}": "Pre-submit acceptance failed: {error}",
     "{value1}；流程直接进入测试验证。": "{value1}; the flow goes directly to verification.",
-    "{value1} 位审核员": "{value1} reviewer(s)"
+    "{value1} 位审核员": "{value1} reviewer(s)",
+    "保存失败：{value1}": "Failed to save: {value1}"
   },
   "templateValues": {
     "通过": "passed",

@@ -627,3 +627,28 @@ test('独立评审：审核员会话异常时标记待处理，绝不当成通�
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('自动化设置：默认完全自动化，可切换人工触发并持久化', async () => {
+  const repo = await tempRepo()
+  const { ctx, routes } = fakeContext(repo)
+  try {
+    apply(ctx)
+    await call(routes, API.setup, { method: 'POST', body: { repoPath: repo, name: '张三' } })
+    const defaults = await call(routes, API.settings)
+    assert.equal(defaults.status, 200, JSON.stringify(defaults.body))
+    assert.equal(defaults.body.automation.mode, 'full')
+
+    const manual = await call(routes, API.settings, { method: 'POST', body: { automation: { mode: 'manual' } } })
+    assert.equal(manual.status, 200)
+    assert.equal(manual.body.automation.mode, 'manual', JSON.stringify(manual.body))
+    const reread = await call(routes, API.settings)
+    assert.equal(reread.body.automation.mode, 'manual')
+
+    const invalid = await call(routes, API.settings, { method: 'POST', body: { automation: { mode: 'whatever' } } })
+    assert.equal(invalid.status, 200)
+    assert.equal(invalid.body.automation.mode, 'full')
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true })
+  }
+})
