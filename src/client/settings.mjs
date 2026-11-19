@@ -130,8 +130,6 @@ export function AutomationSettings() {
         active: section === entry.id,
         onClick: () => setSection(entry.id),
       }, entry.label)),
-      h('div', { style: { ...styles.sectionHint, padding: '8px 10px', lineHeight: 1.7 } },
-        '以后新增的设置会按分类放在这里，不再把开关堆成一页。'),
     ),
     h('main', { style: { display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 } },
       h('div', { style: { display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' } },
