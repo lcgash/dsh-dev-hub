@@ -53,7 +53,7 @@ test('技能库：内置了前端原型规范包，约束带 ui- 前缀且覆盖
   assert.equal(pack.level, 'L1')
   assert.deepEqual(pack.autoInstall, ['frontend'], '只在命中前端框架的仓库默认安装')
   const ids = pack.constraints.map((constraint) => constraint.id)
-  for (const required of ['ui-authority', 'ui-tokens', 'ui-semantic', 'ui-radius', 'ui-hierarchy', 'ui-overlay', 'ui-reuse', 'ui-stack', 'ui-mock', 'ui-checklist']) {
+  for (const required of ['ui-authority', 'ui-tokens', 'ui-semantic', 'ui-radius', 'ui-density', 'ui-hierarchy', 'ui-overlay', 'ui-shell', 'ui-progressive', 'ui-loading', 'ui-interaction', 'ui-charts', 'ui-reuse', 'ui-stack', 'ui-mock', 'ui-checklist']) {
     assert.ok(ids.includes(required), `前端原型包缺少约束：${required}`)
   }
   assert.ok(pack.constraints.every((constraint) => constraint.id.startsWith('ui-')), '统一用 ui- 前缀便于识别')

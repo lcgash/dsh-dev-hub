@@ -38,11 +38,13 @@ export const T = {
   okSoft: '#e2ffee',
   danger: '#de350d',
   dangerSoft: '#ffebe5',
-  warn: '#ca8a04',
+  // 警告用家族标准 #ffab00；正文仍用更深的 warnText 保证对比度
+  warn: '#ffab00',
   warnText: '#b65c00',
   warnSoft: '#fff8e6',
-  info: '#0c62ff',
-  infoSoft: '#eaf1ff',
+  // 信息/进行中归到品牌紫，避免又引入一套蓝色
+  info: '#6049e7',
+  infoSoft: '#f0edff',
   // 四级灰阶 + 表面
   text: DS.label1,
   text2: DS.label2,
@@ -120,7 +122,8 @@ export const styles = {
     alignItems: 'center',
     gap: T.gap.sm,
     flexWrap: 'wrap',
-    padding: '12px 24px',
+    minHeight: 48,
+    padding: '8px 24px',
     borderBottom: `1px solid ${T.borderSoft}`,
     background: T.surface,
     flex: '0 0 auto',
