@@ -71,7 +71,7 @@ export const T = {
   font: {
     xs: 11,
     sm: 12,
-    base: 13,
+    base: 14,
     md: 14,
     lg: 16,
     stat: 22,
