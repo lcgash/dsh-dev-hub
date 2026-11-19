@@ -1368,7 +1368,20 @@
     "说明：自动化在开发站打开并读取到流程状态时生效；开发会话还在跑时不会抢跑。默认完全自动化，但不会自动提交/推送。": "Note: automation runs while the workstation is open and has the flow state; it will not race a running development session. The default is full automation, but submit/push remains manual.",
     "已保存：完全自动化 + 已关闭独立评审，流程直接进入测试验证": "Saved: full automation with independent review disabled; flows go straight to verification",
     "启用独立评审环节": "Enable independent review",
-    "默认开启。开启时按工程量决定评审强度（S 免评审，M 1 位，L/XL 2 位）；关闭后所有流程跳过独立评审，直接进入测试验证。已经失败的评审仍会保留，不会替你忽略。": "Enabled by default. When on, review strength follows the effort estimate (S skipped, M one reviewer, L/XL two). When off, all flows skip independent review and go straight to verification. Existing failed reviews are kept and are not silently ignored."
+    "默认开启。开启时按工程量决定评审强度（S 免评审，M 1 位，L/XL 2 位）；关闭后所有流程跳过独立评审，直接进入测试验证。已经失败的评审仍会保留，不会替你忽略。": "Enabled by default. When on, review strength follows the effort estimate (S skipped, M one reviewer, L/XL two). When off, all flows skip independent review and go straight to verification. Existing failed reviews are kept and are not silently ignored.",
+    "已保存：评审、本机自测、环境测试会自动推进，停在提交前": "Saved: review, local test and environment test advance automatically and stop before submit",
+    "已保存：每个节点都需要你手动触发": "Saved: every step needs to be triggered manually",
+    "以后新增的设置会按分类放在这里，不再把开关堆成一页。": "Future settings will be grouped here instead of piling every switch onto one page.",
+    "控制工作站自己的推进动作；提交与推送始终由你确认。": "Controls the workstation’s own steps; submit and push always need your confirmation.",
+    "控制是否引入独立评审，以及按规模选择评审强度。": "Controls whether independent review is used and how strong it is for each size.",
+    "开发任务完成 → 自动开始评审；评审通过 → 自动跑本机自测 → 自动跑环境测试；到「待提交」停下。": "When development tasks finish, review starts automatically; after review passes, the local test and environment test run automatically; it stops at “ready to submit”.",
+    "评审、本机自测、环境测试都由你点按钮触发；工作站只提示下一步。": "Review, local test and environment test are triggered by your clicks; the workstation only suggests the next step.",
+    "当前：自动开始评审、自动跑本机自测和环境测试，停在提交前；评审未通过仍会退回开发，不会自动改代码。": "Current: review, local test and environment test run automatically and stop before submit; a failed review still returns to development and never edits code automatically.",
+    "当前：每个节点都停下来等你点；工作站只给出下一步提示。": "Current: every step waits for your click; the workstation only suggests the next step.",
+    "自动化在流程详情打开并读取到状态时生效；开发会话还在跑时不会抢跑。提交/推送始终手动确认。": "Automation runs while the flow detail is open and has the state; it will not race a running development session. Submit/push is always manual.",
+    "开启时按工程量决定评审强度（S 免评审，M 1 位，L/XL 2 位）；关闭后所有流程跳过独立评审，直接进入测试验证。已经失败的评审仍会保留，不会替你忽略。": "When on, review strength follows the effort estimate (S skipped, M one reviewer, L/XL two). When off, all flows skip independent review and go straight to verification. Existing failed reviews are kept and are not silently ignored.",
+    "当前：独立评审已关闭；开发完成后直接进入测试验证。": "Current: independent review is off; after development the flow goes straight to verification.",
+    "当前：独立评审已开启；小改动仍会按规模自动免评审，中大改动保留评审。": "Current: independent review is on; small changes still skip it by size, medium/large changes keep review."
   },
   "templates": {
     "成员 {name}": "Member {name}",
@@ -1817,7 +1830,8 @@
     "提交前验收失败：{error}": "Pre-submit acceptance failed: {error}",
     "{value1}；流程直接进入测试验证。": "{value1}; the flow goes directly to verification.",
     "{value1} 位审核员": "{value1} reviewer(s)",
-    "保存失败：{value1}": "Failed to save: {value1}"
+    "保存失败：{value1}": "Failed to save: {value1}",
+    "读取设置失败：{value1}": "Failed to load settings: {value1}"
   },
   "templateValues": {
     "通过": "passed",
