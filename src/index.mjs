@@ -2763,12 +2763,14 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
       constraints: evidence.constraints,
       total: started.reviewers.length,
     })
-    const result = await runAgentJson(ctx, {
+    const runOnce = (attempt = 1) => runAgentJson(ctx, {
       cwd: evidence.cwd,
       prompt,
       schema: REVIEW_SCHEMA,
-      label: `devhub-${reviewer.id}`,
-      timeoutMs: 150000,
+      label: `devhub-${reviewer.id}${attempt > 1 ? '-retry' : ''}`,
+      // 大改动的审核员要读多个文件/调用方；150s 很容易在读完前被 abort。
+      // 允许用环境变量覆盖，默认给 5 分钟。
+      timeoutMs: Number(process.env.DEVHUB_REVIEW_TIMEOUT_MS) || 300000,
       onStarted: async ({ sessionId }) => {
         // 先落 sessionId，UI 轮询时立刻能看到“审核会话已启动”，而不是永远显示 —
         const current = saved.workflow?.review
@@ -2782,6 +2784,20 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
         await saveItem(repo, saved)
       },
     })
+    let result
+    try {
+      result = await runOnce()
+    } catch (error) {
+      // subagent 偶尔会在启动/收尾阶段被 abort；同一轮自动重试一次，
+      // 避免整轮评审直接变成“审核员异常”，让用户只能手工重试。
+      if (!/aborted|未正常完成|超时|中断/i.test(String(error?.message ?? error))) throw error
+      await new Promise((resolve) => setTimeout(resolve, 800))
+      try {
+        result = await runOnce(2)
+      } catch (retryError) {
+        throw new Error(`${String(error?.message ?? error)}；自动重试仍失败：${String(retryError?.message ?? retryError)}`)
+      }
+    }
     const normalized = normalizeReviewerVerdict(result.value)
     if (!normalized.verdict) {
       return {

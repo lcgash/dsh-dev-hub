@@ -120,9 +120,13 @@ export async function runAgentJson(ctx, { cwd, prompt, schema, label = 'devhub-a
     const value = result?.structured ?? extractJson(textOf(result?.output))
     if (result?.stopReason && result.stopReason !== 'completed') {
       if (!value) {
+        const detail = result.diagnostic
+          || timer.signal?.reason?.message
+          || timer.signal?.reason
+          || ''
         throw new Error([
           `agent 未正常完成：${result.stopReason}`,
-          result.diagnostic ? `（${result.diagnostic}）` : '',
+          detail ? `（${detail}）` : '',
           textOf(result?.output).slice(-300),
         ].join(''))
       }

@@ -35,3 +35,12 @@ test('runAgentJson：agent 收尾报错但已产出合法 JSON 时仍返回结�
   assert.deepEqual(result.value, { reply: '已经生成好了', questions: [] })
   assert.equal(result.sessionId, 'child-1')
 })
+
+test('runAgentJson：没有 JSON 的 aborted 结果要带出 diagnostic，不能只报 aborted', async () => {
+  await assert.rejects(
+    runAgentJson(fakeCtx({ stopReason: 'aborted', diagnostic: '模型会话被中断（超时）' }), {
+      cwd: '/tmp', prompt: 'x', schema: { type: 'object' }, label: 'test',
+    }),
+    /aborted.*模型会话被中断/,
+  )
+})

@@ -700,6 +700,7 @@ export function reviewerPrompt({
     `你是 DevHub 开发工作站的独立审核员 ${order}/${total}（${reviewer?.label ?? role.label}）。你没有参与这次实现，任务是独立判断这次改动能否通过评审。`,
     `审核视角：${role.label} —— ${role.focus}`,
     '只读纪律：只允许 glob / grep / read / git diff 等只读命令；绝不修改、创建、删除文件，不运行会写盘或改变环境的命令。',
+    '时间有限：先看变更清单与 diff，按验收标准定向读关键文件/调用方；不要从零全仓搜索，也不要重复读同一文件。',
     '',
     '【流程】',
     `- 开发项：${item.id}`,
@@ -769,12 +770,12 @@ export function reviewerPrompt({
   const points = Array.isArray(item.changePoints) ? item.changePoints : []
   if (points.length) {
     lines.push('', '【开发者记录的变更点（用于理解取舍，不能替代你的判断）】')
-    for (const point of points.slice(0, 20)) lines.push(`- ${point.summary}`)
+    for (const point of points.slice(0, 20)) lines.push(`- ${str(point.summary, 400)}`)
   }
   const notes = Object.entries(item.fileNotes ?? {})
   if (notes.length) {
     lines.push('', '【文件改动说明（开发者自述）】')
-    for (const [path, entry] of notes.slice(0, 20)) lines.push(`- ${path}：${entry.note}`)
+    for (const [path, entry] of notes.slice(0, 20)) lines.push(`- ${path}：${str(entry.note, 400)}`)
   }
   if ((item.risks ?? []).length) {
     lines.push('', '【已知风险/阻塞】', ...item.risks.map((risk) => `- ${risk}`))
@@ -782,7 +783,7 @@ export function reviewerPrompt({
   const history = (item.history ?? []).slice(-10)
   if (history.length) {
     lines.push('', '【最近的流程记录】')
-    for (const entry of history) lines.push(`- ${entry.at ?? ''} ${entry.message ?? ''}`)
+    for (const entry of history) lines.push(`- ${entry.at ?? ''} ${str(entry.message, 400)}`)
   }
   if ((constraints ?? []).length) {
     lines.push('', '【仓库规范约束（硬规则）】', ...constraints.slice(0, 20).map((rule) => `- ${rule}`))
