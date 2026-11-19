@@ -468,7 +468,7 @@ test('attention：评审未通过/异常/进行中/待派发各有显式信号',
   })
   assert.equal(deriveAttention(bound(normalizeReview({ reviewers: [reviewer('reviewer-1', 'failed')] }))).kind, 'review-failed')
   assert.equal(deriveAttention(bound(normalizeReview({ reviewers: [reviewer('reviewer-1', 'error')] }))).kind, 'review-error')
-  assert.equal(deriveAttention(bound(normalizeReview({ reviewers: [reviewer('reviewer-1', 'pending')] }))).kind, 'review-pending')
+  assert.equal(deriveAttention(bound(normalizeReview({ reviewers: [reviewer('reviewer-1', 'pending')] }))), null)
   assert.equal(deriveAttention(bound(null)).kind, 'ready-review')
   assert.equal(
     deriveAttention(bound(normalizeReview({ reviewers: [reviewer('reviewer-1', 'passed')] }))).kind,

@@ -39,7 +39,9 @@ export function deriveAttention(item, { running = false, pendingQuestions = 0, p
   const review = describeReview(item)
   if (review.status === 'failed') return { kind: 'review-failed', label: '独立评审未通过，需要纠偏', tone: 'danger' }
   if (review.status === 'error') return { kind: 'review-error', label: '评审异常待处理', tone: 'warn' }
-  if (review.status === 'pending') return { kind: 'review-pending', label: '独立评审进行中', tone: 'neutral' }
+  // 评审进行中是「正在跑」，不是用户待处理；放进抽屉的「进行中」分组即可，
+  // 否则首页「进行中」和抽屉「需要你处理」会同时显示同一条评审。
+  if (review.status === 'pending') return null
   if (local === 'failed') return { kind: 'test-failed', label: '本机自测失败', tone: 'danger' }
   // 本机自测人工跳过：下一步是环境测试（或也跳过），不能反过来提示“跑本机自测”
   if (stage === 'verify' && review.status === 'passed'
