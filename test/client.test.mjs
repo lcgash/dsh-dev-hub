@@ -2157,3 +2157,12 @@ test('评审启动：POST 未返回前先显示 pending，避免顶栏评审中�
   assert.match(index, /status: 'pending'/)
   assert.match(index, /setDraft\(beforeReview\)/)
 })
+
+test('评审中/异常可人工通过；错误轮次重试先 reset 再 dispatch', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(index, /\['failed', 'error', 'pending'\]\.includes\(view\.status\)/)
+  assert.match(index, /disabled: overrideBusy \|\| busy/)
+  assert.match(index, /if \(current\.status === 'error'\) \{/)
+  assert.match(index, /action: 'reset'/)
+})

@@ -701,3 +701,45 @@ test('自动化设置：默认完全自动化，可切换人工触发并持久�
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('评审进行中/异常：人工通过会停止本轮并标记 manualOverride，晚到结果不能覆盖', async () => {
+  const repo = await tempRepo()
+  const { ctx, routes } = fakeContext(repo)
+  try {
+    apply(ctx)
+    await call(routes, API.setup, { method: 'POST', body: { repoPath: repo, name: '张三' } })
+    const created = await call(routes, API.items, {
+      method: 'POST',
+      body: {
+        id: 'review-pending-override',
+        title: '评审中人工通过',
+        goal: '验证人工通过',
+        workflow: {
+          stage: 'review',
+          review: {
+            status: 'pending',
+            round: 1,
+            dispatchedAt: new Date().toISOString(),
+            reviewers: [
+              { id: 'reviewer-1', label: '审核员 1', role: 'direction', status: 'pending', verdict: null, findings: [] },
+              { id: 'reviewer-2', label: '审核员 2', role: 'correctness', status: 'pending', verdict: null, findings: [] },
+            ],
+          },
+        },
+        tasks: [],
+      },
+    })
+    assert.equal(created.status, 200, JSON.stringify(created.body))
+    const overridden = await call(routes, API.review, {
+      method: 'POST',
+      body: { id: 'review-pending-override', action: 'override', summary: '确认放行' },
+    })
+    assert.equal(overridden.status, 200, JSON.stringify(overridden.body))
+    assert.equal(overridden.body.review.status, 'passed')
+    assert.ok(overridden.body.review.manualOverrideAt)
+    assert.ok(overridden.body.review.reviewers.every((reviewer) => reviewer.status === 'passed' && reviewer.source === 'manual'))
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true })
+  }
+})

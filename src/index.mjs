@@ -2784,7 +2784,8 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
         // 失联时也能用 parentSessionId 判断协程是不是真的还在。
         // 写回前确认还是本轮：超时重试/重置后，旧协程的启动回调不能覆盖新轮次。
         const latest = await readItemLocal(profile, repo, item.id)
-        if (!latest || latest.workflow?.review?.dispatchedAt !== started.dispatchedAt) return
+        if (!latest || latest.workflow?.review?.dispatchedAt !== started.dispatchedAt
+          || latest.workflow?.review?.manualOverrideAt) return
         const current = latest.workflow?.review
         if (!current || !Array.isArray(current.reviewers)) return
         latest.workflow.review = {
@@ -2834,6 +2835,7 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
   saved = await readItemLocal(profile, repo, item.id)
   const latestReview = saved?.workflow?.review
   if (!saved || !latestReview
+    || latestReview.manualOverrideAt
     || latestReview.dispatchedAt !== started.dispatchedAt
     || Number(latestReview.round) !== Number(started.round)) {
     return saved ?? item
@@ -2873,15 +2875,17 @@ function recordReviewOutcome(item, body = {}) {
   })
 }
 
-/** 人工确认忽略拒绝：把本轮所有 failed/error 审核员标成人工通过；pending 不允许跳过。 */
+/** 人工确认忽略/停止本轮：把未通过或未返回的审核员标成人工通过；晚到结果不能再覆盖。 */
 function overrideReviewRejections(item, body = {}) {
   const view = describeReview(item)
-  if (view.status !== 'failed' && view.status !== 'error') throw new Error('当前评审没有可忽略的拒绝')
+  if (!['failed', 'error', 'pending'].includes(view.status)) throw new Error('当前评审没有可人工通过的内容')
   if (view.reworkAt && !view.exhausted) throw new Error('纠偏意见已发回开发返工：本轮不再允许人工通过，请完成修改后重新评审')
-  if (view.pending > 0) throw new Error('还有审核员未返回结论：先等结论或重置本轮，不能忽略')
-  const targets = (view.reviewers ?? []).filter((reviewer) => reviewer.status === 'failed' || reviewer.status === 'error')
-  if (!targets.length) throw new Error('当前评审没有 failed/error 审核员')
+  // 正在评审时也允许人工通过：把本轮所有未通过/未返回的审核员标为人工通过，
+  // 并记录 manualOverrideAt，让晚到的审核员结果不能覆盖这个决定。
+  const targets = (view.reviewers ?? []).filter((reviewer) => reviewer.status !== 'passed')
+  if (!targets.length) throw new Error('当前评审没有需要人工通过的审核员')
   const summary = String(body.summary ?? '').trim() || '人工确认忽略本轮评审拒绝，保留原意见并继续交付'
+  const manualOverrideAt = new Date().toISOString()
   for (const reviewer of targets) {
     item.workflow.review = applyReviewerOutput(item.workflow.review, reviewer.id, {
       verdict: 'pass',
@@ -2892,6 +2896,7 @@ function overrideReviewRejections(item, body = {}) {
       error: '',
     })
   }
+  item.workflow.review = { ...item.workflow.review, manualOverrideAt }
   return item
 }
 

@@ -638,6 +638,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 独立评审：派发中（审核会话要跑几十秒到几分钟，期间按钮必须锁住）；
   // advanceError 保存「自动开始评审失败」的原因，按钮旁内联展示，直到下次推进成功。
   const [reviewBusy, setReviewBusy] = useState(false)
+  const [overrideBusy, setOverrideBusy] = useState(false)
   // 自动化模式：null = 尚未读到设置；读到 full 才允许自动推进
   const [automation, setAutomation] = useState(null)
   const autoNextRef = useRef('')
@@ -1303,10 +1304,23 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         return
       }
     }
+    const beforeReview = draft
     setReviewBusy(true); setError(''); setNotice(''); setAdvanceError('')
+    try {
+      // error 轮次可能还有 exec 标签挂在旧会话上：先清空本轮，再重新派发，
+      // 否则 Host 会把它当成“正在返回的 error 轮”幂等返回，界面转一下却没有新评审。
+      if (current.status === 'error') {
+        const reset = await postAllowingFailure(API.review, { id: draft.id, action: 'reset' })
+        if (!reset.ok && reset.error) throw new Error(reset.error)
+      }
+    } catch (err) {
+      setDraft(beforeReview)
+      setReviewBusy(false)
+      setAdvanceError(`重试评审失败：${errorText(err)}`)
+      return
+    }
     // 评审 POST 会等到审核员返回才返回（可能几分钟）。在这之前先把 UI 推到 pending，
     // 否则顶栏显示“评审中”，阶段条/评审页却还停在“开发中 / 未评审”。
-    const beforeReview = draft
     const count = current.total || current.policy?.reviewers || 2
     const optimisticReviewers = Array.from({ length: Math.max(1, Math.min(3, count)) }, (_, index) => ({
       id: `reviewer-${index + 1}`,
@@ -1408,13 +1422,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
 
   /** 显式评审调整：确认忽略本轮拒绝后，把所有 failed/error 审核员标为人工通过，再进入测试验证。 */
   async function overrideReview() {
-    if (reviewBusy || busy) return
+    if (overrideBusy || busy) return
     const view = describeReview(draft)
-    if (view.status !== 'failed' && view.status !== 'error') return
-    const count = (view.reviewers ?? []).filter((reviewer) => reviewer.status === 'failed' || reviewer.status === 'error').length
+    if (!['failed', 'error', 'pending'].includes(view.status)) return
+    const count = (view.reviewers ?? []).filter((reviewer) => reviewer.status !== 'passed').length
+    const label = view.status === 'pending' ? '评审进行中' : view.status === 'error' ? '评审异常' : '评审未通过'
     if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-      && !window.confirm(`评审未通过（${count} 位拒绝/异常）。确认忽略本轮评审拒绝并继续交付？\n\n原审核意见会保留在流程历史与报告中，标记为人工通过。`)) return
-    setReviewBusy(true); setError(''); setNotice(''); setAdvanceError('')
+      && !window.confirm(`${label}（${count} 位未通过/未返回）。确认停止本轮并人工通过？\n\n原审核意见会保留在流程历史与报告中，晚到的审核结果不会再覆盖这个决定。`)) return
+    setOverrideBusy(true); setError(''); setNotice(''); setAdvanceError('')
     try {
       const body = await postAllowingFailure(API.review, { id: draft.id, action: 'override' })
       if (!body.item) throw new Error(body.error || 'Host 没有返回流程')
@@ -1426,7 +1441,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         : '已记录评审调整，但仍有审核员未返回；先处理 pending/重置本轮')
     } catch (err) {
       setError(`评审调整失败：${errorText(err)}`)
-    } finally { setReviewBusy(false) }
+    } finally { setOverrideBusy(false) }
   }
 
   async function loadChanges() {
@@ -2836,20 +2851,24 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         advanceError
           ? h('div', { style: { ...styles.dangerCard, marginTop: T.gap.xs } }, advanceError)
           : null,
-        view.status === 'failed'
-          ? (view.reworkAt && !view.exhausted
+        (view.status === 'failed' || view.status === 'error' || view.status === 'pending')
+          ? ((view.reworkAt && !view.exhausted) && view.status === 'failed'
             ? h('div', { style: { ...styles.infoCard, marginTop: T.gap.xs } },
               '纠偏意见已发回开发会话返工。完成修改后点「重新评审」（测试仍由工作站「测试验证」阶段执行）；本轮不再提供人工通过，避免返工中绕回评审门禁。')
             : h('div', { style: { ...styles.warnCard, marginTop: T.gap.xs, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
               h('span', { style: { fontSize: T.font.sm, color: T.warnText, flex: '1 1 360px' } },
-                view.exhausted
-                  ? `已自动评审/返工 ${view.round}/${view.maxRounds} 轮，达到上限；系统不再自动继续纠偏。请人工决定：人工通过本轮，或重置后手工重试。`
-                  : '评审未通过。默认应把纠偏意见发回开发会话返工；如果确认这次拒绝可以忽略，点右侧「人工通过本轮」放行到测试/提交，原意见会保留。'),
+                view.status === 'pending'
+                  ? '评审进行中。如果确认本轮可以放行，点「人工通过本轮」会停止本轮评审并直接进入测试/提交；晚到的审核结果不会再覆盖这个决定。'
+                  : view.status === 'error'
+                    ? '评审异常/有审核员未返回。可以重试评审，或确认可忽略后点「人工通过本轮」停止本轮并继续交付；原意见会保留。'
+                    : view.exhausted
+                      ? `已自动评审/返工 ${view.round}/${view.maxRounds} 轮，达到上限；系统不再自动继续纠偏。请人工决定：人工通过本轮，或重置后手工重试。`
+                      : '评审未通过。默认应把纠偏意见发回开发会话返工；如果确认这次拒绝可以忽略，点右侧「人工通过本轮」放行到测试/提交，原意见会保留。'),
               h(Button, {
                 style: { height: 30, padding: '0 12px', fontSize: T.font.sm, fontWeight: 600, color: T.warnText, background: T.warnSoft, borderColor: T.warn },
-                disabled: reviewBusy || busy,
+                disabled: overrideBusy || busy,
                 onClick: overrideReview,
-                children: '人工通过本轮',
+                children: overrideBusy ? '处理中…' : '人工通过本轮',
               })))
           : null,
         h('div', { style: { ...styles.sectionHint, marginTop: 4 } },

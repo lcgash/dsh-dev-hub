@@ -155,6 +155,8 @@ export function normalizeReview(raw) {
     decidedAt: raw.decidedAt || null,
     // 纠偏意见已发回开发：此时不允许人工通过，等重新评审后再决定
     reworkAt: raw.reworkAt || null,
+    // 人工通过后禁止晚到的审核员结果覆盖（停止本轮语义）
+    manualOverrideAt: raw.manualOverrideAt || null,
     basis: normalizeBasis(raw.basis),
     // 代码/诉求在评审后有改动 → 结论作废（历史轮次保留，谁在什么结论上被作废可追溯）
     invalidatedAt: raw.invalidatedAt || null,
@@ -269,6 +271,7 @@ export function startReviewRound(review, { count, at = new Date().toISOString(),
     dispatchedAt: at,
     decidedAt: null,
     reworkAt: null,
+    manualOverrideAt: null,
     basis: normalizeBasis(basis) ?? previous?.basis ?? null,
     reviewers: slots.map((slot) => ({
       ...slot,
@@ -554,6 +557,7 @@ export function describeReview(item) {
     dispatchedAt: review?.dispatchedAt ?? null,
     decidedAt: review?.decidedAt ?? null,
     reworkAt: review?.reworkAt ?? null,
+    manualOverrideAt: review?.manualOverrideAt ?? null,
     basis: review?.basis ?? null,
     total: reviewers.length,
     passed,
