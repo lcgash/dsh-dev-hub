@@ -5155,6 +5155,8 @@ function DevHubPage({ ctx }) {
   // 点「新建流程」时自增：即使仍在同一个 scope（都显示为 new），也必须重建聊天组件，
   // 否则旧对话的计划卡片会留在屏幕上，用户点确认就绕过澄清直接建了流程。
   const [chatNonce, setChatNonce] = useState(0)
+  // 进入聊天时绑定的项目：外部 activeRepo 变化时聊天页据此切回，避免会话看起来丢失
+  const [chatRepoPath, setChatRepoPath] = useState(null)
   // 需求澄清工作区刷新信号：新建/删除/打开草稿后重新读 chat store
   const [clarifyNonce, setClarifyNonce] = useState(0)
   const [flowsNonce, setFlowsNonce] = useState(0)
@@ -5299,6 +5301,7 @@ function DevHubPage({ ctx }) {
 
   function openChat(scope = null, hint = null, { fresh = false } = {}) {
     const repoPath = flowList?.repo?.path
+    if (repoPath) setChatRepoPath(repoPath)
     if (fresh && repoPath) {
       startNewChat(repoPath, '新对话', 'new')
       // 关键：同一 scope 下也强制重建 DevHubChat，避免旧计划/旧 pendingPlan 继续可见
@@ -5443,6 +5446,7 @@ function DevHubPage({ ctx }) {
         key: `${flowList?.repo?.path ?? 'none'}:${chatScope ?? 'new'}:${chatNonce}`,
         scopeId: chatScope,
         scopeTitle: flowHint?.title ?? '',
+        lockedRepoPath: chatRepoPath,
         // 聊天页不再回写顶栏目标：聊天自己的 /state 可能晚到/属于别的目标，
         // 回写会把正在看的流程顶栏覆盖成另一个多库项目（顶栏只认自己的 /state 序列）。
         onFlowsChanged: () => setFlowsNonce((current) => current + 1),

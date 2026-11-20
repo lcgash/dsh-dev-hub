@@ -2166,3 +2166,14 @@ test('评审中/异常可人工通过；错误轮次重试先 reset 再 dispatch
   assert.match(index, /if \(current\.status === 'error'\) \{/)
   assert.match(index, /action: 'reset'/)
 })
+
+test('需求澄清：聊天绑定进入时的项目，外部切换后自动切回而不是换掉会话', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(chat, /lockedRepoPath/)
+  assert.match(chat, /state\.repo\.path === lockedRepoPath/)
+  assert.match(chat, /api\(API\.switchRepo/)
+  assert.match(index, /setChatRepoPath\(repoPath\)/)
+  assert.match(index, /lockedRepoPath: chatRepoPath/)
+})

@@ -1844,7 +1844,8 @@
     "{value1}（{value2} 位未通过/未返回）。确认停止本轮并人工通过？\n\n原审核意见会保留在流程历史与报告中，晚到的审核结果不会再覆盖这个决定。": "{value1} ({value2} not passed/returned). Stop this round and approve manually?\n\nOriginal review comments stay in the flow history and report; late reviewer results will not override this decision.",
     "已确认候选文件：{value1} 个": "Confirmed candidate files: {value1}",
     "…还有 {value1} 个": "…and {value1} more",
-    "当前在需求澄清页，切换到「{value1}」会离开当前项目；澄清草稿已保存在原项目。继续？": "You are on the clarification page. Switching to \"{value1}\" leaves the current project; the clarification draft is saved in the original project. Continue?"
+    "当前在需求澄清页，切换到「{value1}」会离开当前项目；澄清草稿已保存在原项目。继续？": "You are on the clarification page. Switching to \"{value1}\" leaves the current project; the clarification draft is saved in the original project. Continue?",
+    "当前项目被切换，且无法切回原项目：{value1}": "The current project was switched and the original project could not be restored: {value1}"
   },
   "templateValues": {
     "通过": "passed",

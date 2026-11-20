@@ -1137,7 +1137,7 @@ export function clipboardFiles(clipboard) {
   })
 }
 
-export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted, scopeId = null, scopeTitle = '' }) {
+export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted, scopeId = null, scopeTitle = '', lockedRepoPath = null }) {
   const [state, setState] = useState(null)
   const [stateError, setStateError] = useState('')
   const [loadingState, setLoadingState] = useState(true)
@@ -1217,6 +1217,27 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   }, [])
 
   useEffect(() => { loadState() }, [])
+  // 聊天页有自己的项目归属：外部把 activeRepo 切走后自动切回来，
+  // 否则整块聊天会重新挂载到另一个项目，看起来像“会话突然丢了”。
+  useEffect(() => {
+    if (!lockedRepoPath || !state?.repo?.path || state.repo.path === lockedRepoPath) return undefined
+    let alive = true
+    const restore = async () => {
+      try {
+        const body = await api(API.switchRepo, {
+          method: 'POST',
+          body: JSON.stringify({ repoPath: lockedRepoPath, name: state?.profile?.member ?? null, detect: false }),
+        })
+        if (!alive) return
+        setState(body)
+        onFlowsChanged?.()
+      } catch (err) {
+        if (alive) setStateError(`当前项目被切换，且无法切回原项目：${errorText(err)}`)
+      }
+    }
+    restore()
+    return () => { alive = false }
+  }, [lockedRepoPath, state?.repo?.path])
 
   // 模型是否支持图片输入：拿不到能力就按"不支持"提示，图片不会被静默丢掉
   useEffect(() => {
