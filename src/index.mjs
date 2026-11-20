@@ -551,9 +551,10 @@ async function detectEditors() {
   const isMac = process.platform === 'darwin'
   const isWin = process.platform === 'win32'
   const candidates = [
-    { id: 'vscode', label: 'VS Code', appName: 'Visual Studio Code', commands: isWin ? ['code.cmd', 'code'] : ['code', 'code-insiders'] },
-    { id: 'cursor', label: 'Cursor', appName: 'Cursor', commands: isWin ? ['cursor.cmd', 'cursor'] : ['cursor'] },
-    { id: 'idea', label: 'IntelliJ IDEA', appName: 'IntelliJ IDEA', commands: isWin ? ['idea64.exe', 'idea.exe', 'idea.bat'] : ['idea'] },
+    { id: 'vscode', label: 'VS Code', appName: 'Visual Studio Code', appFallback: true, commands: isWin ? ['code.cmd', 'code'] : ['code', 'code-insiders'] },
+    // 只认命令行入口：避免把残留/不完整的 .app 当成可用 IDE
+    { id: 'cursor', label: 'Cursor', appName: 'Cursor', appFallback: false, commands: isWin ? ['cursor.cmd', 'cursor'] : ['cursor'] },
+    { id: 'idea', label: 'IntelliJ IDEA', appName: 'IntelliJ IDEA', appFallback: false, commands: isWin ? ['idea64.exe', 'idea.exe', 'idea.bat'] : ['idea'] },
   ]
   const editors = []
   for (const candidate of candidates) {
@@ -562,7 +563,7 @@ async function detectEditors() {
       const found = await which(name)
       if (found) { command = found; break }
     }
-    if (!command && isMac) {
+    if (!command && isMac && candidate.appFallback) {
       const path = `/Applications/${candidate.appName}.app`
       if (await exists(path)) command = path
     }
