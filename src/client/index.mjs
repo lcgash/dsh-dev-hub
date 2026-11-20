@@ -648,6 +648,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const [filesInfo, setFilesInfo] = useState(null)
   const [filesLoading, setFilesLoading] = useState(false)
   const [ideBusy, setIdeBusy] = useState(false)
+  const [ideEditors, setIdeEditors] = useState(null)
   const [filesAutoAt, setFilesAutoAt] = useState(null)
   const filesInFlightRef = useRef(false)
   // 当前 filesInfo 属于哪条流程：切流程时旧清单不能拿去按新 itemId 拉 diff
@@ -1217,6 +1218,15 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       setSyncBusy(false)
     }
   }
+
+  // 本机装了哪些 IDE：只渲染对应的图标，不在点击后才告诉用户“没装”
+  useEffect(() => {
+    let alive = true
+    api(API.openIde)
+      .then((body) => { if (alive) setIdeEditors(Array.isArray(body?.editors) ? body.editors : []) })
+      .catch(() => { if (alive) setIdeEditors([]) })
+    return () => { alive = false }
+  }, [])
 
   useEffect(() => {
     let alive = true
@@ -2299,11 +2309,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   }
 
   /** 在本地 IDE 打开当前流程的 worktree（不能再让 IDE checkout 主仓库）。 */
-  async function openInIde() {
+  async function openInIde(editorId) {
     if (ideBusy) return
     setIdeBusy(true); setError(''); setNotice('')
     try {
-      const body = await api(API.openIde, { method: 'POST', body: JSON.stringify({ id: draft.id }) })
+      const body = await api(API.openIde, { method: 'POST', body: JSON.stringify({ id: draft.id, editorId }) })
       const label = body?.editor?.label ?? 'IDE'
       setNotice(`已用 ${label} 打开工作区：${body?.path ?? ''}`)
     } catch (err) {
@@ -2514,7 +2524,35 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               '只看 scope 内'),
             h('span', { style: { ...styles.sectionHint, whiteSpace: 'nowrap' } },
               filesAutoAt ? `自动刷新 · ${fmtTime(filesAutoAt)}` : '每 8 秒自动刷新'),
-            h(Button, { style: mini, disabled: ideBusy, onClick: openInIde, children: ideBusy ? '打开中…' : '在 IDE 打开' }),
+            ideEditors?.length
+              ? h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: 4 } },
+                ideEditors.map((editor) => {
+                  const badge = { vscode: ['VS', '#007acc', '#e8f4fc'], cursor: ['C', '#111827', '#f1f3f5'], idea: ['IJ', '#fe315d', '#fff0f4'] }[editor.id]
+                    ?? [String(editor.label ?? '?').slice(0, 2).toUpperCase(), T.brand, T.brandSoft]
+                  return h('button', {
+                    key: editor.id,
+                    type: 'button',
+                    disabled: ideBusy,
+                    title: `在 ${editor.label} 打开当前 worktree`,
+                    'aria-label': `在 ${editor.label} 打开当前 worktree`,
+                    onClick: () => openInIde(editor.id),
+                    style: {
+                      height: 28,
+                      minWidth: 30,
+                      padding: '0 6px',
+                      border: `1px solid ${T.borderSoft}`,
+                      borderRadius: T.rSm,
+                      background: badge[2],
+                      color: badge[1],
+                      cursor: ideBusy ? 'progress' : 'pointer',
+                      fontFamily: 'inherit',
+                      fontSize: 10,
+                      fontWeight: 700,
+                      lineHeight: 1,
+                    },
+                  }, badge[0])
+                }))
+              : null,
             h(Button, { style: mini, disabled: filesLoading, onClick: () => loadFiles(), children: '刷新' }),
           ),
         ),

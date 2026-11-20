@@ -1853,7 +1853,8 @@
     "控制当前项目（{value1}）的推进动作；提交与推送始终由你确认。": "控制当前项目（{value1}）的推进动作；提交与推送始终由你确认。",
     "管理当前项目（{value1}）的技能包与约束。": "管理当前项目（{value1}）的技能包与约束。",
     "已用 {value1} 打开工作区：{value2}": "已用 {value1} 打开工作区：{value2}",
-    "打开 IDE 失败：{value1}": "打开 IDE 失败：{value1}"
+    "打开 IDE 失败：{value1}": "打开 IDE 失败：{value1}",
+    "在 {value1} 打开当前 worktree": "在 {value1} 打开当前 worktree"
   },
   "templateValues": {
     "通过": "通过",

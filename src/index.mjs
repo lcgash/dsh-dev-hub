@@ -4945,7 +4945,11 @@ export function apply(ctx) {
       path: API.openIde,
       handler: async (req, res) => {
         if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
-        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST only' })
+        if (req.method === 'GET') {
+          const editors = await detectEditors()
+          return sendJson(res, 200, { ok: true, editors: editors.map((entry) => ({ id: entry.id, label: entry.label })) })
+        }
+        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'GET/POST only' })
         try {
           const profile = await loadProfile()
           const repo = await activeRepo(profile)

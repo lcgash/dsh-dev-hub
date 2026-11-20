@@ -1853,7 +1853,8 @@
     "控制当前项目（{value1}）的推进动作；提交与推送始终由你确认。": "Controls automation for the current project ({value1}); submit and push always need your confirmation.",
     "管理当前项目（{value1}）的技能包与约束。": "Manage skill packs and constraints for the current project ({value1}).",
     "已用 {value1} 打开工作区：{value2}": "Opened the workspace with {value1}: {value2}",
-    "打开 IDE 失败：{value1}": "Failed to open the IDE: {value1}"
+    "打开 IDE 失败：{value1}": "Failed to open the IDE: {value1}",
+    "在 {value1} 打开当前 worktree": "Open the current worktree in {value1}"
   },
   "templateValues": {
     "通过": "passed",
