@@ -82,3 +82,12 @@ test('剪贴板取图：兼容 Windows/Edge 只在 items 里给截图、files �
   assert.deepEqual(clipboardFiles({ files: [], items: [{ kind: 'file', getAsFile: () => shot }] }), [shot])
   assert.deepEqual(clipboardFiles({ files: [], items: [{ kind: 'string' }] }), [])
 })
+
+test('澄清恢复：有扫描结果但没有 clarify 卡片时，回来补问而不是直接生成计划', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
+  assert.match(chat, /clarifyResumeRef/)
+  assert.match(chat, /phase !== PHASE\.confirm \|\| !pending\?\.recon/)
+  assert.match(chat, /messages\.some\(\(msg\) => msg\.kind === 'clarify'\)/)
+  assert.match(chat, /recon: pending\.recon/)
+})

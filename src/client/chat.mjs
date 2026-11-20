@@ -1500,6 +1500,28 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     }
   }, [state?.repo?.path, job, loadingState])
 
+  // 扫描结果恢复了，但澄清卡片/job 在切页时丢了：不能直接让用户去点「生成计划」，
+  // 否则需求澄清这一环被静默跳过。补一次澄清（卡片存在/job 在跑时不会重复）。
+  const clarifyResumeRef = useRef('')
+  useEffect(() => {
+    if (loadingState || !state?.repo?.path || phase !== PHASE.confirm || !pending?.recon) return
+    const conversationId = activeChatIdRef.current
+    if (!conversationId || clarifyResumeRef.current === conversationId) return
+    if (job || clarifyInFlightRef.current) return
+    if (messages.some((msg) => msg.kind === 'clarify')) return
+    const description = String(clarifyOrigin || messages.find((msg) => msg.role === 'user' && String(msg.text ?? '').trim())?.text || '').trim()
+    if (!description) return
+    clarifyResumeRef.current = conversationId
+    runClarify({
+      description,
+      round: 1,
+      history: [{ role: 'user', text: description }],
+      recon: pending.recon,
+      spec: clarify?.spec ?? {},
+      attachments: [],
+    })
+  }, [loadingState, state?.repo?.path, phase, pending, messages, job, clarifyOrigin, clarify])
+
   // 只有用户本来就贴着底部时才自动滚动；往上翻看历史时不再被拽回去
   useEffect(() => {
     if (!stickRef.current) return
