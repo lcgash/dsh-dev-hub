@@ -2209,3 +2209,11 @@ test('流程详情：检测到本机 IDE 时可在 worktree 中打开', async ()
   assert.match(index, /onMouseEnter: \(\) => setIdeHover\(editor\)/)
   assert.match(index, /用 \$\{ideHover\.label\} 打开当前流程的 worktree/)
 })
+
+test('删除流程：可勾选同时清理 worktree 与 devhub 分支', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(index, /const \[deleteWorktree, setDeleteWorktree\]/)
+  assert.match(index, /deleteWorktree, deleteBranch: deleteWorktree/)
+  assert.match(index, /worktree 和 devhub 分支/)
+})

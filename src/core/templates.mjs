@@ -81,6 +81,78 @@ export const TEMPLATES = [
     ],
   },
   {
+    id: 'frontend-angular',
+    name: 'Angular 页面/组件/服务改动',
+    appliesTo: ['node'],
+    keywords: ['angular', '@angular', 'ngmodule', 'rxjs', 'observable', 'signal', 'standalone', '依赖注入', 'angular 组件', 'angular 服务'],
+    touchpoints: [
+      '先确认是 standalone component 还是 NgModule 声明，避免只在 declarations 或 imports 一处注册',
+      '变更检测与状态：OnPush/signals 下确认输入输出、订阅生命周期（takeUntilDestroyed/async pipe），不留下泄漏',
+      '依赖注入与路由：service 的 providedIn 范围、路由参数/守卫、懒加载模块同步调整',
+      '表单：ReactiveForms 的控件/校验/错误提示与模板一致，提交失败路径可恢复',
+      '样式按既有 design token/主题变量，不在组件里硬编码品牌色',
+      '补测试：TestBed/组件测试覆盖新增状态与失败路径；必要时补 e2e',
+    ],
+    checks: [
+      { id: 'tests', text: 'Angular 组件/服务测试通过', command: null, assertion: 'TestBed/组件测试覆盖新增状态与失败路径' },
+      { id: 'build', text: '构建/类型检查通过', command: null, assertion: 'ng build / typecheck 通过' },
+      { id: 'gate', text: '仓库门禁通过（lint/check）', command: null, assertion: '仓库配置的 lint/check 通过' },
+      { id: 'ui-evidence', text: '关键页面有截图/E2E 证据', command: null, assertion: '流程附件/报告含前后截图，或 e2e 通过记录' },
+    ],
+    references: [
+      { path: 'package.json', why: '确认 Angular 版本、包管理器与 scripts' },
+      { path: 'src', why: '先读现有组件/服务/路由结构，复用既有写法' },
+    ],
+  },
+  {
+    id: 'frontend-svelte',
+    name: 'Svelte/SvelteKit 页面/组件改动',
+    appliesTo: ['node'],
+    keywords: ['svelte', 'sveltekit', 'runes', '$state', '$derived', '$effect', 'store', '+page', 'form action', 'ssr'],
+    touchpoints: [
+      '先确认 Svelte 版本与写法：runes（$state/$derived/$effect）还是老 store，不能混用两套响应式',
+      'SvelteKit：load/form action 的服务端与客户端边界，敏感逻辑不能漏到浏览器',
+      '状态与副作用：effect 清理、订阅取消、SSR 首屏与 hydration 一致性',
+      '可访问性与交互：键盘/焦点、表单错误提示、窄屏布局',
+      '样式走组件作用域/既有 token，不硬编码主题色',
+      '补测试：组件测试或 e2e 覆盖新增状态、表单失败与导航',
+    ],
+    checks: [
+      { id: 'tests', text: 'Svelte 组件/交互测试通过', command: null, assertion: '组件测试或 e2e 覆盖新增状态与失败路径' },
+      { id: 'build', text: '构建/类型检查通过', command: null, assertion: 'svelte-check / build 通过' },
+      { id: 'gate', text: '仓库门禁通过（lint/check）', command: null, assertion: '仓库配置的 lint/check 通过' },
+      { id: 'ui-evidence', text: '关键页面有截图/E2E 证据', command: null, assertion: '流程附件/报告含前后截图，或 e2e 通过记录' },
+    ],
+    references: [
+      { path: 'package.json', why: '确认 Svelte/SvelteKit 版本、包管理器与 scripts' },
+      { path: 'src/routes', why: '先读现有路由/页面结构与 load 写法' },
+    ],
+  },
+  {
+    id: 'frontend-ui',
+    name: '前端页面/组件/交互改动',
+    appliesTo: ['node'],
+    keywords: ['页面', '页', '组件', '弹窗', '抽屉', '表单', '交互', '样式', '布局', '响应式', '前端', 'react', 'vue', 'vite', '按钮', '列表', '路由', '状态', '空态', '加载态', 'loading', '错误', 'error', '无障碍', 'a11y', 'page', 'component', 'modal', 'drawer', 'form', 'style', 'layout', 'responsive', 'button', 'list', 'route', 'state', 'empty'],
+    touchpoints: [
+      '先定位页面/路由入口与真正复用的组件，确认改动落在页面容器还是共享组件',
+      '覆盖状态：loading / empty / error / disabled / 权限不足，不只做 happy path',
+      '样式走既有 design token 与组件 API，不硬编码颜色/圆角/间距，不新造一套视觉',
+      '交互与响应式：键盘可达、焦点可见、窄屏不溢出；必要时同步文案三语',
+      '数据层：新增/修改 API 字段时同步类型定义与调用方，不把后端契约改成前端方便的形状',
+      '补测试：组件/交互单测或现有 e2e 用例覆盖新增状态与失败路径',
+    ],
+    checks: [
+      { id: 'tests', text: '前端单测/组件测试通过', command: null, assertion: '有对应测试覆盖新增状态与失败路径' },
+      { id: 'build', text: '构建/类型检查通过', command: null, assertion: 'npm/pnpm/yarn build 与 typecheck 通过' },
+      { id: 'gate', text: '仓库门禁通过（lint/check）', command: null, assertion: '仓库配置的 lint/typecheck/gate 通过' },
+      { id: 'ui-evidence', text: '关键页面有截图/E2E 证据', command: null, assertion: '流程附件/报告含前后截图，或 e2e 通过记录' },
+    ],
+    references: [
+      { path: 'package.json', why: '确认包管理器、scripts 与既有依赖/框架版本' },
+      { path: 'src', why: '先读现有页面/组件/样式结构，复用既有 token 与组件 API' },
+    ],
+  },
+  {
     id: 'analysis',
     name: '只读分析/排查',
     appliesTo: ['java', 'node', 'generic'],
@@ -110,8 +182,8 @@ export const TEMPLATES = [
       '不顺手改需求：重构不改业务语义；发现必须改行为时回到需求澄清确认',
     ],
     checks: [
-      { id: 'tests', text: '重构前后本机测试通过', command: 'mvn -o clean test' },
-      { id: 'gate', text: '仓库架构门禁通过', command: 'sh scripts/check.sh' },
+      { id: 'tests', text: '重构前后本机测试通过', command: null, assertion: '现有测试或补的回归测试通过' },
+      { id: 'gate', text: '仓库门禁通过', command: null, assertion: '仓库配置的 lint/check 通过' },
     ],
     references: [
       { path: 'README.md', why: '先读项目结构与运行方式，确认重构边界' },
@@ -132,8 +204,8 @@ export const TEMPLATES = [
     ],
     checks: [
       { id: 'repro', text: '复现用例有记录', command: null, assertion: '流程里有复现步骤或失败日志' },
-      { id: 'tests', text: '本机测试通过（含回归用例）', command: 'mvn -o clean test' },
-      { id: 'gate', text: '仓库门禁通过', command: 'sh scripts/check.sh' },
+      { id: 'tests', text: '本机测试通过（含回归用例）', command: null, assertion: '回归用例覆盖这次复现输入' },
+      { id: 'gate', text: '仓库门禁通过', command: null, assertion: '仓库配置的 lint/check 通过' },
     ],
     references: [],
   },
@@ -177,10 +249,19 @@ export function detectTemplate(description, language = 'java', { excludeIds = []
 /** 模板的验收项 → 结构化检查（命令来自模板，未配置命令的保留人工断言）。 */
 export function checksOf(template, { commands = {} } = {}) {
   const source = template?.checks ?? []
+  const testCommand = commands.localTest || commands.test || ''
+  const gateCommand = commands.gate || ''
+  const buildCommand = commands.build || commands.compile || ''
   return source.map((check) => {
-    const command = check.command && String(check.command).includes('mvn') && commands.localTest && check.id === 'tests'
-      ? commands.localTest
-      : (check.command ?? null)
+    let command = check.command ?? null
+    // 模板只描述“要验什么”，具体命令跟仓库走（Java/Maven、前端 npm/pnpm/yarn 都能用）
+    if (check.id === 'tests' || check.id === 'test') command = testCommand || command
+    else if (check.id === 'gate') command = gateCommand || command
+    else if (check.id === 'build' || check.id === 'compile') command = buildCommand || command
+    // 老模板里写死的 mvn 命令不能带到前端仓库
+    if (command && /mvn\b/i.test(command) && !['tests', 'test'].includes(check.id)) {
+      command = check.id === 'gate' ? (gateCommand || null) : (buildCommand || null)
+    }
     return {
       id: check.id,
       text: check.text,

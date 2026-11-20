@@ -75,7 +75,7 @@ test('显式 analysis 生成只读计划：不修改代码、不补测试、不�
   assert.equal(plan.template.id, 'analysis')
   const steps = plan.steps.join('\n')
   assert.match(steps, /只读排查/)
-  assert.match(steps, /阅读 src 模块：upload\.mjs（只读，不改代码）/)
+  assert.match(steps, /阅读 src\/core 模块：upload\.mjs（只读，不改代码）/)
   assert.doesNotMatch(steps, /阅读并修改/)
   assert.doesNotMatch(steps, /补充单元测试|仓库门禁|同步契约/)
   assert.ok(plan.acceptance.some((text) => /不改代码、不建 worktree、不产生提交/.test(text)))

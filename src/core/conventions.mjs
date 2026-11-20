@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { exists } from './paths.mjs'
 import { dataDir, readJson, writeJsonAtomic, now, SCHEMA_VERSION } from './store.mjs'
@@ -52,23 +52,52 @@ export const FRONTEND_FRAMEWORKS = [
 ]
 
 /**
+ * 纯构建工具/元框架：单独出现也说明这是前端工程（Vite/Parcel/Next 等），
+ * 但它们不是 UI 框架，不能混进 frameworks 列表里。
+ */
+export const FRONTEND_TOOLING = [
+  'vite',
+  '@vitejs/plugin-react',
+  '@vitejs/plugin-vue',
+  '@vitejs/plugin-svelte',
+  'parcel',
+  'webpack-dev-server',
+  'next',
+  'nuxt',
+  'astro',
+  '@sveltejs/kit',
+]
+
+function packageDependencyNames(pkg) {
+  const names = new Set()
+  for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
+    const deps = pkg?.[field]
+    if (!deps || typeof deps !== 'object') continue
+    for (const name of Object.keys(deps)) names.add(name)
+  }
+  return names
+}
+
+/**
  * 从一个 package.json 对象判断是否前端仓库（纯函数，便于单测）。
  * 命中 dependencies / devDependencies / peerDependencies / optionalDependencies 任意一处即算。
  */
 export function detectFrontendFramework(pkg) {
   if (!pkg || typeof pkg !== 'object') return { frontend: false, frameworks: [] }
-  const names = new Set()
-  for (const field of ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies']) {
-    const deps = pkg[field]
-    if (!deps || typeof deps !== 'object') continue
-    for (const name of Object.keys(deps)) names.add(name)
-  }
+  const names = packageDependencyNames(pkg)
   const frameworks = FRONTEND_FRAMEWORKS.filter((name) => names.has(name))
   return { frontend: frameworks.length > 0, frameworks }
 }
 
+/** 构建工具/元框架探测：Vite 单独出现也算前端工程，但不冒充 UI 框架。 */
+export function detectFrontendTooling(pkg) {
+  if (!pkg || typeof pkg !== 'object') return []
+  const names = packageDependencyNames(pkg)
+  return FRONTEND_TOOLING.filter((name) => names.has(name))
+}
+
 /** 读取仓库 package.json；不存在返回 null，损坏时显式告警后按非前端处理（不阻断初始化）。 */
-async function readPackageJson(repo) {
+export async function readPackageJson(repo) {
   try {
     return JSON.parse(await readFile(join(repo, 'package.json'), 'utf8'))
   } catch (error) {
@@ -76,6 +105,69 @@ async function readPackageJson(repo) {
     console.warn(`[dev-hub] 读取 ${join(repo, 'package.json')} 失败，跳过前端框架探测：${error?.message ?? error}`)
     return null
   }
+}
+
+/**
+ * 包管理器探测：packageManager 字段优先，其次 lockfile；都没有时 npm。
+ * 前端仓库不一定用 npm（pnpm/yarn/bun 都很常见），命令生成必须跟仓库一致。
+ */
+export async function detectPackageManager(repo, pkg = null) {
+  const declared = String(pkg?.packageManager ?? '').split('@')[0].trim()
+  if (['npm', 'pnpm', 'yarn', 'bun'].includes(declared)) return declared
+  if (await hasFile(repo, 'pnpm-lock.yaml')) return 'pnpm'
+  if (await hasFile(repo, 'yarn.lock')) return 'yarn'
+  if (await hasFile(repo, 'bun.lock') || await hasFile(repo, 'bun.lockb')) return 'bun'
+  if (await hasFile(repo, 'package-lock.json')) return 'npm'
+  return 'npm'
+}
+
+/** 只保留 package.json 里可执行的 scripts，避免把任意字段当命令。 */
+function packageScripts(pkg) {
+  const scripts = pkg?.scripts && typeof pkg.scripts === 'object' ? pkg.scripts : {}
+  const out = {}
+  for (const [name, command] of Object.entries(scripts)) {
+    if (typeof command === 'string' && command.trim()) out[name] = command.trim()
+  }
+  return out
+}
+
+/**
+ * 单仓库里的前端子项目（Java 根 + web/、pnpm monorepo 的 apps/*、packages/*）：
+ * 根 package.json 缺失或不是前端时，不能直接判定“这个仓库没有前端”。
+ */
+const FRONTEND_SUBPROJECT_DIRS = ['web', 'frontend', 'ui', 'client', 'admin', 'console']
+
+export async function detectFrontendProjects(repo) {
+  const candidates = [...FRONTEND_SUBPROJECT_DIRS]
+  for (const parent of ['apps', 'packages']) {
+    try {
+      const entries = await readdir(join(repo, parent), { withFileTypes: true })
+      for (const entry of entries) {
+        if (entry.isDirectory() && !entry.name.startsWith('.')) candidates.push(`${parent}/${entry.name}`)
+      }
+    } catch {
+      // absent
+    }
+  }
+  const projects = []
+  for (const relative of [...new Set(candidates)].slice(0, 12)) {
+    const dir = join(repo, relative)
+    if (!(await hasFile(dir, 'package.json'))) continue
+    const pkg = await readPackageJson(dir)
+    if (!pkg) continue
+    const framework = detectFrontendFramework(pkg)
+    const tooling = detectFrontendTooling(pkg)
+    if (!framework.frontend && !tooling.length) continue
+    projects.push({
+      path: relative,
+      name: typeof pkg.name === 'string' && pkg.name.trim() ? pkg.name.trim() : relative.split('/').pop(),
+      packageManager: await detectPackageManager(dir, pkg),
+      frameworks: framework.frameworks,
+      frontendTooling: tooling,
+      scripts: packageScripts(pkg),
+    })
+  }
+  return projects
 }
 
 /** Best-effort repository profile used to pick the default convention set. */
@@ -90,15 +182,22 @@ export async function detectRepoProfile(repo) {
   ])
   const java = maven || gradle || (await exists(join(repo, 'src', 'main', 'java')))
   const language = java ? 'java' : node ? 'node' : 'generic'
-  const frontend = node ? detectFrontendFramework(await readPackageJson(repo)) : { frontend: false, frameworks: [] }
+  const pkg = node ? await readPackageJson(repo) : null
+  const frontend = node ? detectFrontendFramework(pkg) : { frontend: false, frameworks: [] }
+  const frontendTooling = node ? detectFrontendTooling(pkg) : []
+  const frontendProjects = await detectFrontendProjects(repo)
+  const packageManager = node ? await detectPackageManager(repo, pkg) : (maven ? 'mvn' : null)
   const gates = []
   if (checkScript) gates.push('sh scripts/check.sh --full')
   return {
     language,
-    frontend: frontend.frontend,
-    frameworks: frontend.frameworks,
-    build: maven ? 'maven' : gradle ? 'gradle' : node ? 'npm' : null,
-    packageManager: maven ? 'mvn' : node ? 'npm' : null,
+    frontend: frontend.frontend || frontendTooling.length > 0 || frontendProjects.length > 0,
+    frameworks: [...new Set([...frontend.frameworks, ...frontendProjects.flatMap((project) => project.frameworks)])],
+    frontendTooling: [...new Set([...frontendTooling, ...frontendProjects.flatMap((project) => project.frontendTooling)])],
+    frontendProjects,
+    build: maven ? 'maven' : gradle ? 'gradle' : node ? packageManager : null,
+    packageManager,
+    scripts: node ? packageScripts(pkg) : {},
     checkScript,
     agentsDoc: agents ? 'AGENTS.md' : null,
     codeGuide: codeGuide ? 'docs/code-guide' : null,
@@ -335,11 +434,15 @@ export function mergeRepoProfiles(profiles) {
   const languages = new Set(list.map((entry) => entry.language).filter(Boolean))
   const language = languages.has('java') ? 'java' : languages.has('node') ? 'node' : 'generic'
   const frameworks = [...new Set(list.flatMap((entry) => entry.frameworks ?? []))].sort()
+  const frontendTooling = [...new Set(list.flatMap((entry) => entry.frontendTooling ?? []))].sort()
+  const frontendProjects = list.flatMap((entry) => entry.frontendProjects ?? [])
   const gates = [...new Set(list.flatMap((entry) => entry.gates ?? []))].sort()
   return {
     language,
     frontend: list.some((entry) => entry.frontend === true),
     frameworks,
+    frontendTooling,
+    frontendProjects,
     build: list.find((entry) => entry.build)?.build ?? null,
     packageManager: list.find((entry) => entry.packageManager)?.packageManager ?? null,
     checkScript: list.some((entry) => entry.checkScript === true),
@@ -359,6 +462,12 @@ export function summarizeConventions(conventions) {
     language: conventions.project?.language ?? 'generic',
     frontend: Boolean(conventions.project?.frontend),
     frameworks: Array.isArray(conventions.project?.frameworks) ? conventions.project.frameworks : [],
+    frontendProjects: (conventions.profile?.frontendProjects ?? []).map((project) => ({
+      path: project.path,
+      name: project.name ?? null,
+      packageManager: project.packageManager ?? null,
+      frameworks: project.frameworks ?? [],
+    })),
     build: conventions.project?.build ?? null,
     constraints: (conventions.constraints ?? []).length,
     constraintsById: (conventions.constraints ?? []).map((entry) => entry.id),

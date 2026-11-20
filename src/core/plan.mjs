@@ -57,6 +57,7 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
       ? detectTemplate(text, language ?? conventions?.project?.language ?? project?.language ?? 'java', { excludeIds: ['analysis'] })
       : detected
   })()
+  const repoLanguage = language ?? conventions?.project?.language ?? project?.language ?? 'java'
   const commandsForTemplate = project?.context?.commands ?? {}
   const files = recon?.files ?? []
   const commands = project?.context?.commands ?? {}
@@ -73,7 +74,12 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
     : files
   const groups = groupByModule(scopedFiles, repoNames)
   // 契约风险按“确认后真正要动的文件”判断：只改 source 时就不该带出库表步骤
-  const riskyInScope = scopedFiles.some((file) => /(^|\/)db\/|\.sql$|controller\/|i18n|messages.*\.properties$/i.test(String(file.path)))
+  const pathOf = (file) => String(file?.path ?? '')
+  const backendRisk = scopedFiles.some((file) => /(^|\/)db\/|\.sql$|controller\/|i18n|messages.*\.properties$/i.test(pathOf(file)))
+  const frontendDepsRisk = scopedFiles.some((file) => /(^|\/)(package\.json|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$|(^|\/)(index|exports|public-api)\.(ts|tsx|js|jsx|mjs)$/i.test(pathOf(file)))
+  const frontendUiRisk = scopedFiles.some((file) => /\.(css|scss|less|sass)$|(^|\/)(theme|themes|tokens|styles|design-system)\//i.test(pathOf(file)))
+  const frontendRouteRisk = scopedFiles.some((file) => /(^|\/)(routes?|router|app)\//i.test(pathOf(file)))
+  const riskyInScope = backendRisk || frontendDepsRisk || frontendUiRisk || frontendRouteRisk
   const syncContract = answers?.['risk-contract'] === 'sync-all'
     ? true
     : answers?.['risk-contract'] === 'internal-only' ? false : riskyInScope
@@ -92,6 +98,9 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
   // 分析流程只读：先读代码/日志，不做任何修改
   if (isAnalysis) {
     steps.push('只读排查：先读代码/日志，沿调用链找到真正相关的分支（不改代码）')
+  }
+  if (!isAnalysis && answers?.['ui-states'] === 'all-states') {
+    steps.push('覆盖 loading / empty / error / 权限不足 / 窄屏等边界状态（不只做 happy path）')
   }
   const codeGroups = groups.filter((group) => group.kind === 'code')
   const testGroups = groups.filter((group) => group.kind === 'test')
@@ -125,7 +134,18 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
   if (withTests && !testGroups.length && !isAnalysis) steps.push('补充单元测试，覆盖新增分支')
   // 分析流程不落地代码：不补测试、不同步契约、不跑仓库门禁
   if (!withTests && !isAnalysis) steps.push('暂不补测试（已确认后续单独处理）')
-  if (syncContract && !isAnalysis) steps.push('同步契约/库表/文案变更（含基线、迁移、三语 key）')
+  if (syncContract && !isAnalysis) {
+    if (repoLanguage === 'node') {
+      const parts = []
+      if (frontendDepsRisk) parts.push('依赖/公共契约（package.json/锁文件/公共导出）')
+      if (frontendUiRisk) parts.push('设计 token/样式')
+      if (frontendRouteRisk) parts.push('路由/页面结构')
+      if (!parts.length) parts.push('契约/文案')
+      steps.push(`同步 ${parts.join('、')} 变更（含三语文案）`)
+    } else {
+      steps.push('同步契约/库表/文案变更（含基线、迁移、三语 key）')
+    }
+  }
   // 本机自测/门禁属于「测试验证」阶段，由工作站执行；不写进开发任务，避免同一件事在开发/测试重复做
   if (isAnalysis) {
     steps.push('输出结论：根因/影响面/证据 + 补丁建议（建议不落地，不产生提交）')
@@ -145,7 +165,18 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
     acceptance.push('分析流程只读：不改代码、不建 worktree、不产生提交')
   }
   if (withTests && !isAnalysis) acceptance.push('新增/修改的行为有对应测试覆盖')
-  if (syncContract && !isAnalysis) acceptance.push('契约/库表/文案变更已同步基线、迁移与三语 key')
+  if (syncContract && !isAnalysis) {
+    if (repoLanguage === 'node') {
+      const parts = []
+      if (frontendDepsRisk) parts.push('依赖/公共契约（package.json/锁文件/公共导出）')
+      if (frontendUiRisk) parts.push('设计 token/样式')
+      if (frontendRouteRisk) parts.push('路由/页面结构')
+      if (!parts.length) parts.push('契约')
+      acceptance.push(`受影响的${parts.join('、')}已同步，三语文案已补齐`)
+    } else {
+      acceptance.push('契约/库表/文案变更已同步基线、迁移与三语 key')
+    }
+  }
   if (acceptanceChoice === 'gate' && gate) acceptance.unshift(`验收以门禁为准（工作站「测试验证」阶段执行）：${gate}`)
 
   const risks = []

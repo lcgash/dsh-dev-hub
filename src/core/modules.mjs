@@ -25,6 +25,20 @@ const JAVA_ROLES = {
   exception: '异常',
 }
 
+const FRONTEND_ROLES = {
+  components: '组件', component: '组件', pages: '页面', views: '视图', features: '功能模块',
+  hooks: '组合式逻辑', composables: '组合式逻辑', layouts: '布局', layout: '布局',
+  store: '状态', stores: '状态', api: '接口层', services: '接口层', service: '接口层',
+  styles: '样式', theme: '主题', themes: '主题', routes: '路由', router: '路由',
+  widgets: '组件', containers: '容器', utils: '工具', lib: '公共库',
+}
+
+const FRONTEND_MODULE_DIRS = new Set([
+  'components', 'component', 'pages', 'views', 'features', 'hooks', 'composables',
+  'layouts', 'layout', 'store', 'stores', 'api', 'services', 'service', 'styles',
+  'theme', 'themes', 'routes', 'router', 'app', 'widgets', 'containers', 'utils', 'lib',
+])
+
 const MAX_MODULES = 60
 
 async function isDir(path) {
@@ -74,7 +88,7 @@ export async function suggestModules(repo, { limit = MAX_MODULES } = {}) {
     const key = path
     if (!name || !path || seen.has(key)) return
     seen.add(key)
-    out.push({ name, path, kind, ...(role ? { role } : {}), suggested: kind === 'java-package' })
+    out.push({ name, path, kind, ...(role ? { role } : {}), suggested: kind === 'java-package' || kind === 'frontend' })
   }
 
   const javaRoot = await javaPackageRoot(repo)
@@ -82,6 +96,34 @@ export async function suggestModules(repo, { limit = MAX_MODULES } = {}) {
     push(javaRoot.split(/[/\\]/).pop(), repoRelative(repo, javaRoot), 'dir', '根包')
     for (const name of await subdirs(javaRoot)) {
       push(name, repoRelative(repo, join(javaRoot, name)), 'java-package', JAVA_ROLES[name])
+    }
+  }
+
+  // 前端/Node：src 下的 components/pages/features/hooks 等才是模块边界；
+  // 只把 src 当一个模块会让所有前端文件挤在一起，估算和计划都会失准。
+  const srcRoot = join(repo, 'src')
+  if (await isDir(srcRoot)) {
+    for (const name of await subdirs(srcRoot)) {
+      push(name, repoRelative(repo, join(srcRoot, name)), 'frontend', FRONTEND_ROLES[name])
+      if (['features', 'pages', 'views'].includes(name)) {
+        for (const child of await subdirs(join(srcRoot, name))) {
+          push(child, repoRelative(repo, join(srcRoot, name, child)), 'frontend', FRONTEND_ROLES[name])
+        }
+      }
+    }
+  }
+
+  // Java 根 + web/ 这类前端子项目：模块路径带子项目前缀，避免所有前端文件挤在 web 一个模块
+  for (const project of ['web', 'frontend', 'ui', 'client', 'admin', 'console']) {
+    const projectSrc = join(repo, project, 'src')
+    if (!(await isDir(projectSrc))) continue
+    for (const name of await subdirs(projectSrc)) {
+      push(`${project}/${name}`, repoRelative(repo, join(projectSrc, name)), 'frontend', FRONTEND_ROLES[name])
+      if (['features', 'pages', 'views'].includes(name)) {
+        for (const child of await subdirs(join(projectSrc, name))) {
+          push(`${project}/${child}`, repoRelative(repo, join(projectSrc, name, child)), 'frontend', FRONTEND_ROLES[name])
+        }
+      }
     }
   }
 
@@ -135,15 +177,53 @@ export function moduleOfPath(path, repoNames = []) {
   if (resources) return resources[1]
   if (value.startsWith('docs/')) return 'docs'
   if (value.startsWith('tools/')) return 'tools'
-  const first = value.split('/')[0]
-  return first || 'root'
+
+  // Java 根 + web/ 或 monorepo 子项目：先剥掉子项目前缀，再按内部模块分组
+  const sub = /^(web|frontend|ui|client|admin|console)\/src\/(.+)$/i.exec(value)
+  if (sub) {
+    const inner = moduleOfPath(sub[2])
+    if (/^[^/]+\.[a-z0-9]+$/i.test(inner)) return `${sub[1]}/src`
+    return `${sub[1]}/${inner}`
+  }
+
+  // 前端/Node：按 components/pages/features/hooks 等真实边界分组；
+  // 测试目录只影响 kindOfPath，不另立模块。
+  const withoutTests = value.replace(/\/(?:__tests__|tests?|e2e)\//g, '/')
+  let parts = withoutTests.split('/').filter(Boolean)
+  let prefix = ''
+  if (['packages', 'apps'].includes(parts[0]) && parts.length > 2) {
+    prefix = `${parts[0]}/${parts[1]}`
+    parts = parts.slice(2)
+  }
+  const hadSrc = parts[0] === 'src'
+  if (hadSrc) parts = parts.slice(1)
+  const head = parts[0]
+  const next = parts[1]
+  if (head && FRONTEND_MODULE_DIRS.has(head)) {
+    let name = head
+    if (next && !/\.[a-z0-9]+$/i.test(next)) {
+      name = `${head}/${next.replace(/\.(test|spec|stories)\.[^.]+$/i, '')}`
+    }
+    return prefix ? `${prefix}/${name}` : name
+  }
+  if (prefix) {
+    if (!hadSrc) return parts.length <= 1 ? prefix : `${prefix}/${parts[0]}`
+    if (parts.length <= 1) return `${prefix}/src`
+    return `${prefix}/src/${parts[0]}`
+  }
+  if (hadSrc) {
+    if (parts.length <= 1) return 'src'
+    return `src/${parts[0]}`
+  }
+  return parts[0] || 'root'
 }
 
 /** 代码 / 测试 / 文档 粗分类，决定实施步骤怎么排。 */
 export function kindOfPath(path, repoNames = []) {
   const split = splitRepoPrefix(path, repoNames)
-  const value = String(split ? split.path : path ?? '')
-  if (/\/test\/|Test\.(java|ts|js)$|test\.(mjs|js|ts)$/i.test(value)) return 'test'
+  const value = String(split ? split.path : path ?? '').replace(/\\/g, '/')
+  // 前端常见：*.test.tsx / *.spec.ts / __tests__ / tests/ / e2e/ / Playwright
+  if (/(^|\/)(__tests__|tests?|e2e)\/|\.(test|spec)\.(?:[cm]?[jt]sx?|vue)$|Test\.(java|kt)$|_test\.(go|py)$/i.test(value)) return 'test'
   if (value.startsWith('docs/') || /\.md$/i.test(value)) return 'docs'
   return 'code'
 }

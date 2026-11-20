@@ -103,6 +103,75 @@ async function call(routes, path, { method = 'GET', body, sessionId, queryParams
   return { status: res.status, body: JSON.parse(res.body) }
 }
 
+test('前端仓库初始化：按 package scripts 与 pnpm 生成命令，不写死 npm/mvn', async () => {
+  const repo = await tempRepo()
+  await writeFile(join(repo, 'package.json'), JSON.stringify({
+    name: 'web',
+    packageManager: 'pnpm@9.0.0',
+    scripts: {
+      dev: 'vite',
+      build: 'vite build',
+      test: 'vitest run',
+      lint: 'eslint .',
+      typecheck: 'tsc --noEmit',
+      'test:e2e': 'playwright test',
+    },
+    dependencies: { react: '^18.2.0', 'react-dom': '^18.2.0' },
+  }, null, 2), 'utf8')
+  await writeFile(join(repo, 'pnpm-lock.yaml'), 'lockfileVersion: 9\n', 'utf8')
+  const { ctx, routes } = fakeContext(repo)
+  try {
+    apply(ctx)
+    const setup = await call(routes, API.setup, { method: 'POST', body: { repoPath: repo, name: '张三' } })
+    assert.equal(setup.status, 200, JSON.stringify(setup.body))
+    const commands = setup.body.project?.context?.commands ?? {}
+    assert.equal(commands.install, 'pnpm install')
+    assert.equal(commands.build, 'pnpm run build')
+    assert.equal(commands.localTest, 'pnpm test', '本地测试走仓库 test script，而不是硬编码 npm test')
+    assert.equal(commands.compile, 'pnpm run typecheck')
+    assert.equal(commands.gate, 'pnpm run lint && pnpm run typecheck')
+    assert.equal(commands.environmentTest, 'pnpm run test:e2e', '前端 e2e 脚本自动成为环境验证命令')
+    assert.equal(setup.body.conventions?.frontend, true)
+    assert.equal(setup.body.conventions?.language, 'node')
+    assert.equal(setup.body.conventions?.build, 'pnpm')
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
+test('Java 根 + web/ 前端子项目：初始化命令同时覆盖根与前端，不静默漏掉 web', async () => {
+  const repo = await tempRepo()
+  await writeFile(join(repo, 'pom.xml'), '<project/>\n', 'utf8')
+  await mkdir(join(repo, 'scripts'), { recursive: true })
+  await writeFile(join(repo, 'scripts/check.sh'), '#!/bin/sh\nexit 0\n', 'utf8')
+  await mkdir(join(repo, 'web'), { recursive: true })
+  await writeFile(join(repo, 'web/package.json'), JSON.stringify({
+    name: 'web',
+    scripts: { build: 'vite build', test: 'vitest run', lint: 'eslint .', typecheck: 'tsc --noEmit', 'test:e2e': 'playwright test' },
+    dependencies: { react: '^18.2.0' },
+  }, null, 2), 'utf8')
+  await writeFile(join(repo, 'web/pnpm-lock.yaml'), 'lockfileVersion: 9\n', 'utf8')
+  const { ctx, routes } = fakeContext(repo)
+  try {
+    apply(ctx)
+    const setup = await call(routes, API.setup, { method: 'POST', body: { repoPath: repo, name: '张三' } })
+    assert.equal(setup.status, 200, JSON.stringify(setup.body))
+    const commands = setup.body.project?.context?.commands ?? {}
+    assert.match(commands.localTest, /mvn -o clean test/)
+    assert.match(commands.localTest, /pnpm --dir web run test/)
+    assert.match(commands.gate, /sh scripts\/check\.sh --full/)
+    assert.match(commands.gate, /pnpm --dir web run lint/)
+    assert.match(commands.gate, /pnpm --dir web run typecheck/)
+    assert.equal(commands.environmentTest, 'pnpm --dir web run test:e2e')
+    assert.equal(setup.body.conventions?.frontend, true)
+    assert.ok(setup.body.conventions?.frontendProjects?.some((entry) => entry.path === 'web'), '画像里要能看到前端子项目')
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true })
+  }
+})
+
 test('host setup, item ledger, context and start route', async () => {
   const repo = await tempRepo()
   const { ctx, routes, tools, reviewLabels } = fakeContext(repo, { withReviewAgents: true })

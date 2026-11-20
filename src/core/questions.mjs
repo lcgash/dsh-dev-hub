@@ -46,13 +46,13 @@ export function deriveQuestions({ description, recon, project, conventions } = {
     })
   }
 
-  const hasTests = files.some((file) => /\/test\/|Test\.(java|ts)$/i.test(String(file?.path ?? '')))
+  const hasTests = files.some((file) => /(^|\/)(?:__tests__|tests?|e2e)\/|\.(test|spec)\.(?:[cm]?[jt]sx?|vue)$|Test\.(java|kt)$|_test\.(go|py)$/i.test(String(file?.path ?? '')))
   if (files.length && !hasTests) {
     questions.push({
       id: 'tests',
       kind: 'choice',
       question: '命中里没有测试文件。这次要不要一起补单测？',
-      why: '本仓库门禁会检查测试布局；没有测试的改动更容易在评审时被打回。',
+      why: '有回归测试的改动更容易通过评审；前端组件/交互也应覆盖新增状态。',
       options: [
         option('add-tests', '一起补单测（推荐）'),
         option('no-tests', '先不补，后面单独做'),
@@ -60,16 +60,44 @@ export function deriveQuestions({ description, recon, project, conventions } = {
     })
   }
 
-  const risky = (recon?.files ?? []).find((file) => /(^|\/)db\/|\.sql$|controller\/|i18n|messages.*\.properties$/i.test(String(file?.path ?? '')))
+  const riskRule = [
+    { kind: '库表/迁移', test: (path) => /(^|\/)db\/|\.sql$/i.test(path) },
+    { kind: '依赖/公共契约', test: (path) => /(^|\/)(package\.json|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$/i.test(path) },
+    { kind: '设计 token/样式', test: (path) => /\.(css|scss|less|sass)$|(^|\/)(theme|themes|tokens|styles|design-system)\//i.test(path) },
+    { kind: '路由/页面结构', test: (path) => /(^|\/)(routes?|router|app)\//i.test(path) },
+    { kind: '多语文案', test: (path) => /messages.*\.properties$|i18n|locales?\//i.test(path) },
+    { kind: '对外契约', test: (path) => /controller\/|model\/(dto|vo)\//i.test(path) },
+  ]
+  const risky = (recon?.files ?? []).find((file) => {
+    const path = String(file?.path ?? '')
+    return riskRule.some((rule) => rule.test(path))
+  })
   if (risky) {
+    const path = String(risky.path ?? '')
+    const kind = riskRule.find((rule) => rule.test(path))?.kind ?? '对外契约'
     questions.push({
       id: 'risk-contract',
       kind: 'choice',
-      question: `改动里包含 ${risky.path.split('/').slice(-2).join('/')} 这类文件。对外契约/库表/文案要同步变更吗？`,
-      why: '契约与库表变更需要同步基线、迁移与三语 key，会影响发布方式。',
+      question: `改动里包含 ${path.split('/').slice(-2).join('/')} 这类文件。要同步 ${kind} 变更吗？`,
+      why: '这类变更会跨出单个模块，影响兼容、发布或回归范围，需要先确认。',
       options: [
-        option('sync-all', '需要，按完整流程走（含迁移/三语）'),
+        option('sync-all', '需要，按完整流程走（含迁移/三语/依赖锁）'),
         option('internal-only', '不需要，只改内部实现'),
+      ],
+    })
+  }
+
+  // 前端改动多出在边界状态：有命中 UI 文件时先确认这次要覆盖到哪一层
+  const uiFiles = files.some((file) => /\.(tsx|jsx|vue|css|scss|less)$|(^|\/)(components|pages|views|features)\//i.test(String(file?.path ?? '')))
+  if (conventions?.project?.frontend && uiFiles && text.length >= 6) {
+    questions.push({
+      id: 'ui-states',
+      kind: 'choice',
+      question: '这次前端改动要覆盖哪些状态？',
+      why: '前端问题大多出在 loading/empty/error/权限与窄屏；先定范围，评审才不会反复补。',
+      options: [
+        option('all-states', '正常 + loading/empty/error/权限都覆盖（推荐）'),
+        option('happy-path', '只做正常路径，边界状态后续单独处理'),
       ],
     })
   }

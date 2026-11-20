@@ -340,12 +340,15 @@
     "本机环境": "本机环境",
     "重新探测": "重新探测",
     "已发现 JDK": "已发现 JDK",
+    "只需要填项目路径和你的名字；系统、Shell、语言工具链（Node/JDK）、包管理器、Git 和可用工具会自动探测。": "只需要填项目路径和你的名字；系统、Shell、语言工具链（Node/JDK）、包管理器、Git 和可用工具会自动探测。",
+    "Node 工具链": "Node 工具链",
     "可用工具": "可用工具",
     "无": "无",
     "测试命令": "测试命令",
     "分两层：项目命令提交到仓库、团队共用；本机命令只存在这台电脑（~/.dsh/dev-hub/profile.json），不提交，也不会影响别人。": "分两层：项目命令提交到仓库、团队共用；本机命令只存在这台电脑（~/.dsh/dev-hub/profile.json），不提交，也不会影响别人。",
     "项目命令（提交到 .dev-hub/project.json）": "项目命令（提交到 .dev-hub/project.json）",
     "例如：mvn -o clean test": "例如：mvn -o clean test",
+    "例如：pnpm test / npm test / mvn -o clean test": "例如：pnpm test / npm test / mvn -o clean test",
     "例如：sh scripts/sit.sh": "例如：sh scripts/sit.sh",
     "例如：sh scripts/check.sh --full": "例如：sh scripts/check.sh --full",
     "保存中…": "保存中…",
@@ -511,6 +514,7 @@
     "这个流程还没有文件改动": "这个流程还没有文件改动",
     "关键改动": "关键改动",
     "数据库模型": "数据库模型",
+    "样式/设计": "样式/设计",
     "scope 外": "scope 外",
     "查看这个文件的完整 diff": "查看这个文件的完整 diff",
     "完整 diff": "完整 diff",
@@ -1393,7 +1397,10 @@
     "已进入开发": "已进入开发",
     "查看流程": "查看流程",
     "在 IDE 打开": "在 IDE 打开",
-    "打开中…": "打开中…"
+    "打开中…": "打开中…",
+    "默认只删除台账（目标/计划/验收/历史/会话绑定），不回滚代码，也不删除 DSH 开发会话。": "默认只删除台账（目标/计划/验收/历史/会话绑定），不回滚代码，也不删除 DSH 开发会话。",
+    "同时删除 worktree 和 devhub 分支（未提交/未合并的代码改动会丢失）": "同时删除 worktree 和 devhub 分支（未提交/未合并的代码改动会丢失）",
+    "；当前流程还绑定开发会话，请先解绑/结束会话": "；当前流程还绑定开发会话，请先解绑/结束会话"
   },
   "templates": {
     "成员 {name}": "成员 {name}",
@@ -1855,7 +1862,9 @@
     "已用 {value1} 打开工作区：{value2}": "已用 {value1} 打开工作区：{value2}",
     "打开 IDE 失败：{value1}": "打开 IDE 失败：{value1}",
     "在 {value1} 打开当前 worktree": "在 {value1} 打开当前 worktree",
-    "用 {value1} 打开当前流程的 worktree": "用 {value1} 打开当前流程的 worktree"
+    "用 {value1} 打开当前流程的 worktree": "用 {value1} 打开当前流程的 worktree",
+    "删除流程「{value1}」？\n\n{value2}这个操作不可撤销。": "删除流程「{value1}」？\n\n{value2}这个操作不可撤销。",
+    "已删除流程 {value1}（worktree 与分支已清理）": "已删除流程 {value1}（worktree 与分支已清理）"
   },
   "templateValues": {
     "通过": "通过",

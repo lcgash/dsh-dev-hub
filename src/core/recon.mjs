@@ -20,7 +20,8 @@ export const SKIP_DIRS = new Set([
 ])
 
 export const TEXT_EXTS = new Set([
-  '.java', '.kt', '.kts', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.py', '.go', '.rs',
+  '.java', '.kt', '.kts', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.svelte', '.astro',
+  '.css', '.scss', '.sass', '.less', '.html', '.py', '.go', '.rs',
   '.xml', '.yml', '.yaml', '.json', '.md', '.sql', '.sh', '.properties', '.gradle', '.toml', '.txt',
 ])
 

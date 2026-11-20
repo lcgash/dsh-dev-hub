@@ -24,6 +24,12 @@ const KEY_FILE_RULES = [
     re: /(controller|apis?|routes?|router|handlers?|dto|vo|openapi|swagger)/i,
   },
   {
+    kind: '样式/设计',
+    weight: 65,
+    // theme/tokens/styles、*.css/scss/less、设计系统文件
+    re: /(^|\/)(theme|themes|tokens|styles|design-system)(\/|$|\.)|\.(css|scss|sass|less)$/i,
+  },
+  {
     kind: '配置',
     weight: 55,
     re: /(application\.(ya?ml|properties)|bootstrap\.(ya?ml|properties)|pom\.xml|build\.gradle|package\.json|dockerfile|\.env)/i,

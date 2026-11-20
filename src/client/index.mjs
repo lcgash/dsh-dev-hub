@@ -225,7 +225,7 @@ function SetupForm({ state, onDone, mode = 'setup', onPickDirectory }) {
     h('h3', { style: { margin: '0 0 6px' } }, adding ? '新增项目' : '初始化 DevHub'),
     h('p', { style: { color: C.muted, marginTop: 0 } }, adding
       ? '填一个已有项目的路径（或选择目录）；它会加入项目卡片，环境自动探测一次后缓存。'
-      : '只需要填项目路径和你的名字；系统、Shell、JDK、Maven、Git 和可用工具会自动探测。'),
+      : '只需要填项目路径和你的名字；系统、Shell、语言工具链（Node/JDK）、包管理器、Git 和可用工具会自动探测。'),
     h('form', { onSubmit: submit },
       h('label', { style: styles.label }, '项目路径'),
       h('div', { style: { display: 'flex', gap: T.gap.xs } },
@@ -263,11 +263,21 @@ function EnvironmentCard({ env, onDetect }) {
       h('strong', null, '本机环境'),
       h('span', { style: styles.pill }, `${env.os} ${env.arch}`),
       env.currentJdk ? h('span', { style: styles.pill }, `JDK ${env.currentJdk.major ?? '?'}`) : null,
+      env.tools?.node?.available ? h('span', { style: styles.pill }, `Node ${env.tools.node.version ?? ''}`.trim()) : null,
+      env.tools?.pnpm?.available ? h('span', { style: styles.pill }, 'pnpm') : null,
       h(Button, { onClick: onDetect, children: '重新探测' }),
     ),
     h('div', { style: { color: C.muted, marginTop: 8 } },
       `Shell: ${env.shell?.name ?? 'unknown'} · Git: ${env.git?.version ?? 'unavailable'}`,
     ),
+    // 工具链版本：前端先看 Node/包管理器，JDK 只在存在时显示（不再无条件展示“未找到 JDK”）
+    (env.tools?.node?.available || env.tools?.npm?.available || env.tools?.pnpm?.available || env.tools?.yarn?.available || env.tools?.bun?.available)
+      ? h('div', { style: { marginTop: 8 } },
+        h('div', { style: styles.label }, 'Node 工具链'),
+        ['node', 'npm', 'pnpm', 'yarn', 'bun'].filter((name) => env.tools?.[name]?.available).map((name) => h('div', { key: name, style: { fontSize: 12 } },
+          `${name} · ${env.tools[name].version ?? ''} · ${env.tools[name].path ?? ''}`)),
+      )
+      : null,
     env.jdks?.length ? h('div', { style: { marginTop: 8 } },
       h('div', { style: styles.label }, '已发现 JDK'),
       env.jdks.map((jdk) => h('div', { key: jdk.path, style: { fontSize: 12 } }, `${jdk.major ?? '?'} · ${jdk.version ?? ''} · ${jdk.path}`)),
@@ -360,7 +370,7 @@ export function ProjectCommands({ project, localCommands = {}, onSaved }) {
         h('input', {
           style: styles.input,
           value: shared[entry.id] ?? '',
-          placeholder: entry.id === 'localTest' ? '例如：mvn -o clean test' : entry.id === 'environmentTest' ? '例如：sh scripts/sit.sh' : '例如：sh scripts/check.sh --full',
+          placeholder: entry.id === 'localTest' ? '例如：pnpm test / npm test / mvn -o clean test' : entry.id === 'environmentTest' ? '例如：sh scripts/sit.sh' : '例如：sh scripts/check.sh --full',
           onChange: (event) => setShared((current) => ({ ...current, [entry.id]: event.target.value })),
         }),
       )),
@@ -665,6 +675,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // advanceError 保存「自动开始评审失败」的原因，按钮旁内联展示，直到下次推进成功。
   const [reviewBusy, setReviewBusy] = useState(false)
   const [overrideBusy, setOverrideBusy] = useState(false)
+  const [deleteWorktree, setDeleteWorktree] = useState(false)
   // 自动化模式：null = 尚未读到设置；读到 full 才允许自动推进
   const [automation, setAutomation] = useState(null)
   const autoNextRef = useRef('')
@@ -3305,7 +3316,19 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         h('div', { style: sectionBox },
           h('div', { style: styles.sectionTitle }, '删除流程'),
           h('div', { style: { ...styles.sectionHint, marginTop: 4 } },
-            '只删除这条流程的台账（目标/计划/验收/历史/会话绑定）；**不会**回滚已改代码，也**不会**删除 DSH 开发会话。'),
+            '默认只删除台账（目标/计划/验收/历史/会话绑定），不回滚代码，也不删除 DSH 开发会话。'),
+          (draft.worktreePath || draft.workflow?.worktree?.branch || draft.workflow?.worktrees?.length)
+            ? h('label', { style: { display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 8, fontSize: T.font.sm, color: T.text2, cursor: 'pointer' } },
+              h('input', {
+                type: 'checkbox',
+                checked: deleteWorktree,
+                onChange: (event) => { setDeleteWorktree(event.target.checked); setError('') },
+              }),
+              h('span', null,
+                '同时删除 worktree 和 devhub 分支（未提交/未合并的代码改动会丢失）',
+                draft.session?.id ? h('span', { style: styles.sectionHint }, '；当前流程还绑定开发会话，请先解绑/结束会话') : null),
+            )
+            : null,
           h('div', { style: { ...styles.row, marginTop: T.gap.xs } },
             h(Button, {
               // 删除是破坏性操作：用危险色（红）标识，和普通次要按钮区分开
@@ -3318,14 +3341,19 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               disabled: busy,
               onClick: async () => {
                 const ok = typeof window !== 'undefined' && confirmText(
-                  `删除流程「${draft.title || draft.id}」？\n\n只删台账；代码不回滚、DSH 会话不删除。这个操作不可撤销。`,
+                  `删除流程「${draft.title || draft.id}」？\n\n${deleteWorktree
+                    ? '将删除台账，并丢弃 worktree 与 devhub 分支上的未提交/未合并代码改动；DSH 会话不删除。'
+                    : '只删台账；代码不回滚、DSH 会话不删除。'}这个操作不可撤销。`,
                 )
                 if (!ok) return
                 setBusy(true)
                 setError('')
                 try {
-                  await api(API.deleteItem, { method: 'POST', body: JSON.stringify({ id: draft.id }) })
-                  onDeleted?.(draft.id)
+                  await api(API.deleteItem, {
+                    method: 'POST',
+                    body: JSON.stringify({ id: draft.id, deleteWorktree, deleteBranch: deleteWorktree }),
+                  })
+                  onDeleted?.(draft.id, { worktreeDeleted: deleteWorktree })
                 } catch (err) {
                   setError(errorText(err))
                 } finally {
@@ -4852,9 +4880,9 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
           onOpenSession: openSession,
           onUnbindSession: unbindSession,
           onEditingChange: setDetailEditing,
-          onDeleted: async (id) => {
+          onDeleted: async (id, { worktreeDeleted = false } = {}) => {
             setSelected(null)
-            setNotice(`已删除流程 ${id}（代码与会话未动）`)
+            setNotice(worktreeDeleted ? `已删除流程 ${id}（worktree 与分支已清理）` : `已删除流程 ${id}（代码与会话未动）`)
             await reload()
           },
           onContext: makeContext,

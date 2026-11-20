@@ -340,12 +340,15 @@
     "本机环境": "Local environment",
     "重新探测": "Probe again",
     "已发现 JDK": "JDK found",
+    "只需要填项目路径和你的名字；系统、Shell、语言工具链（Node/JDK）、包管理器、Git 和可用工具会自动探测。": "Just enter the project path and your name; OS, shell, language toolchains (Node/JDK), package manager, Git and available tools are detected automatically.",
+    "Node 工具链": "Node toolchain",
     "可用工具": "Available tools",
     "无": "None",
     "测试命令": "Test commands",
     "分两层：项目命令提交到仓库、团队共用；本机命令只存在这台电脑（~/.dsh/dev-hub/profile.json），不提交，也不会影响别人。": "Two layers: project commands are committed to the repo and shared with the team; local commands live only on this machine (~/.dsh/dev-hub/profile.json), aren't committed and don't affect anyone else.",
     "项目命令（提交到 .dev-hub/project.json）": "Project commands (committed to .dev-hub/project.json)",
     "例如：mvn -o clean test": "e.g. mvn -o clean test",
+    "例如：pnpm test / npm test / mvn -o clean test": "e.g. pnpm test / npm test / mvn -o clean test",
     "例如：sh scripts/sit.sh": "e.g. sh scripts/sit.sh",
     "例如：sh scripts/check.sh --full": "e.g. sh scripts/check.sh --full",
     "保存中…": "Saving…",
@@ -511,6 +514,7 @@
     "这个流程还没有文件改动": "This flow has no file changes yet",
     "关键改动": "Key changes",
     "数据库模型": "Database models",
+    "样式/设计": "Styles/design",
     "scope 外": "Out of scope",
     "查看这个文件的完整 diff": "View the full diff for this file",
     "完整 diff": "Full diff",
@@ -1393,7 +1397,10 @@
     "已进入开发": "In development",
     "查看流程": "View flow",
     "在 IDE 打开": "Open in IDE",
-    "打开中…": "Opening…"
+    "打开中…": "Opening…",
+    "默认只删除台账（目标/计划/验收/历史/会话绑定），不回滚代码，也不删除 DSH 开发会话。": "Deletes only the ledger by default (goal/plan/acceptance/history/session binding); code is not rolled back and the DSH session is not removed.",
+    "同时删除 worktree 和 devhub 分支（未提交/未合并的代码改动会丢失）": "Also delete the worktree and devhub branch (uncommitted/unmerged code changes will be lost)",
+    "；当前流程还绑定开发会话，请先解绑/结束会话": " ; this flow is still bound to a development session; unbind or end it first"
   },
   "templates": {
     "成员 {name}": "Member {name}",
@@ -1855,7 +1862,9 @@
     "已用 {value1} 打开工作区：{value2}": "Opened the workspace with {value1}: {value2}",
     "打开 IDE 失败：{value1}": "Failed to open the IDE: {value1}",
     "在 {value1} 打开当前 worktree": "Open the current worktree in {value1}",
-    "用 {value1} 打开当前流程的 worktree": "Open the current worktree with {value1}"
+    "用 {value1} 打开当前流程的 worktree": "Open the current worktree with {value1}",
+    "删除流程「{value1}」？\n\n{value2}这个操作不可撤销。": "Delete flow \"{value1}\"?\n\n{value2}This cannot be undone.",
+    "已删除流程 {value1}（worktree 与分支已清理）": "Deleted flow {value1} (worktree and branch removed)"
   },
   "templateValues": {
     "通过": "passed",

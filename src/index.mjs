@@ -195,21 +195,81 @@ function repoName(repo) {
   return repo.split(/[/\\]/).filter(Boolean).pop() || 'repository'
 }
 
+function packageScriptAt(pm, dir, script) {
+  const flag = { npm: '--prefix', pnpm: '--dir', yarn: '--cwd', bun: '--cwd' }[pm] ?? '--dir'
+  const at = /\s/.test(dir) ? `"${dir}"` : dir
+  return `${pm} ${flag} ${at} run ${script}`
+}
+
 function defaultCommands(repo) {
   const commands = {}
   const has = async (name) => exists(join(repo, name))
   return (async () => {
-    if (await has('pom.xml')) {
+    const profile = await detectRepoProfile(repo)
+    const hasCheck = await has('scripts/check.sh')
+    if (profile.language === 'java') {
       commands.compile = 'mvn -o clean compile'
       commands.test = 'mvn -o clean test'
       commands.localTest = 'mvn -o clean test'
     }
-    if (await has('scripts/check.sh')) commands.gate = 'sh scripts/check.sh --full'
-    if (await has('package.json')) {
-      commands.install = 'npm install'
-      commands.build = 'npm run build'
-      commands.localTest = 'npm test'
+    // 前端/Node：命令必须跟仓库的包管理器与 package scripts 走，不能写死 npm test/build
+    const frontendProjects = profile.frontendProjects ?? []
+    if (profile.language === 'node' || (profile.scripts && Object.keys(profile.scripts).length) || frontendProjects.length) {
+      const pm = profile.packageManager || frontendProjects[0]?.packageManager || 'npm'
+      const scripts = profile.scripts ?? {}
+      if (profile.language === 'node') commands.install = `${pm} install`
+      if (!commands.build && scripts.build) {
+        commands.build = pm === 'npm' ? 'npm run build' : `${pm} run build`
+      }
+      if (!commands.localTest && scripts.test) {
+        commands.localTest = pm === 'npm' ? 'npm test' : (pm === 'bun' ? 'bun run test' : `${pm} test`)
+      } else if (!commands.localTest && scripts['test:unit']) {
+        commands.localTest = `${pm} run test:unit`
+      }
+      if (!commands.compile && scripts.typecheck) commands.compile = `${pm} run typecheck`
+      if (!commands.gate) {
+        const gates = []
+        if (scripts.lint) gates.push(`${pm} run lint`)
+        if (scripts.typecheck) gates.push(`${pm} run typecheck`)
+        if (scripts.check && !hasCheck) gates.push(`${pm} run check`)
+        if (gates.length) commands.gate = gates.join(' && ')
+      }
+      if (!commands.environmentTest) {
+        const e2e = ['test:e2e', 'test:e2e:ci', 'test:integration', 'test:smoke', 'test:visual', 'test:screenshot', 'test:ui'].find((name) => scripts[name])
+        if (e2e) commands.environmentTest = `${pm} run ${e2e}`
+      }
     }
+    // Java 根 + web/ 或 pnpm monorepo：根命令不能把前端子项目漏掉，按子项目合并 test/gate/e2e
+    const combineSubprojects = frontendProjects.length
+      && (profile.language !== 'node' || !Object.keys(profile.scripts ?? {}).length)
+    if (combineSubprojects) {
+      const tests = []
+      const gates = []
+      const builds = []
+      const envs = []
+      for (const project of frontendProjects) {
+        const pm = project.packageManager || 'npm'
+        const scripts = project.scripts ?? {}
+        if (scripts.test) tests.push(packageScriptAt(pm, project.path, 'test'))
+        else if (scripts['test:unit']) tests.push(packageScriptAt(pm, project.path, 'test:unit'))
+        if (scripts.lint) gates.push(packageScriptAt(pm, project.path, 'lint'))
+        if (scripts.typecheck) gates.push(packageScriptAt(pm, project.path, 'typecheck'))
+        if (scripts.build) builds.push(packageScriptAt(pm, project.path, 'build'))
+        const e2e = ['test:e2e', 'test:e2e:ci', 'test:integration', 'test:smoke', 'test:visual', 'test:screenshot', 'test:ui'].find((name) => scripts[name])
+        if (e2e) envs.push(packageScriptAt(pm, project.path, e2e))
+      }
+      commands.localTest = [commands.localTest, ...tests].filter(Boolean).join(' && ')
+      commands.gate = [commands.gate, ...gates].filter(Boolean).join(' && ')
+      if (!commands.build && builds.length) commands.build = builds.join(' && ')
+      if (!commands.environmentTest && envs.length) commands.environmentTest = envs.join(' && ')
+      if (!commands.install) {
+        const first = frontendProjects[0]
+        const pm = first.packageManager || 'npm'
+        const flag = { npm: '--prefix', pnpm: '--dir', yarn: '--cwd', bun: '--cwd' }[pm] ?? '--dir'
+        commands.install = `${pm} ${flag} ${/\s/.test(first.path) ? `"${first.path}"` : first.path} install`
+      }
+    }
+    if (hasCheck) commands.gate = [commands.gate, 'sh scripts/check.sh --full'].filter(Boolean).join(' && ')
     return commands
   })()
 }
@@ -5299,19 +5359,32 @@ export function apply(ctx) {
           if (!id) throw new Error('缺少流程 id')
           const existing = await getItem(repo, id)
           if (!existing) throw new Error(`开发流程不存在：${id}`)
-          // 删台账不动代码/会话；独立工作区只清理本机目录（分支保留，提交还在）。
-          // 还绑定着会话时先不删目录，避免把正在运行的开发会话 cwd 拆掉。
-          if (!existing.session?.id) {
+          const deleteWorktree = body.deleteWorktree === true
+          const deleteBranch = deleteWorktree && body.deleteBranch === true
+          // 默认只删台账；用户显式勾选才丢弃 worktree / 分支上的本地改动。
+          // 会话还绑定着时不动 worktree：它可能还是运行中会话的 cwd。
+          if (deleteWorktree) {
+            if (existing.session?.id) {
+              throw new Error('这条流程还绑定着开发会话：先解绑/结束会话，再删除 worktree')
+            }
             const deleteTarget = workspaceTarget(profile, existing, repo)
+            const branches = []
             if (deleteTarget) {
               for (const member of deleteTarget.members) {
                 if (!member.worktree) continue
                 await removeFlowWorktree(member.path, {
                   id: memberWorktreeItemId(existing.id, member.name),
                 }).catch(() => {})
+                if (member.worktree.branch) branches.push({ repo: member.path, branch: member.worktree.branch })
               }
             } else if (existing.workflow?.worktree?.branch) {
               await removeFlowWorktree(repo, existing).catch(() => {})
+              branches.push({ repo, branch: existing.workflow.worktree.branch })
+            }
+            if (deleteBranch) {
+              for (const entry of branches) {
+                await git(entry.repo, ['branch', '-D', entry.branch]).catch(() => {})
+              }
             }
           }
           const deleted = await deleteItem(repo, id)
@@ -5322,7 +5395,7 @@ export function apply(ctx) {
             const active = activeWorkspace(profile)
             if (active) await removeWorkspaceItemArtifacts(active.workspace, id)
           }
-          sendJson(res, 200, { ok: true, deleted: true, id })
+          sendJson(res, 200, { ok: true, deleted: true, id, worktreeDeleted: deleteWorktree, branchDeleted: deleteBranch })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }

@@ -30,21 +30,36 @@ function taskLines(tasks) {
   return tasks.map((task) => `- [${task.done ? 'x' : ' '}] ${task.text}`).join('\n')
 }
 
-function envLines(profile, env) {
+function envLines(profile, env, repoProfile = null) {
   if (!env) return '（尚未探测本机环境）'
   const lines = []
   lines.push(`- 开发者：${text(profile?.member, '未设置')}`)
   lines.push(`- 系统：${env.os ?? 'unknown'} ${env.arch ?? ''}`.trim())
   lines.push(`- Shell：${env.shell?.name ?? 'unknown'}（${env.shell?.path ?? '未探测'}）`)
+  const tools = env.tools && typeof env.tools === 'object' ? env.tools : {}
+  const version = (name) => tools[name]?.version ? ` ${tools[name].version}` : ''
+  const isFrontend = Boolean(repoProfile?.frontend)
+  const isNode = repoProfile?.language === 'node'
+  if (isFrontend) {
+    const stack = [...(repoProfile?.frameworks ?? []), ...(repoProfile?.frontendTooling ?? [])].join(' / ') || '前端工程'
+    const frontendPm = (repoProfile?.frontendProjects ?? []).map((project) => project.packageManager).filter(Boolean).join(' / ')
+      || repoProfile?.packageManager || 'npm'
+    lines.push(`- 前端工程：${stack} · 包管理器 ${frontendPm}`)
+  }
+  if (repoProfile?.frontendProjects?.length) {
+    lines.push(`- 前端子项目：${repoProfile.frontendProjects.map((project) => `${project.path}（${project.packageManager || 'npm'}${project.frameworks?.length ? ` · ${project.frameworks.join('/')}` : ''}）`).join('；')}`)
+  }
+  if (isFrontend || isNode || tools.node?.available) {
+    lines.push(`- Node${version('node')}${tools.npm?.available ? ` · npm${version('npm')}` : ''}${tools.pnpm?.available ? ` · pnpm${version('pnpm')}` : ''}`)
+  }
   if (env.currentJdk) {
     lines.push(`- 当前 JDK：${env.currentJdk.version ?? 'unknown'}（${env.currentJdk.path}）`)
-  } else {
+  } else if (repoProfile?.language === 'java') {
     lines.push('- 当前 JDK：未找到')
   }
   if (env.jdks?.length > 1) {
     lines.push(`- 已发现 JDK：${env.jdks.map((jdk) => `${jdk.major ?? '?'} (${jdk.path})`).join('；')}`)
   }
-  const tools = env.tools && typeof env.tools === 'object' ? env.tools : {}
   const available = Object.keys(tools).filter((name) => tools[name]?.available).sort()
   const missing = Object.keys(tools).filter((name) => !tools[name]?.available).sort()
   lines.push(`- 可用工具：${available.length ? available.join(', ') : '未探测到'}`)
@@ -349,7 +364,7 @@ export function buildContext({ repoName, project, item, profile, env, gitInfo, c
     ...(workspaceBlock ? ['', workspaceBlock] : []),
     '',
     '【本机环境】',
-    envLines(profile, env),
+    envLines(profile, env, repoProfile),
     '',
     '【项目约束】',
     list(constraints),

@@ -14,8 +14,13 @@ import { moduleOfPath } from './modules.mjs'
 const RISK_PATTERNS = [
   { kind: 'db', test: (path) => /(^|\/)db\/|\.sql$/i.test(path), label: '涉及库表/迁移', extra: 1 },
   { kind: 'contract', test: (path) => /controller\/|model\/(dto|vo)\//i.test(path), label: '涉及对外契约', extra: 0.5 },
-  { kind: 'i18n', test: (path) => /messages.*\.properties$|i18n/i.test(path), label: '涉及多语言文案', extra: 0.5 },
+  { kind: 'i18n', test: (path) => /messages.*\.properties$|i18n|locales?\//i.test(path), label: '涉及多语言文案', extra: 0.5 },
   { kind: 'config', test: (path) => /(^|\/)config\/|[^/]+\.ya?ml$/i.test(path), label: '涉及配置', extra: 0.25 },
+  // 前端/Node：依赖与公共导出、设计 token/样式、路由/页面结构都是跨边界风险
+  { kind: 'deps', test: (path) => /(^|\/)(package\.json|pnpm-lock\.yaml|package-lock\.json|yarn\.lock|bun\.lockb?)$/i.test(path), label: '涉及依赖/公共契约', extra: 0.5 },
+  { kind: 'ui', test: (path) => /\.(css|scss|less|sass)$|(^|\/)(theme|themes|tokens|styles|design-system)\//i.test(path), label: '涉及设计 token/样式', extra: 0.5 },
+  { kind: 'routes', test: (path) => /(^|\/)(routes?|router|app)\//i.test(path), label: '涉及路由/页面结构', extra: 0.5 },
+  { kind: 'public', test: (path) => /(^|\/)(index|exports|public-api)\.(ts|tsx|js|jsx|mjs)$/i.test(path), label: '涉及公共导出/组件契约', extra: 0.5 },
 ]
 
 const SIZE_ORDER = ['S', 'M', 'L', 'XL']
@@ -35,7 +40,7 @@ export function estimateWork({ recon, scope = [], commands = {}, repoNames = [] 
   for (const file of files) modules.add(moduleOfPath(file?.path, repoNames))
   const moduleCount = Math.max(modules.size, scope.length ? 1 : 0)
   const matchCount = files.reduce((total, file) => total + (file?.matches?.length ?? 0), 0)
-  const hasTests = files.some((file) => /\/test\/|test\.(java|ts|js|mjs)$|Test\.(java|ts)$/i.test(String(file?.path ?? '')))
+  const hasTests = files.some((file) => /(^|\/)(?:__tests__|tests?|e2e)\/|\.(test|spec)\.(?:[cm]?[jt]sx?|vue)$|Test\.(java|kt)$|_test\.(go|py)$/i.test(String(file?.path ?? '')))
 
   const risks = []
   let riskExtra = 0

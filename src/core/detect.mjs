@@ -164,6 +164,8 @@ const TOOLS = [
   ['node', ['--version']],
   ['npm', ['--version']],
   ['pnpm', ['--version']],
+  ['yarn', ['--version']],
+  ['bun', ['--version']],
   ['mvn', ['-v']],
   ['docker', ['--version']],
   ['mysql', ['--version']],

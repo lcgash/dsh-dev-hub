@@ -182,3 +182,35 @@ test('worktree 提交：默认推送到开工分支，而不是 devhub/*，无�
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('删除流程可清理 devhub 分支；不勾选时保留分支', async () => {
+  const repo = await tempRepo()
+  try {
+    const { ctx, routes } = fakeContext(repo)
+    apply(ctx)
+    execFileSync('git', ['branch', 'devhub/delete-keep'], { cwd: repo })
+    execFileSync('git', ['branch', 'devhub/delete-drop'], { cwd: repo })
+    await call(routes, API.setup, { method: 'POST', body: { repoPath: repo, name: '张三' } })
+    for (const [id, branch] of [['delete-keep', 'devhub/delete-keep'], ['delete-drop', 'devhub/delete-drop']]) {
+      await call(routes, API.items, {
+        method: 'POST',
+        body: {
+          id,
+          title: id,
+          workflow: { gitRepo: true, worktree: { branch, baseCommit: 'abc', createdAt: new Date().toISOString() } },
+          tasks: [],
+        },
+      })
+    }
+    const kept = await call(routes, API.deleteItem, { method: 'POST', body: { id: 'delete-keep' } })
+    assert.equal(kept.status, 200)
+    assert.equal(execFileSync('git', ['branch', '--list', 'devhub/delete-keep'], { cwd: repo }).toString().trim(), 'devhub/delete-keep')
+
+    const dropped = await call(routes, API.deleteItem, { method: 'POST', body: { id: 'delete-drop', deleteWorktree: true, deleteBranch: true } })
+    assert.equal(dropped.status, 200, JSON.stringify(dropped.body))
+    assert.equal(execFileSync('git', ['branch', '--list', 'devhub/delete-drop'], { cwd: repo }).toString().trim(), '')
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true })
+  }
+})
