@@ -12,8 +12,10 @@ import { join } from 'node:path'
 export const DEFAULT_TIMEOUT_MS = 180_000
 
 function withTimeout(ms) {
+  // 0 / 负数 = 不设墙钟超时：评审等长任务只靠“会话失联”判定，不能被固定时长杀掉。
+  if (!Number.isFinite(Number(ms)) || Number(ms) <= 0) return { signal: undefined, dispose: () => {} }
   const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(new Error(`超时（${Math.round(ms / 1000)}s）`)), ms)
+  const timer = setTimeout(() => controller.abort(new Error(`超时（${Math.round(ms / 1000)}s）`)), Number(ms))
   return { signal: controller.signal, dispose: () => clearTimeout(timer) }
 }
 

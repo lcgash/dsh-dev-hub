@@ -657,14 +657,14 @@ test('staleReviewerFailures：逐位判断会话异常/超时，活着的审核�
   assert.deepEqual(dead.map((entry) => entry.reviewerId), ['reviewer-1'], '只标已经结束的那位')
   assert.match(dead[0].reason, /异常结束且没有返回可用结论/)
 
-  // 会话还活着但超过 4 分钟没结论：才按超时处理
-  const stale = staleReviewerFailures(review, {
-    now: now + REVIEW_STALE_MS,
+  // 会话还活着就不按时间判失败：大改动评审可以持续很久
+  assert.equal(REVIEW_STALE_MS, 0)
+  const stillAlive = staleReviewerFailures(review, {
+    now: now + 24 * 60 * 60_000,
     isLive: () => true,
     deadGraceMs: 15_000,
   })
-  assert.deepEqual(stale.map((entry) => entry.reviewerId), ['reviewer-1', 'reviewer-2'])
-  assert.match(stale[0].reason, /超过 4 分钟未返回结论/)
+  assert.deepEqual(stillAlive, [])
 
   // 没拿到 sessionId：启动宽限期内不误判，之后标“没有启动成功”
   const noSession = normalizeReview({

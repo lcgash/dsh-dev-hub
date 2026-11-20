@@ -2782,9 +2782,12 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
       prompt,
       schema: REVIEW_SCHEMA,
       label: `devhub-${reviewer.id}${attempt > 1 ? '-retry' : ''}`,
-      // 大改动的审核员要读多个文件/调用方；150s 很容易在读完前被 abort。
-      // 允许用环境变量覆盖，默认给 5 分钟。
-      timeoutMs: Number(process.env.DEVHUB_REVIEW_TIMEOUT_MS) || 300000,
+      // 评审不设固定墙钟超时：大改动读文件/调用方本来就可能很慢。
+      // 只有会话真的失联才由 reconcileStaleReview 标异常；需要硬上限时显式配环境变量。
+      timeoutMs: (() => {
+        const value = Number(process.env.DEVHUB_REVIEW_TIMEOUT_MS)
+        return Number.isFinite(value) && value > 0 ? value : 0
+      })(),
       onStarted: async ({ sessionId, parentSessionId }) => {
         // 先落 sessionId/parentSessionId：UI 立刻能看到“审核会话已启动”，
         // 失联时也能用 parentSessionId 判断协程是不是真的还在。

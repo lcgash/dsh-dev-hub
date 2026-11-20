@@ -170,14 +170,15 @@ export function normalizeReview(raw) {
 }
 
 /**
- * 审核会话异常/超时的判定窗口。
+ * 审核会话异常判定窗口。
  * - 派发后迟迟拿不到 sessionId：启动失败，30s 后标异常；
  * - 子代理从 live registry 消失：会话已结束却没回写结论（常见于无输出/被清理），15s 后标异常；
- * - 会话还活着但长时间没结论：4 分钟后标异常（runAgentJson 自身 5 分钟超时，留余量）。
+ * - 会话仍然活着：不按时间判失败。大改动评审就是慢，只有会话真的失联才交给人工处理。
  */
 export const REVIEW_START_GRACE_MS = 30_000
 export const REVIEW_DEAD_GRACE_MS = 15_000
-export const REVIEW_STALE_MS = 4 * 60_000
+/** 0 = 不按“活着但耗时久”判超时（保留导出兼容旧配置）。 */
+export const REVIEW_STALE_MS = 0
 
 /**
  * 找出“已经不可能再返回结论”的 pending 审核员。
@@ -221,7 +222,7 @@ export function staleReviewerFailures(review, {
       }
       continue
     }
-    if (age >= staleMs) {
+    if (staleMs > 0 && age >= staleMs) {
       outcomes.push({
         reviewerId: reviewer.id,
         reason: `审核会话超过 ${Math.round(staleMs / 60_000)} 分钟未返回结论；请重试评审`,
