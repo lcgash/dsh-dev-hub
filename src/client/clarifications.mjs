@@ -78,7 +78,6 @@ function ClarificationCard({ card, onOpen, onOpenFlow, onDelete }) {
       flexDirection: 'column',
       gap: 8,
       minWidth: 0,
-      height: '100%',
       padding: '14px 15px',
       border: `1px solid ${T.borderSoft}`,
       borderRadius: T.rLg,
@@ -199,7 +198,7 @@ export function ClarificationWorkspace({ repoPath, refreshNonce = 0, onOpen, onO
     ),
     error ? h('div', { style: styles.dangerCard }, `读取澄清会话失败：${error}`) : null,
     cards.length
-      ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', alignItems: 'stretch', gap: 10 } },
+      ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', alignItems: 'start', gap: '16px 12px' } },
         cards.map((card) => h(ClarificationCard, { key: card.id, card, onOpen, onOpenFlow, onDelete: remove })))
       : h('div', { style: styles.card },
         h(EmptyState, {
