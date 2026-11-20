@@ -145,8 +145,10 @@ export async function loadProfile() {
     itemWorkspaces: raw.itemWorkspaces && typeof raw.itemWorkspaces === 'object' && !Array.isArray(raw.itemWorkspaces)
       ? raw.itemWorkspaces
       : {},
-    // 自动化推进设置：本机偏好，不写仓库；缺省为完全自动化
-    automation: normalizeAutomation(raw.automation),
+    // 自动化推进设置：按项目保存的本机偏好，不写仓库；缺省为完全自动化
+    projectAutomation: raw.projectAutomation && typeof raw.projectAutomation === 'object' && !Array.isArray(raw.projectAutomation)
+      ? Object.fromEntries(Object.entries(raw.projectAutomation).map(([key, value]) => [key, normalizeAutomation(value)]))
+      : {},
   }
   // 迁移结果落盘一次，后续所有入口（state/setup/switchRepo）都看到干净 profile
   if (dirty) await writeJsonAtomic(PROFILE_PATH, profile)

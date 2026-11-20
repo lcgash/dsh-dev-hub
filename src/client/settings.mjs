@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react'
 import { h } from './i18n.mjs'
 import { API } from '../shared/api.mjs'
 import { normalizeAutomation } from '../shared/automation.mjs'
+import { SkillsPanel } from './skills.mjs'
 import { Button, Pill, T, api, errorText, styles } from './common.mjs'
 
 function OptionCard({ active, title, hint, onSelect }) {
@@ -66,9 +67,10 @@ function NavButton({ active, children, onClick }) {
   }, children)
 }
 
-export function AutomationSettings() {
+export function AutomationSettings({ initialSection = 'automation' } = {}) {
   const [automation, setAutomation] = useState(() => normalizeAutomation(null))
-  const [section, setSection] = useState('automation')
+  const [repo, setRepo] = useState(null)
+  const [section, setSection] = useState(initialSection === 'skills' ? 'skills' : 'automation')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [notice, setNotice] = useState('')
@@ -78,7 +80,7 @@ export function AutomationSettings() {
   useEffect(() => {
     let alive = true
     api(API.settings)
-      .then((body) => { if (alive) setAutomation(normalizeAutomation(body?.automation)) })
+      .then((body) => { if (alive) { setAutomation(normalizeAutomation(body?.automation)); setRepo(body?.repo ?? null) } })
       .catch((err) => { if (alive) setLoadError(errorText(err)) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
@@ -102,6 +104,7 @@ export function AutomationSettings() {
   const sections = [
     { id: 'automation', label: '自动化推进' },
     { id: 'review', label: '独立评审' },
+    { id: 'skills', label: '技能' },
   ]
   const current = sections.find((entry) => entry.id === section) ?? sections[0]
 
@@ -137,15 +140,22 @@ export function AutomationSettings() {
           h('div', { style: { fontSize: T.font.md, fontWeight: 650, color: T.text } }, current.label),
           h('div', { style: styles.sectionHint },
             current.id === 'automation'
-              ? '控制工作站自己的推进动作；提交与推送始终由你确认。'
-              : '控制是否引入独立评审，以及按规模选择评审强度。')),
-        h(Button, { primary: true, disabled: loading || saving, onClick: () => save(), children: saving ? '保存中…' : '保存设置' }),
+              ? `控制当前项目（${repo?.name ?? '当前项目'}）的推进动作；提交与推送始终由你确认。`
+              : current.id === 'skills'
+                ? `管理当前项目（${repo?.name ?? '当前项目'}）的技能包与约束。`
+                : '控制是否引入独立评审，以及按规模选择评审强度。')),
+        current.id === 'skills'
+          ? null
+          : h(Button, { primary: true, disabled: loading || saving, onClick: () => save(), children: saving ? '保存中…' : '保存设置' }),
       ),
       loadError ? h('div', { style: styles.dangerCard }, `读取设置失败：${loadError}`) : null,
       saveError ? h('div', { style: styles.dangerCard }, `保存失败：${saveError}`) : null,
       notice ? h('div', { style: styles.infoCard }, notice) : null,
 
-      section === 'automation'
+      section === 'skills'
+        ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+          h(SkillsPanel))
+        : section === 'automation'
         ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
           loading
             ? h('div', { style: { ...styles.sectionHint, padding: '10px 2px' } }, '正在读取设置…')

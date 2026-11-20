@@ -1847,7 +1847,9 @@
     "已确认候选文件：{value1} 个": "Confirmed candidate files: {value1}",
     "…还有 {value1} 个": "…and {value1} more",
     "当前在需求澄清页，切换到「{value1}」会离开当前项目；澄清草稿已保存在原项目。继续？": "You are on the clarification page. Switching to \"{value1}\" leaves the current project; the clarification draft is saved in the original project. Continue?",
-    "当前项目被切换，且无法切回原项目：{value1}": "The current project was switched and the original project could not be restored: {value1}"
+    "当前项目被切换，且无法切回原项目：{value1}": "The current project was switched and the original project could not be restored: {value1}",
+    "控制当前项目（{value1}）的推进动作；提交与推送始终由你确认。": "Controls automation for the current project ({value1}); submit and push always need your confirmation.",
+    "管理当前项目（{value1}）的技能包与约束。": "Manage skill packs and constraints for the current project ({value1})."
   },
   "templateValues": {
     "通过": "passed",

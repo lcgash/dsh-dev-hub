@@ -743,3 +743,31 @@ test('评审进行中/异常：人工通过会停止本轮并标记 manualOverri
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('自动化设置按项目隔离：不同项目的模式/评审开关互不影响', async () => {
+  const repoA = await tempRepo()
+  const repoB = await tempRepo()
+  const { ctx, routes } = fakeContext(repoA)
+  try {
+    apply(ctx)
+    await call(routes, API.setup, { method: 'POST', body: { repoPath: repoA, name: '张三' } })
+    await call(routes, API.settings, { method: 'POST', body: { automation: { mode: 'manual', reviewEnabled: false } } })
+    assert.equal((await call(routes, API.settings)).body.automation.mode, 'manual')
+
+    const switched = await call(routes, API.switchRepo, { method: 'POST', body: { repoPath: repoB, name: '张三', detect: false } })
+    assert.equal(switched.status, 200, JSON.stringify(switched.body).slice(0, 200))
+    const bDefault = await call(routes, API.settings)
+    assert.equal(bDefault.body.automation.mode, 'full', '新项目默认完全自动化')
+    assert.equal(bDefault.body.automation.reviewEnabled, true)
+    await call(routes, API.settings, { method: 'POST', body: { automation: { mode: 'full', reviewEnabled: true } } })
+
+    await call(routes, API.switchRepo, { method: 'POST', body: { repoPath: repoA, name: '张三', detect: false } })
+    const aAgain = await call(routes, API.settings)
+    assert.equal(aAgain.body.automation.mode, 'manual', '切回项目 A 应保留它自己的设置')
+    assert.equal(aAgain.body.automation.reviewEnabled, false)
+  } finally {
+    await rm(repoA, { recursive: true, force: true })
+    await rm(repoB, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true })
+  }
+})

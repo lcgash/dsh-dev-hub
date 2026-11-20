@@ -64,7 +64,6 @@ import { SessionLogPanel } from './session-log.mjs'
 import { DevHubBoundary } from './error-boundary.mjs'
 import { loadLastTab, loadPanelState, saveLastTab, savePanelState } from './ui-state.mjs'
 import { deleteChat, selectChat, startNewChat } from './chat-store.mjs'
-import { SkillsPanel } from './skills.mjs'
 import { SessionsPanel } from './sessions.mjs'
 import { ReportView } from './report.mjs'
 import { KEY_FILE_LIMIT, excerptLines, keyFileKind, pickKeyFiles } from './key-files.mjs'
@@ -5145,7 +5144,11 @@ export function switchBodyForTarget(target, member = null) {
 
 function DevHubPage({ ctx }) {
   // 页签：恢复上次所在的页面（切走面板再回来、刷新页面都保持）；没有记录才默认「流程」
-  const [tab, setTabState] = useState(() => loadLastTab() ?? 'flows')
+  const [tab, setTabState] = useState(() => {
+    const saved = loadLastTab() ?? 'flows'
+    // 「技能」已经并入设置；旧标签直接落到设置页
+    return saved === 'skills' ? 'settings' : saved
+  })
   const setTab = (next) => {
     setTabState(next)
     saveLastTab(next)
@@ -5423,14 +5426,16 @@ function DevHubPage({ ctx }) {
           { value: 'flows', label: '流程' },
           { value: 'sessions', label: '会话' },
           { value: 'clarify', label: '需求澄清' },
-          { value: 'skills', label: '技能' },
           { value: 'settings', label: '设置' },
         ],
       }),
       ),
     ),
-    tab === 'settings'
-      ? h(AutomationSettings)
+    tab === 'settings' || tab === 'skills'
+      ? h(AutomationSettings, {
+        key: `${flowList?.repo?.path ?? 'none'}:${tab}`,
+        initialSection: tab === 'skills' ? 'skills' : 'automation',
+      })
       : tab === 'clarify'
       ? h(ClarificationWorkspace, {
         repoPath: flowList?.repo?.path ?? null,
@@ -5464,8 +5469,6 @@ function DevHubPage({ ctx }) {
           activeRepoPath: flowList?.repo?.path ?? null,
           activeWorkspacePath: flowList?.workspace?.path ?? null,
         }))
-        : tab === 'skills'
-          ? h('div', { style: styles.pageBody }, h(SkillsPanel))
         : h('div', { style: styles.pageBody }, h(Panel, {
           ctx,
           key: flowsNonce,

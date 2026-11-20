@@ -480,7 +480,7 @@ test('回归：工作站要记住"切走时的页面"（页签 + 上次打开的
   const { readFile } = await import('node:fs/promises')
   const source = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   // 页签：初始化读留存、切换写留存
-  assert.match(source, /useState\(\(\) => loadLastTab\(\) \?\? 'flows'\)/)
+  assert.match(source, /const saved = loadLastTab\(\) \?\? 'flows'/)
   assert.match(source, /saveLastTab\(next\)/)
   // 流程详情：加载后按仓库恢复、变化即保存
   assert.match(source, /loadPanelState\(repoPath\)/)
@@ -2184,4 +2184,14 @@ test('需求澄清卡片：行高按内容自适应，底部元信息与按钮�
   assert.doesNotMatch(file, /gridAutoRows: '1fr'/)
   assert.match(file, /minmax\(340px, 1fr\)/)
   assert.match(file, /flexDirection: 'column',\s*gap: 6,\s*paddingTop: 8/)
+})
+
+test('技能并入设置：不再占顶层页签，设置页按项目展示自动化/评审/技能', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const settings = await readFile(new URL('../src/client/settings.mjs', import.meta.url), 'utf8')
+  assert.doesNotMatch(index, /value: 'skills', label: '技能'/)
+  assert.match(settings, /id: 'skills', label: '技能'/)
+  assert.match(settings, /SkillsPanel/)
+  assert.match(settings, /控制当前项目/)
 })

@@ -546,6 +546,12 @@ async function activeRepo(profile) {
   return null
 }
 
+/** 当前项目的自动化设置：按项目本机保存，缺省完全自动化。 */
+function projectAutomation(profile, repoPath) {
+  const key = String(repoPath ?? '').trim()
+  return normalizeAutomation(key ? profile?.projectAutomation?.[key] : null)
+}
+
 /**
  * 当前激活的是否虚拟库；返回 {workspace, repos, localRoot}。
  * 没有 primary：成员库平权，`localRoot` 才是虚拟库自己的落盘位置。
@@ -3271,8 +3277,8 @@ export function apply(ctx) {
               }
             }
             const active = activeWorkspace(profile)
-            // 新建流程继承当前自动化设置；已有流程由 /settings 统一回写。
-            body.workflow = { ...(body.workflow ?? {}), reviewEnabled: profile.automation?.reviewEnabled !== false }
+            // 新建流程继承当前项目的自动化设置；已有流程由 /settings 统一回写。
+            body.workflow = { ...(body.workflow ?? {}), reviewEnabled: projectAutomation(profile, repo).reviewEnabled !== false }
             let draft = newItem(body.title || '未命名开发项', body)
             // 虚拟库：归属直接写进本机台账，不挑任何成员库
             if (isWorkspaceLocalRoot(repo)) draft = stampWorkspaceItem(draft, active)
@@ -5755,22 +5761,22 @@ export function apply(ctx) {
         try {
           const profile = await loadProfile()
           const repoPathForSettings = await activeRepo(profile)
+          if (!repoPathForSettings) throw new Error('尚未选择项目')
+          const currentAutomation = projectAutomation(profile, repoPathForSettings)
+          const repoInfo = { path: repoPathForSettings, name: repoName(repoPathForSettings) }
           if (req.method === 'GET') {
-            return sendJson(res, 200, { ok: true, automation: normalizeAutomation(profile.automation) })
+            return sendJson(res, 200, { ok: true, automation: currentAutomation, repo: repoInfo })
           }
           if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'GET/POST only' })
           const body = await readBody(req)
-          profile.automation = normalizeAutomation(body?.automation ?? body)
+          const nextAutomation = normalizeAutomation(body?.automation ?? body)
+          profile.projectAutomation = { ...(profile.projectAutomation ?? {}), [repoPathForSettings]: nextAutomation }
           await saveProfile(profile)
           // 开关要立刻影响已有流程，而不是只影响下一条新建流程。
           // 只改 workflow.reviewEnabled，不碰评审历史/测试结论。
-          const enabled = profile.automation.reviewEnabled !== false
-          const paths = new Set([
-            repoPathForSettings,
-            ...Object.keys(profile.repos ?? {}),
-            ...(profile.workspaces ?? []).map((entry) => workspaceLocalDir(entry)),
-          ].filter(Boolean))
-          for (const path of paths) {
+          const enabled = nextAutomation.reviewEnabled !== false
+          // 设置是当前项目的：只回写当前项目的台账，不影响其他项目
+          for (const path of [repoPathForSettings].filter(Boolean)) {
             let items = []
             try { items = await listItems(path) } catch { continue }
             for (const item of items) {
@@ -5780,7 +5786,7 @@ export function apply(ctx) {
               await saveItem(path, item).catch(() => {})
             }
           }
-          return sendJson(res, 200, { ok: true, automation: profile.automation })
+          return sendJson(res, 200, { ok: true, automation: nextAutomation, repo: repoInfo })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }
