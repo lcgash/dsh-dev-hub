@@ -662,7 +662,7 @@ test('回归：右侧详情栏打开时，输入框仍与消息列同轴（不�
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   // 聊天列 = 消息区 + 输入区；右栏是聊天列的同级。否则右栏会把消息列挤窄，
   // 而 footer 仍按整页宽度居中，输入框会相对消息列偏移半个右栏宽（本次线上问题）。
-  const shell = chat.slice(chat.indexOf("return h('div', { style: S.root }"))
+  const shell = chat.slice(chat.indexOf("return h('div', { style: S.root, onPaste"))
   const rowAt = shell.indexOf('style: S.row')
   const chatColAt = shell.indexOf('style: S.chatCol')
   const bodyAt = shell.indexOf('renderBody()')

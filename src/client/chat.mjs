@@ -1100,6 +1100,22 @@ function ensureSpinKeyframes() {
   document.head.appendChild(style)
 }
 
+/** Windows/Edge 粘贴截图时 files 可能为空，真正内容在 items(kind=file) 里。 */
+export function clipboardFiles(clipboard) {
+  const direct = Array.from(clipboard?.files ?? [])
+  const fromItems = Array.from(clipboard?.items ?? [])
+    .filter((item) => item?.kind === 'file')
+    .map((item) => { try { return item.getAsFile?.() ?? null } catch { return null } })
+    .filter(Boolean)
+  const seen = new Set()
+  return [...direct, ...fromItems].filter((file) => {
+    const key = `${file.name || ''}:${file.type || ''}:${file.size || 0}:${file.lastModified || 0}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted, scopeId = null, scopeTitle = '' }) {
   const [state, setState] = useState(null)
   const [stateError, setStateError] = useState('')
@@ -1516,7 +1532,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   }
 
   function onPasteFiles(event) {
-    const files = Array.from(event.clipboardData?.files ?? [])
+    const files = clipboardFiles(event.clipboardData)
     if (!files.length) return // 普通文字粘贴交给输入框
     event.preventDefault()
     addFiles(files)
@@ -2325,7 +2341,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   // 布局：右侧详情栏是「聊天列（消息 + 输入框）」的同级，而不是把输入框留在
   // 整页宽度上居中——否则打开右栏后消息列左移、输入框仍按整页居中，两者会错开半个右栏宽。
   // 输入框必须跟随消息列一起居中（消息与输入框同宽同轴）。
-  return h('div', { style: S.root },
+  return h('div', { style: S.root, onPaste: onPasteFiles },
     h('div', { style: S.row },
       h('div', { style: S.chatCol },
         renderBody(),
@@ -2372,7 +2388,6 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
           : null,
         h('textarea', {
           ref: inputRef,
-          onPaste: onPasteFiles,
           onDragOver: (event) => {
             if (Array.from(event.dataTransfer?.files ?? []).length) event.preventDefault()
           },

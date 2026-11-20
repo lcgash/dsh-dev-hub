@@ -65,3 +65,20 @@ test('聊天附件：发送后清空输入区，图片可点击预览', async ()
   assert.match(chat, /onPreviewAttachment: setPreviewAttachment/)
   assert.match(chat, /const pendingAttachments = attachments\n    setAttachments\(\[\]\)/)
 })
+
+test('剪贴板取图：兼容 Windows/Edge 只在 items 里给截图、files 为空', async () => {
+  const { clipboardFiles } = await import('../src/client/chat.mjs')
+  const shot = { name: 'image.png', type: 'image/png', size: 1024, lastModified: 1 }
+  const itemFile = { name: 'clip.png', type: 'image/png', size: 2048, lastModified: 2 }
+  const files = clipboardFiles({
+    files: [shot],
+    items: [
+      { kind: 'string', getAsFile: () => null },
+      { kind: 'file', getAsFile: () => itemFile },
+      { kind: 'file', getAsFile: () => itemFile },
+    ],
+  })
+  assert.deepEqual(files, [shot, itemFile])
+  assert.deepEqual(clipboardFiles({ files: [], items: [{ kind: 'file', getAsFile: () => shot }] }), [shot])
+  assert.deepEqual(clipboardFiles({ files: [], items: [{ kind: 'string' }] }), [])
+})
