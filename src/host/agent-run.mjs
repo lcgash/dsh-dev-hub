@@ -13,7 +13,12 @@ export const DEFAULT_TIMEOUT_MS = 180_000
 
 function withTimeout(ms) {
   // 0 / 负数 = 不设墙钟超时：评审等长任务只靠“会话失联”判定，不能被固定时长杀掉。
-  if (!Number.isFinite(Number(ms)) || Number(ms) <= 0) return { signal: undefined, dispose: () => {} }
+  // 仍要返回一个永不 abort 的 AbortSignal：DSH/undici 会直接调 signal.throwIfAborted()，
+  // 传 undefined 会在启动 agent 时炸出 "reading 'throwIfAborted'"。
+  if (!Number.isFinite(Number(ms)) || Number(ms) <= 0) {
+    const controller = new AbortController()
+    return { signal: controller.signal, dispose: () => {} }
+  }
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(new Error(`超时（${Math.round(ms / 1000)}s）`)), Number(ms))
   return { signal: controller.signal, dispose: () => clearTimeout(timer) }
