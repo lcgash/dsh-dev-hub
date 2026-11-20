@@ -1391,7 +1391,9 @@
     "未限定范围（按描述与候选文件执行）": "No explicit scope (uses the description and candidate files)",
     "查看已确认文件": "View confirmed files",
     "已进入开发": "In development",
-    "查看流程": "View flow"
+    "查看流程": "View flow",
+    "在 IDE 打开": "Open in IDE",
+    "打开中…": "Opening…"
   },
   "templates": {
     "成员 {name}": "Member {name}",
@@ -1849,7 +1851,9 @@
     "当前在需求澄清页，切换到「{value1}」会离开当前项目；澄清草稿已保存在原项目。继续？": "You are on the clarification page. Switching to \"{value1}\" leaves the current project; the clarification draft is saved in the original project. Continue?",
     "当前项目被切换，且无法切回原项目：{value1}": "The current project was switched and the original project could not be restored: {value1}",
     "控制当前项目（{value1}）的推进动作；提交与推送始终由你确认。": "Controls automation for the current project ({value1}); submit and push always need your confirmation.",
-    "管理当前项目（{value1}）的技能包与约束。": "Manage skill packs and constraints for the current project ({value1})."
+    "管理当前项目（{value1}）的技能包与约束。": "Manage skill packs and constraints for the current project ({value1}).",
+    "已用 {value1} 打开工作区：{value2}": "Opened the workspace with {value1}: {value2}",
+    "打开 IDE 失败：{value1}": "Failed to open the IDE: {value1}"
   },
   "templateValues": {
     "通过": "passed",

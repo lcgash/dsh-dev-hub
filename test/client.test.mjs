@@ -2195,3 +2195,13 @@ test('技能并入设置：不再占顶层页签，设置页按项目展示自�
   assert.match(settings, /SkillsPanel/)
   assert.match(settings, /控制当前项目/)
 })
+
+test('流程详情：检测到本机 IDE 时可在 worktree 中打开', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const api = await readFile(new URL('../src/shared/api.mjs', import.meta.url), 'utf8')
+  assert.match(api, /openIde: '\/api\/dev-hub\/open-ide'/)
+  assert.match(index, /async function openInIde\(\)/)
+  assert.match(index, /API\.openIde/)
+  assert.match(index, /在 IDE 打开/)
+})

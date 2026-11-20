@@ -647,6 +647,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 变更预览：这个流程改了哪些文件、每个文件改了什么
   const [filesInfo, setFilesInfo] = useState(null)
   const [filesLoading, setFilesLoading] = useState(false)
+  const [ideBusy, setIdeBusy] = useState(false)
   const [filesAutoAt, setFilesAutoAt] = useState(null)
   const filesInFlightRef = useRef(false)
   // 当前 filesInfo 属于哪条流程：切流程时旧清单不能拿去按新 itemId 拉 diff
@@ -2297,6 +2298,19 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     )
   }
 
+  /** 在本地 IDE 打开当前流程的 worktree（不能再让 IDE checkout 主仓库）。 */
+  async function openInIde() {
+    if (ideBusy) return
+    setIdeBusy(true); setError(''); setNotice('')
+    try {
+      const body = await api(API.openIde, { method: 'POST', body: JSON.stringify({ id: draft.id }) })
+      const label = body?.editor?.label ?? 'IDE'
+      setNotice(`已用 ${label} 打开工作区：${body?.path ?? ''}`)
+    } catch (err) {
+      setError(`打开 IDE 失败：${errorText(err)}`)
+    } finally { setIdeBusy(false) }
+  }
+
   async function loadFiles({ silent = false } = {}) {
     // 后台轮询不抢手动刷新；静默失败保留上一次变更列表，不闪错
     if (silent && filesInFlightRef.current) return
@@ -2500,6 +2514,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               '只看 scope 内'),
             h('span', { style: { ...styles.sectionHint, whiteSpace: 'nowrap' } },
               filesAutoAt ? `自动刷新 · ${fmtTime(filesAutoAt)}` : '每 8 秒自动刷新'),
+            h(Button, { style: mini, disabled: ideBusy, onClick: openInIde, children: ideBusy ? '打开中…' : '在 IDE 打开' }),
             h(Button, { style: mini, disabled: filesLoading, onClick: () => loadFiles(), children: '刷新' }),
           ),
         ),

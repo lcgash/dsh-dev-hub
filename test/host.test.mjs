@@ -771,3 +771,19 @@ test('自动化设置按项目隔离：不同项目的模式/评审开关互不�
     await rm(home, { recursive: true, force: true })
   }
 })
+
+test('IDE 打开路由：只接受当前流程 id，未知流程明确报错', async () => {
+  const repo = await tempRepo()
+  const { ctx, routes } = fakeContext(repo)
+  try {
+    apply(ctx)
+    await call(routes, API.setup, { method: 'POST', body: { repoPath: repo, name: '张三' } })
+    assert.ok(routes.has(API.openIde), '应注册 open-ide 路由')
+    const missing = await call(routes, API.openIde, { method: 'POST', body: { id: 'nope' } })
+    assert.equal(missing.status, 400)
+    assert.match(missing.body.error, /开发项不存在/)
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+    await rm(home, { recursive: true, force: true })
+  }
+})

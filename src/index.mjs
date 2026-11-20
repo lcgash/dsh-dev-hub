@@ -546,6 +546,48 @@ async function activeRepo(profile) {
   return null
 }
 
+/** 本机可用 IDE：固定候选命令 + macOS 应用目录，不执行用户输入的命令。 */
+async function detectEditors() {
+  const isMac = process.platform === 'darwin'
+  const isWin = process.platform === 'win32'
+  const candidates = [
+    { id: 'vscode', label: 'VS Code', appName: 'Visual Studio Code', commands: isWin ? ['code.cmd', 'code'] : ['code', 'code-insiders'] },
+    { id: 'cursor', label: 'Cursor', appName: 'Cursor', commands: isWin ? ['cursor.cmd', 'cursor'] : ['cursor'] },
+    { id: 'idea', label: 'IntelliJ IDEA', appName: 'IntelliJ IDEA', commands: isWin ? ['idea64.exe', 'idea.exe', 'idea.bat'] : ['idea'] },
+  ]
+  const editors = []
+  for (const candidate of candidates) {
+    let command = null
+    for (const name of candidate.commands) {
+      const found = await which(name)
+      if (found) { command = found; break }
+    }
+    if (!command && isMac) {
+      const path = `/Applications/${candidate.appName}.app`
+      if (await exists(path)) command = path
+    }
+    if (command) editors.push({ ...candidate, command })
+  }
+  return editors
+}
+
+function launchEditor(editor, path) {
+  const isMac = process.platform === 'darwin'
+  const isWin = process.platform === 'win32'
+  let command = editor.command
+  let args = [path]
+  if (command.endsWith('.app')) {
+    command = 'open'
+    args = ['-a', editor.appName ?? editor.label, path]
+  }
+  const child = spawn(command, args, {
+    detached: true,
+    stdio: 'ignore',
+    shell: isWin && /\.(cmd|bat)$/i.test(command),
+  })
+  child.unref()
+}
+
 /** 当前项目的自动化设置：按项目本机保存，缺省完全自动化。 */
 function projectAutomation(profile, repoPath) {
   const key = String(repoPath ?? '').trim()
@@ -4897,6 +4939,41 @@ export function apply(ctx) {
       },
     },
     // 附件上传：粘贴的截图/文件先落到本机附件目录，再把路径注入提示词（read_image / read）
+    // 在 IDE 打开当前流程的独立工作区：worktree 不能 checkout 到主仓库，必须打开实际 workRoot。
+    {
+      kind: 'exact',
+      path: API.openIde,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST only' })
+        try {
+          const profile = await loadProfile()
+          const repo = await activeRepo(profile)
+          if (!repo) throw new Error('尚未选择项目')
+          const body = await readBody(req)
+          const item = await readItemLocal(profile, repo, body.id)
+          if (!item) throw new Error(`开发项不存在：${body.id}`)
+          const target = workspaceTarget(profile, item, repo)
+          const workRoot = target
+            ? (target.members.find((member) => member.worktree)?.workRoot ?? target.localRoot)
+            : await workRootOf(repo, item)
+          if (!workRoot || !(await exists(workRoot))) throw new Error('当前流程没有可用的工作区目录')
+          const editors = await detectEditors()
+          if (!editors.length) throw new Error('未检测到本机 IDE（支持 VS Code / Cursor / IntelliJ IDEA）')
+          const requested = String(body.editorId ?? '').trim()
+          const editor = editors.find((entry) => entry.id === requested) ?? editors[0]
+          launchEditor(editor, workRoot)
+          return sendJson(res, 200, {
+            ok: true,
+            path: workRoot,
+            editor: { id: editor.id, label: editor.label },
+            editors: editors.map((entry) => ({ id: entry.id, label: entry.label })),
+          })
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
     // 附件预览：只服务本机附件目录内的文件（浏览器不能直接读 file:// 绝对路径）
     {
       kind: 'exact',
