@@ -172,3 +172,13 @@ test('buildPlan：追问答案影响计划（缩小范围 / 不补测试 / 不�
   assert.ok(full.modules.length > 1, '不追问时按全部命中出计划')
   assert.ok(full.steps.some((step) => step.includes('契约')), '有库表/契约命中时默认带上同步步骤')
 })
+
+test('计划固化确认范围与文件，供切页/刷新后的计划卡回看', () => {
+  const plan = buildPlan({
+    description: '给 source 加配置者',
+    recon: { files: [{ path: 'src/a.mjs', score: 2, matches: [] }, { path: 'src/b.mjs', score: 1, matches: [] }] },
+    scope: ['src'],
+  })
+  assert.deepEqual(plan.scope, ['src'])
+  assert.deepEqual(plan.files.sort(), ['src/a.mjs', 'src/b.mjs'])
+})

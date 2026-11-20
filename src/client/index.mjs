@@ -5243,6 +5243,10 @@ function DevHubPage({ ctx }) {
       setOpenFlow({ id: item.id, nonce: Date.now() })
       return
     }
+    // 在需求澄清页点跨项目流程时，先确认：切换目标会离开当前项目的澄清对话，
+    // 草稿虽然保存在原项目，但界面会跳到另一个项目，容易让人误以为会话丢了。
+    if (tab === 'chat' && typeof window !== 'undefined' && typeof window.confirm === 'function'
+      && !window.confirm(`当前在需求澄清页，切换到「${target.name}」会离开当前项目；澄清草稿已保存在原项目。继续？`)) return
     setSwitchingTarget(target.key)
     try {
       const body = await api(API.switchRepo, {

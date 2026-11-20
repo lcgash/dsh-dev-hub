@@ -164,6 +164,9 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
     risks,
     estimate,
     modules: [...new Set(groups.map((group) => group.module))],
+    // 把本次确认的范围与文件固化进计划：切页/刷新后计划卡仍能说明“当时选了什么”
+    scope: [...new Set((scope ?? []).map(String).filter(Boolean))].slice(0, 50),
+    files: scopedFiles.map((file) => String(file?.path ?? '')).filter(Boolean).slice(0, 200),
     intent,
     template: {
       id: pickedTemplate?.id ?? 'generic',

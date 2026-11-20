@@ -502,6 +502,8 @@ function MessageRow({
         plan: msg.plan,
         live: planLive,
         busy,
+        selectedFiles,
+        scopeList,
         syncBeforeStart,
         onSyncBeforeStartChange,
         onStartPlan,
@@ -954,13 +956,15 @@ function QuestionsCard({ questions, answers, live, busy, onAnswer, onGeneratePla
  * 计划卡片：工作站自评结论（规模/人天/置信度）+ 依据 + 步骤 + 风险 + 验收。
  * 工程量只读展示，没有任何输入框 —— 用户不填规模与人天。
  */
-export function PlanCard({ plan, live, busy, syncBeforeStart = true, onSyncBeforeStartChange, onStartPlan, onAdjustScope }) {
+export function PlanCard({ plan, live, busy, syncBeforeStart = true, onSyncBeforeStartChange, onStartPlan, onAdjustScope, selectedFiles = [], scopeList = [] }) {
   const estimate = plan?.estimate ?? {}
   const steps = Array.isArray(plan?.steps) ? plan.steps : []
   const acceptance = Array.isArray(plan?.acceptance) ? plan.acceptance : []
   const risks = Array.isArray(plan?.risks) ? plan.risks : []
   const basis = Array.isArray(estimate?.basis) ? estimate.basis : []
   const modules = Array.isArray(plan?.modules) ? plan.modules.filter(Boolean) : []
+  const confirmedScope = Array.isArray(plan?.scope) && plan.scope.length ? plan.scope : (Array.isArray(scopeList) ? scopeList : [])
+  const confirmedFiles = Array.isArray(plan?.files) && plan.files.length ? plan.files : (Array.isArray(selectedFiles) ? selectedFiles : [])
 
   return h('div', { style: S.planCard },
     h('div', { style: styles.row },
@@ -1025,6 +1029,23 @@ export function PlanCard({ plan, live, busy, syncBeforeStart = true, onSyncBefor
         modules.map((name) => h('span', { key: name, style: styles.pill }, String(name))),
       )
       : null,
+
+    h('div', { style: { marginTop: 10, padding: '10px 12px', borderRadius: T.rBase, background: T.surface2 } },
+      h('div', { style: { ...styles.label, marginBottom: 4 } }, '本次确认范围'),
+      confirmedScope.length
+        ? h('div', { style: { ...styles.row, gap: 6 } },
+          confirmedScope.slice(0, 8).map((token) => h('span', { key: token, style: styles.pill }, String(token))),
+          confirmedScope.length > 8 ? h('span', { style: styles.smallMuted }, `+${confirmedScope.length - 8}`) : null)
+        : h('div', { style: styles.smallMuted }, '未限定范围（按描述与候选文件执行）'),
+      h('div', { style: { ...styles.smallMuted, marginTop: 4 } }, `已确认候选文件：${confirmedFiles.length} 个`),
+      confirmedFiles.length
+        ? h('details', { style: { marginTop: 4 } },
+          h('summary', { style: { cursor: 'pointer', fontSize: T.font.sm, color: T.text2 } }, '查看已确认文件'),
+          h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, marginTop: 4 } },
+            confirmedFiles.slice(0, 40).map((path) => h('span', { key: path, style: { ...styles.mono, fontSize: T.font.xs, color: T.text3, overflowWrap: 'anywhere' } }, String(path))),
+            confirmedFiles.length > 40 ? h('span', { style: styles.smallMuted }, `…还有 ${confirmedFiles.length - 40} 个`) : null))
+        : null,
+    ),
 
     live
       ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8, marginTop: 10 } },
