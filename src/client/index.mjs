@@ -5436,6 +5436,7 @@ function DevHubPage({ ctx }) {
         repoPath: flowList?.repo?.path ?? null,
         refreshNonce: clarifyNonce,
         onOpen: openExistingChat,
+        onOpenFlow: (id) => { setTab('flows'); setOpenFlow({ id, nonce: Date.now() }) },
         onNew: newClarification,
         onDelete: removeClarification,
       })

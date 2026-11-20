@@ -17,8 +17,10 @@ import {
   styles,
 } from './common.mjs'
 import { getConversation, listChats } from './chat-store.mjs'
+import { api } from './common.mjs'
 
 function statusOf(conversation) {
+  if (conversation?.flowId) return { label: '已进入开发', tone: 'ok' }
   const job = conversation?.job ?? null
   if (job) {
     const label = job.kind === 'clarify'
@@ -41,7 +43,7 @@ function lastUserText(conversation) {
 }
 
 /** 纯函数：把 chat store 里的会话投影成澄清卡片（可单测）。 */
-export function clarificationCards(repoPath) {
+export function clarificationCards(repoPath, flows = []) {
   return listChats(repoPath, 'new')
     .map((summary) => {
       const conversation = getConversation(repoPath, summary.id, 'new')
@@ -49,9 +51,15 @@ export function clarificationCards(repoPath) {
       const messages = Array.isArray(conversation.messages) ? conversation.messages : []
       const meaningful = messages.length > 0 || conversation.job || conversation.pending || conversation.pendingPlan
       if (!meaningful) return null
+      const title = String(conversation.clarifyTitle || conversation.clarify?.title || summary.title || '未命名需求').trim() || '未命名需求'
+      // 旧对话没有 flowId：按流程标题做一次保守匹配，避免已开工的草稿仍显示「计划待确认」
+      const matchedFlow = conversation.flowId
+        ? flows.find((flow) => flow.id === conversation.flowId)
+        : flows.find((flow) => String(flow.title ?? '').trim() === title)
       return {
         id: summary.id,
-        title: String(conversation.clarifyTitle || conversation.clarify?.title || summary.title || '未命名需求').trim() || '未命名需求',
+        title,
+        flowId: conversation.flowId || matchedFlow?.id || null,
         updatedAt: summary.updatedAt,
         messageCount: summary.messageCount,
         lastText: lastUserText(conversation).slice(0, 160),
@@ -63,7 +71,7 @@ export function clarificationCards(repoPath) {
     .filter(Boolean)
 }
 
-function ClarificationCard({ card, onOpen, onDelete }) {
+function ClarificationCard({ card, onOpen, onOpenFlow, onDelete }) {
   return h('div', {
     style: {
       display: 'flex',
@@ -88,25 +96,17 @@ function ClarificationCard({ card, onOpen, onDelete }) {
         h('div', { style: { ...styles.sectionHint, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, card.lastText || '还没有开始描述需求'),
       ),
     ),
-    // 底部操作条：卡片内容再高再矮，按钮都贴底对齐（删除在左、主操作在右）
+    // 底部操作区：元信息单独一行，按钮单独一行，窄卡片下不会互相压住
     h('div', {
       style: {
         marginTop: 'auto',
         display: 'flex',
-        alignItems: 'center',
-        gap: 8,
+        flexDirection: 'column',
+        gap: 6,
         paddingTop: 8,
         borderTop: `1px solid ${T.borderSoft}`,
       },
     },
-      h(Button, {
-        disabled: card.busy,
-        title: card.busy ? '任务处理中，暂不能删除' : '删除这段澄清草稿',
-        onClick: () => onDelete?.(card),
-        style: { height: 30, padding: '0 10px', fontSize: T.font.sm, flex: '0 0 auto' },
-        children: '删除',
-      }),
-      h('div', { style: styles.spacer }),
       h('span', {
         style: {
           ...styles.sectionHint,
@@ -116,28 +116,41 @@ function ClarificationCard({ card, onOpen, onDelete }) {
           whiteSpace: 'nowrap',
         },
       }, `${card.messageCount} 条消息 · 更新于 ${fmtTime(card.updatedAt)}`),
-      h(Button, {
-        primary: true,
-        disabled: card.busy,
-        onClick: () => onOpen?.(card.id),
-        style: { height: 30, padding: '0 12px', fontSize: T.font.sm, minWidth: 96, flex: '0 0 auto' },
-        children: card.busy ? '处理中…' : (card.hasPlan ? '确认计划' : '继续澄清'),
-      }),
+      h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
+        h(Button, {
+          disabled: card.busy,
+          title: card.busy ? '任务处理中，暂不能删除' : '删除这段澄清草稿',
+          onClick: () => onDelete?.(card),
+          style: { height: 30, padding: '0 10px', fontSize: T.font.sm, flex: '0 0 auto' },
+          children: '删除',
+        }),
+        h('div', { style: styles.spacer }),
+        h(Button, {
+          primary: true,
+          disabled: card.busy,
+          onClick: () => (card.flowId ? onOpenFlow?.(card.flowId) : onOpen?.(card.id)),
+          style: { height: 30, padding: '0 12px', fontSize: T.font.sm, minWidth: 96, flex: '0 0 auto' },
+          children: card.busy ? '处理中…' : (card.flowId ? '查看流程' : (card.hasPlan ? '确认计划' : '继续澄清')),
+        }),
+      ),
     ),
   )
 }
 
-export function ClarificationWorkspace({ repoPath, refreshNonce = 0, onOpen, onNew, onDelete }) {
+export function ClarificationWorkspace({ repoPath, refreshNonce = 0, onOpen, onOpenFlow, onNew, onDelete }) {
   const [cards, setCards] = useState([])
   const [error, setError] = useState('')
   useEffect(() => {
     if (!repoPath) { setCards([]); return }
-    try {
-      setCards(clarificationCards(repoPath))
+    let alive = true
+    api(API.items).then((body) => {
+      if (!alive) return
+      setCards(clarificationCards(repoPath, body?.items ?? []))
       setError('')
-    } catch (err) {
-      setError(String(err?.message ?? err))
-    }
+    }).catch((err) => {
+      if (alive) setError(String(err?.message ?? err))
+    })
+    return () => { alive = false }
   }, [repoPath, refreshNonce])
 
   function remove(card) {
@@ -186,8 +199,8 @@ export function ClarificationWorkspace({ repoPath, refreshNonce = 0, onOpen, onN
     ),
     error ? h('div', { style: styles.dangerCard }, `读取澄清会话失败：${error}`) : null,
     cards.length
-      ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gridAutoRows: '1fr', alignItems: 'stretch', gap: 10 } },
-        cards.map((card) => h(ClarificationCard, { key: card.id, card, onOpen, onDelete: remove })))
+      ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gridAutoRows: '1fr', alignItems: 'stretch', gap: 10 } },
+        cards.map((card) => h(ClarificationCard, { key: card.id, card, onOpen, onOpenFlow, onDelete: remove })))
       : h('div', { style: styles.card },
         h(EmptyState, {
           icon: '✎',

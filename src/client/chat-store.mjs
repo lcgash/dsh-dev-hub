@@ -123,6 +123,10 @@ function normalizeConversation(raw) {
     scopeList: Array.isArray(raw.scopeList) ? raw.scopeList : [],
     pending: raw.pending ?? null,
     pendingPlan: raw.pendingPlan ?? null,
+    // 这段澄清已经创建的流程：用于「需求澄清」工作区显示真实状态，而不是永远「计划待确认」
+    flowId: typeof raw.flowId === 'string' ? raw.flowId.slice(0, 120) : null,
+    flowTitle: typeof raw.flowTitle === 'string' ? raw.flowTitle.slice(0, MAX_TITLE) : '',
+    startedAt: raw.startedAt ?? null,
     // 用户随消息提供的截图/文件（只存路径与元信息；二进制在本机附件目录）
     attachments: normalizeAttachments(raw.attachments),
     // 需求澄清上下文：刷新/切走再回来还能接着聊（否则会丢 description，续聊直接 400）

@@ -2167,6 +2167,15 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         }
       }
       if (runIsCurrent(run)) {
+        // 先记下这条对话已创建流程：需求澄清工作区据此显示「已进入开发」而不是「计划待确认」
+        if (repoPath && conversationId && result.item?.id) {
+          saveChat(repoPath, conversationId, {
+            flowId: result.item.id,
+            flowTitle: result.item.title ?? '',
+            startedAt: new Date().toISOString(),
+            job: null,
+          }, scope)
+        }
         resetFlow()
         // 已经按计划开工：直接跳到这条流程的详情，用户在「流程」页继续标准流程，
         // 不再停在聊天页等用户自己找（聊天记录已持久化，回来还能看到）。

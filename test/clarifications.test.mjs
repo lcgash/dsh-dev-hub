@@ -33,3 +33,17 @@ test('需求澄清工作区：把 chat store 中的草稿投影成可管理卡�
   assert.equal(clarificationCards(REPO).length, 1)
   store.clearChat(REPO, 'new')
 })
+
+test('已创建流程的澄清卡显示「已进入开发」，不会一直停在计划待确认', () => {
+  store.clearChat(REPO, 'new')
+  const chat = store.startNewChat(REPO, '已开工需求', 'new')
+  store.saveChat(REPO, chat.id, {
+    messages: [{ role: 'user', text: '已开工的需求' }],
+    pendingPlan: { id: 'p1', plan: { steps: ['a'] } },
+    flowId: 'flow-done',
+  }, 'new')
+  const cards = clarificationCards(REPO, [{ id: 'flow-done', title: '已开工需求' }])
+  assert.equal(cards[0].flowId, 'flow-done')
+  assert.equal(cards[0].status.label, '已进入开发')
+  store.clearChat(REPO, 'new')
+})
