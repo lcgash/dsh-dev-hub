@@ -19,8 +19,8 @@ import {
 import { getConversation, listChats } from './chat-store.mjs'
 import { api } from './common.mjs'
 
-function statusOf(conversation) {
-  if (conversation?.flowId) return { label: '已进入开发', tone: 'ok' }
+function statusOf(conversation, matchedFlow = null) {
+  if (conversation?.flowId || matchedFlow?.id) return { label: '已进入开发', tone: 'ok' }
   const job = conversation?.job ?? null
   if (job) {
     const label = job.kind === 'clarify'
@@ -63,7 +63,7 @@ export function clarificationCards(repoPath, flows = []) {
         updatedAt: summary.updatedAt,
         messageCount: summary.messageCount,
         lastText: lastUserText(conversation).slice(0, 160),
-        status: statusOf(conversation),
+        status: statusOf(conversation, matchedFlow),
         busy: Boolean(conversation.job),
         hasPlan: Boolean(conversation.pendingPlan),
       }
@@ -199,7 +199,7 @@ export function ClarificationWorkspace({ repoPath, refreshNonce = 0, onOpen, onO
     ),
     error ? h('div', { style: styles.dangerCard }, `读取澄清会话失败：${error}`) : null,
     cards.length
-      ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gridAutoRows: '1fr', alignItems: 'stretch', gap: 10 } },
+      ? h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', alignItems: 'stretch', gap: 10 } },
         cards.map((card) => h(ClarificationCard, { key: card.id, card, onOpen, onOpenFlow, onDelete: remove })))
       : h('div', { style: styles.card },
         h(EmptyState, {

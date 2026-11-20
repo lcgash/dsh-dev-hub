@@ -2177,3 +2177,11 @@ test('需求澄清：聊天绑定进入时的项目，外部切换后自动切�
   assert.match(index, /setChatRepoPath\(repoPath\)/)
   assert.match(index, /lockedRepoPath: chatRepoPath/)
 })
+
+test('需求澄清卡片：行高按内容自适应，底部元信息与按钮分行不重叠', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const file = await readFile(new URL('../src/client/clarifications.mjs', import.meta.url), 'utf8')
+  assert.doesNotMatch(file, /gridAutoRows: '1fr'/)
+  assert.match(file, /minmax\(340px, 1fr\)/)
+  assert.match(file, /flexDirection: 'column',\s*gap: 6,\s*paddingTop: 8/)
+})

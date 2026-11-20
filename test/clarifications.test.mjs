@@ -45,5 +45,11 @@ test('已创建流程的澄清卡显示「已进入开发」，不会一直停�
   const cards = clarificationCards(REPO, [{ id: 'flow-done', title: '已开工需求' }])
   assert.equal(cards[0].flowId, 'flow-done')
   assert.equal(cards[0].status.label, '已进入开发')
+
+  // 旧对话没有 flowId，只能按标题匹配：状态也必须跟着变成已进入开发
+  const legacy = store.startNewChat(REPO, '旧对话', 'new')
+  store.saveChat(REPO, legacy.id, { messages: [{ role: 'user', text: '旧对话' }], pendingPlan: { id: 'p2', plan: {} } }, 'new')
+  const legacyCards = clarificationCards(REPO, [{ id: 'flow-old', title: '旧对话' }])
+  assert.equal(legacyCards.find((card) => card.id === legacy.id).status.label, '已进入开发')
   store.clearChat(REPO, 'new')
 })
