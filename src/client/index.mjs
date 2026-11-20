@@ -649,6 +649,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const [filesLoading, setFilesLoading] = useState(false)
   const [ideBusy, setIdeBusy] = useState(false)
   const [ideEditors, setIdeEditors] = useState(null)
+  const [ideHover, setIdeHover] = useState(null)
   const [filesAutoAt, setFilesAutoAt] = useState(null)
   const filesInFlightRef = useRef(false)
   // 当前 filesInfo 属于哪条流程：切流程时旧清单不能拿去按新 itemId 拉 diff
@@ -2525,7 +2526,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             h('span', { style: { ...styles.sectionHint, whiteSpace: 'nowrap' } },
               filesAutoAt ? `自动刷新 · ${fmtTime(filesAutoAt)}` : '每 8 秒自动刷新'),
             ideEditors?.length
-              ? h('div', { style: { display: 'inline-flex', alignItems: 'center', gap: 4 } },
+              ? h('div', {
+                style: { position: 'relative', display: 'inline-flex', alignItems: 'center', gap: 4 },
+                onMouseLeave: () => setIdeHover(null),
+              },
                 ideEditors.map((editor) => {
                   const badge = { vscode: ['VS', '#007acc', '#e8f4fc'], cursor: ['C', '#111827', '#f1f3f5'], idea: ['IJ', '#fe315d', '#fff0f4'] }[editor.id]
                     ?? [String(editor.label ?? '?').slice(0, 2).toUpperCase(), T.brand, T.brandSoft]
@@ -2535,6 +2539,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                     disabled: ideBusy,
                     title: `在 ${editor.label} 打开当前 worktree`,
                     'aria-label': `在 ${editor.label} 打开当前 worktree`,
+                    onMouseEnter: () => setIdeHover(editor),
+                    onFocus: () => setIdeHover(editor),
+                    onBlur: () => setIdeHover(null),
                     onClick: () => openInIde(editor.id),
                     style: {
                       height: 28,
@@ -2551,7 +2558,26 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                       lineHeight: 1,
                     },
                   }, badge[0])
-                }))
+                }),
+                ideHover
+                  ? h('div', {
+                    style: {
+                      position: 'absolute',
+                      top: 34,
+                      right: 0,
+                      zIndex: 30,
+                      padding: '6px 9px',
+                      borderRadius: T.rSm,
+                      background: T.text,
+                      color: '#fff',
+                      fontSize: T.font.xs,
+                      lineHeight: 1.4,
+                      whiteSpace: 'nowrap',
+                      boxShadow: T.shadowModal,
+                      pointerEvents: 'none',
+                    },
+                  }, `用 ${ideHover.label} 打开当前流程的 worktree`)
+                  : null)
               : null,
             h(Button, { style: mini, disabled: filesLoading, onClick: () => loadFiles(), children: '刷新' }),
           ),

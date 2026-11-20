@@ -5,7 +5,7 @@
  * profile, environment detection, git evidence and the Context Pack builder.
  * The browser half only talks to the loopback /api/dev-hub/* routes.
  */
-import { exec, execFile } from 'node:child_process'
+import { exec, execFile, spawn } from 'node:child_process'
 import { access, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
