@@ -52,6 +52,24 @@ export const CLARIFY_SCHEMA = {
         nonGoals: { type: 'array', items: { type: 'string' } },
         acceptance: { type: 'array', items: { type: 'string' } },
         scope: { type: 'array', items: { type: 'string' } },
+        decisions: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { decision: { type: 'string' }, why: { type: 'string' } },
+            required: ['decision'],
+            additionalProperties: true,
+          },
+        },
+        glossary: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: { term: { type: 'string' }, meaning: { type: 'string' } },
+            required: ['term'],
+            additionalProperties: true,
+          },
+        },
       },
       additionalProperties: true,
     },
@@ -112,11 +130,13 @@ export function buildClarifyPrompt({ description, history, recon, spec, round = 
     '- 当你已经能写出明确的问题/目标/非目标/验收/范围时，`ready=true`、`questions=[]`，并把 spec 填好。',
     `- 已经问了 ${round - 1} 轮；最多 ${MAX_ROUNDS} 轮，不要无休止追问。`,
     '- 不要编造验收标准；用户没提到的写进 missing，让界面提示。',
+    '- 用 grill 的方式澄清：优先追问不可逆的单行道决策、失败/回滚路径、兼容边界和可验证的验收例子；一次只问最关键的 1~2 个。',
+    '- 把已经确认的关键取舍写进 `spec.decisions`（decision + why），把项目/需求里的专有术语写进 `spec.glossary`（term + meaning），后续开发和评审都复用这套语言。',
     '- `reply` 用中文一两句话，先复述你理解到的重点，再提问或收尾。',
     '- 顺便给这个需求起一个**流程标题**（10~20 字，动宾短语，能放进流程列表；不要句号、不要"需求"二字），放在 `title`。',
     '- 标题随理解更新：每轮都给出你认为最准确的 `title`；用户改了标题就以用户为准。',
     '- 只输出 JSON，不要 Markdown：',
-    '{"reply":"...","title":"给源补失败告警","questions":[{"id":"q1","question":"涉及哪些场景？","why":"...","multiSelect":true,"options":[{"label":"...","description":"..."}]}],"ready":false,"missing":["..."],"spec":{"problem":"...","goals":["..."],"nonGoals":["..."],"acceptance":["..."],"scope":["..."]}}',
+    '{"reply":"...","title":"给源补失败告警","questions":[{"id":"q1","question":"涉及哪些场景？","why":"...","multiSelect":true,"options":[{"label":"...","description":"..."}]}],"ready":false,"missing":["..."],"spec":{"problem":"...","goals":["..."],"nonGoals":["..."],"acceptance":["..."],"scope":["..."],"decisions":[{"decision":"保留旧接口","why":"兼容现有调用方"}],"glossary":[{"term":"源","meaning":"触发流水线的外部系统"}]}}',
   ].join('\n')
 }
 
@@ -147,6 +167,20 @@ export function normalizeClarify(raw, { round = 1 } = {}) {
     nonGoals: (specRaw.nonGoals ?? []).map(String).map((item) => item.trim()).filter(Boolean).slice(0, 8),
     acceptance: (specRaw.acceptance ?? []).map(String).map((item) => item.trim()).filter(Boolean).slice(0, 12),
     scope: (specRaw.scope ?? []).map(String).map((item) => item.trim()).filter(Boolean).slice(0, 10),
+    decisions: (Array.isArray(specRaw.decisions) ? specRaw.decisions : [])
+      .map((entry) => ({
+        decision: String(entry?.decision ?? '').trim(),
+        why: String(entry?.why ?? '').trim(),
+      }))
+      .filter((entry) => entry.decision)
+      .slice(0, 8),
+    glossary: (Array.isArray(specRaw.glossary) ? specRaw.glossary : [])
+      .map((entry) => ({
+        term: String(entry?.term ?? '').trim(),
+        meaning: String(entry?.meaning ?? '').trim(),
+      }))
+      .filter((entry) => entry.term)
+      .slice(0, 12),
   }
 
   const ready = Boolean(value.ready) && Boolean(spec.problem) && spec.acceptance.length > 0 && questions.length === 0

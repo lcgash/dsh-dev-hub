@@ -689,3 +689,10 @@ test('staleReviewerFailures：逐位判断会话异常/超时，活着的审核�
   const remaining = staleReviewerFailures(mixed, { now, isLive: () => false, deadGraceMs: 15_000 })
   assert.deepEqual(remaining.map((entry) => entry.reviewerId), ['reviewer-2'])
 })
+
+test('审核员提示词包含影响面与代码负担检查', () => {
+  const prompt = reviewerPrompt({ item: item(), reviewer: { id: 'reviewer-1', role: 'direction', label: '审核员 1' }, total: 1 })
+  assert.match(prompt, /影响面/)
+  assert.match(prompt, /代码负担/)
+  assert.match(prompt, /复用/)
+})

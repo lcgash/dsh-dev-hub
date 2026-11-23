@@ -229,3 +229,11 @@ test('normalizeConventions：老文件（无 installedSkills / 无 skill）能�
   assert.equal(normalized.constraints.find((entry) => entry.id === 'my-old').skill, 'custom')
   assert.ok(normalized.installedSkills.some((entry) => entry.id === 'java-layering'))
 })
+
+test('内置工程判断：需求 grill、影响面、代码负担三项约束', () => {
+  const pack = findSkill('engineering-judgment')
+  assert.ok(pack)
+  assert.equal(pack.level, 'L0')
+  const ids = pack.constraints.map((entry) => entry.id)
+  assert.deepEqual(ids.sort(), ['code-burden', 'impact-map', 'requirement-grill'])
+})

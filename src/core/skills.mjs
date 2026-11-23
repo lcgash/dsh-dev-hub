@@ -297,6 +297,34 @@ export const SKILL_CATALOG = [
     ],
   },
   {
+    id: 'engineering-judgment',
+    name: '工程判断（澄清 / 影响面 / 代码负担）',
+    version: '1.0.0',
+    level: 'L0',
+    appliesTo: ['java', 'node', 'generic'],
+    description: '需求澄清用 grill 追问单行道与验收；改前先画影响面（调用方/入口/测试/配置/导出）；实现走最小完整改动与复用阶梯，借 Ponytail 的“少写但不少校验”原则。',
+    constraints: [
+      {
+        id: 'requirement-grill',
+        title: '需求澄清先 grill，不替用户猜',
+        rule: '先问根因、非目标、边界/失败路径、兼容与回滚、单行道（不可逆）决策和可验证验收；一次只问最关键的 1~2 个问题，能推断的不问，不编造用户没说的验收。共享术语与关键取舍写进决策/术语表。',
+        check: { kind: 'checklist', value: 'requirement-grill' },
+      },
+      {
+        id: 'impact-map',
+        title: '改前先列影响面',
+        rule: '动手前列出这次改动要触达的调用方、入口、测试/fixtures、配置、导出与兼容边界；改完逐项核对。只读 diff 不够，必须沿真实数据流检查未改文件是否会被打破。',
+        check: { kind: 'checklist', value: 'impact-map' },
+      },
+      {
+        id: 'code-burden',
+        title: '最小完整改动，不制造代码负担',
+        rule: '按复用阶梯：不需要的就不做 → 复用仓库已有实现/组件 → 标准库或平台能力 → 已安装依赖 → 一行 → 最小实现；不为小改动新增依赖/抽象/配置。可以少写，但绝不砍校验、错误处理、安全、可访问性和数据保护；有分支/循环/解析/金额/安全的新逻辑至少留一个小测试，并说明省略了什么、风险是什么。',
+        check: { kind: 'checklist', value: 'code-burden' },
+      },
+    ],
+  },
+  {
     id: 'generic-quality',
     name: '通用工程质量',
     level: 'L0',

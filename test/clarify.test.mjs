@@ -103,3 +103,23 @@ test('多选：prompt 教模型声明 multiSelect，normalize 兼容只写“可
   assert.equal(result.questions.find((q) => q.id === 'q2').multiSelect, false)
   assert.equal(result.questions.find((q) => q.id === 'q3').multiSelect, true)
 })
+
+test('需求澄清 grill：prompt 要求单行道/回滚/验收例子，并保存决策与术语', () => {
+  const prompt = buildClarifyPrompt({ description: '加一个配置者', round: 1 })
+  assert.match(prompt, /grill/)
+  assert.match(prompt, /单行道|不可逆/)
+  assert.match(prompt, /spec\.decisions/)
+  assert.match(prompt, /spec\.glossary/)
+
+  const result = normalizeClarify({
+    reply: 'r',
+    spec: {
+      problem: 'p',
+      acceptance: ['a'],
+      decisions: [{ decision: '保留旧接口', why: '兼容调用方' }, { decision: '   ' }],
+      glossary: [{ term: '源', meaning: '触发流水线的外部系统' }, { term: '' }],
+    },
+  })
+  assert.deepEqual(result.spec.decisions, [{ decision: '保留旧接口', why: '兼容调用方' }])
+  assert.deepEqual(result.spec.glossary, [{ term: '源', meaning: '触发流水线的外部系统' }])
+})

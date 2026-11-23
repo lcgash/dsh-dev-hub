@@ -738,6 +738,8 @@ function ClarifyCard({ card, answers, busy, title, onTitleChange, onPick, onSubm
     ['非目标', (spec.nonGoals ?? []).join('；')],
     ['验收', (spec.acceptance ?? []).join('；')],
     ['范围', (spec.scope ?? []).join('、')],
+    ['关键决策', (spec.decisions ?? []).map((entry) => `${entry.decision}${entry.why ? `（${entry.why}）` : ''}`).join('；')],
+    ['术语', (spec.glossary ?? []).map((entry) => `${entry.term}：${entry.meaning || '—'}`).join('；')],
   ].filter(([, value]) => value)
   const ready = Boolean(card?.ready)
 

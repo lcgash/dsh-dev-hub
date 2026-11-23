@@ -182,3 +182,9 @@ test('计划固化确认范围与文件，供切页/刷新后的计划卡回看'
   assert.deepEqual(plan.scope, ['src'])
   assert.deepEqual(plan.files.sort(), ['src/a.mjs', 'src/b.mjs'])
 })
+
+test('计划先列影响面，不只盯 diff 文件', () => {
+  const plan = buildPlan({ description: '给 source 加配置者', recon: { files: [{ path: 'src/a.mjs', score: 1, matches: [] }] }, scope: ['src'] })
+  assert.match(plan.steps.join('\n'), /影响面/)
+  assert.match(plan.steps.join('\n'), /调用方|入口/)
+})

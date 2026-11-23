@@ -95,6 +95,10 @@ export function buildPlan({ description, recon, scope = [], answers = {}, projec
     steps.push('先确认重构边界：明确哪些对外行为/接口必须保持不变，并记进流程')
     steps.push('补保护网：用现有测试或补回归测试固定当前行为，测试未通过不开始大改')
   }
+  // 影响面先行（借鉴 Understand Anything）：不要只盯着命中的 diff 文件
+  if (!isAnalysis) {
+    steps.push('先列影响面：本次改动会触达的调用方/入口/测试 fixtures/配置/导出（不只命中的文件）')
+  }
   // 分析流程只读：先读代码/日志，不做任何修改
   if (isAnalysis) {
     steps.push('只读排查：先读代码/日志，沿调用链找到真正相关的分支（不改代码）')
