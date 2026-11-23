@@ -1202,15 +1202,23 @@ async function submitWorkspace({ target, ledgerRepo, item, paths, message, branc
         const add = await git(root, ['add', '--', ...(group?.paths ?? [])])
         if (!add.ok) throw new Error(`git add 失败：${(add.stderr || add.stdout).slice(-1000)}`)
         const headBefore = (await git(root, ['rev-parse', 'HEAD'])).stdout.trim()
-        // 大仓库的 commit 可能超过默认 8s；超时后 git 可能已经写好 commit，只是进程被杀。
-        // 用 HEAD 是否变化判断真实结果，避免把已成功的提交报成失败。
-        const commit = await git(root, ['commit', '-m', message], { timeout: 120000 })
-        const headAfter = (await git(root, ['rev-parse', 'HEAD'])).stdout.trim()
-        if (!commit.ok && (!headAfter || headAfter === headBefore)) {
-          throw new Error(`git commit 失败：${(commit.stderr || commit.stdout).slice(-1000)}`)
+        const staged = await git(root, ['diff', '--cached', '--quiet'])
+        if (staged.ok) {
+          // 变更清单里可能包含 baseline 以来的“已提交”文件；工作区其实干净时不能再 commit，
+          // 否则 git 会因 nothing to commit 返回失败（还会夹带 hook warning）。
+          row.commit = (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
+          row.status = 'committed'
+        } else {
+          // 大仓库的 commit 可能超过默认 8s；超时后 git 可能已经写好 commit，只是进程被杀。
+          // 用 HEAD 是否变化判断真实结果，避免把已成功的提交报成失败。
+          const commit = await git(root, ['commit', '-m', message], { timeout: 120000 })
+          const headAfter = (await git(root, ['rev-parse', 'HEAD'])).stdout.trim()
+          if (!commit.ok && (!headAfter || headAfter === headBefore)) {
+            throw new Error(`git commit 失败：${(commit.stderr || commit.stdout).slice(-1000)}`)
+          }
+          row.commit = (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
+          row.status = 'committed'
         }
-        row.commit = (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
-        row.status = 'committed'
       }
       let push
       if (isWorktree && branchMode !== 'new') {
@@ -4394,13 +4402,20 @@ export function apply(ctx) {
             const add = await git(workRoot, ['add', '--', ...paths])
             if (!add.ok) throw new Error(`git add 失败：${(add.stderr || add.stdout).slice(-2000)}`)
             const headBefore = (await git(workRoot, ['rev-parse', 'HEAD'])).stdout.trim()
-            // 大仓库 commit 可能超过默认 8s；先看 HEAD 是否真的变了，避免成功提交被报失败。
-            const commit = await git(workRoot, ['commit', '-m', message], { timeout: 120000 })
-            const headAfter = (await git(workRoot, ['rev-parse', 'HEAD'])).stdout.trim()
-            if (!commit.ok && (!headAfter || headAfter === headBefore)) {
-              throw new Error(`git commit 失败：${(commit.stderr || commit.stdout).slice(-2000)}`)
+            const staged = await git(workRoot, ['diff', '--cached', '--quiet'])
+            if (staged.ok) {
+              // baseline 以来的“已提交”文件也会出现在 suggestedPaths 里；没有暂存内容时
+              // 不要 commit，直接推送当前 HEAD（否则 nothing to commit 会被误报成失败）。
+              commitHash = (await git(workRoot, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
+            } else {
+              // 大仓库 commit 可能超过默认 8s；先看 HEAD 是否真的变了，避免成功提交被报失败。
+              const commit = await git(workRoot, ['commit', '-m', message], { timeout: 120000 })
+              const headAfter = (await git(workRoot, ['rev-parse', 'HEAD'])).stdout.trim()
+              if (!commit.ok && (!headAfter || headAfter === headBefore)) {
+                throw new Error(`git commit 失败：${(commit.stderr || commit.stdout).slice(-2000)}`)
+              }
+              commitHash = (await git(workRoot, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
             }
-            commitHash = (await git(workRoot, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
           }
 
           // worktree 的 current 模式：把 HEAD 推到开工分支（必要时 rebase 远端新提交）。

@@ -2245,4 +2245,6 @@ test('提交恢复：commit 已成功但推送失败时，空变更会重试推�
   const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
   assert.match(host, /const headBefore = .*rev-parse.*HEAD/)
   assert.match(host, /timeout: 120000/)
+  assert.match(host, /git\(root, \['diff', '--cached', '--quiet'\]\)/)
+  assert.match(host, /git\(workRoot, \['diff', '--cached', '--quiet'\]\)/)
 })
