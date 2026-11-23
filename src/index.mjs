@@ -1480,7 +1480,10 @@ async function applyReworkFacts(ctx, profile, repoPath, items) {
       const tests = item.workflow?.tests ?? {}
       const local = tests.local ?? {}
       const submitted = Boolean(String(item.workflow?.submission?.commit ?? '').trim())
-      if (local.status !== 'passed' || submitted || item.workflow?.rework?.at) {
+      // 提交阶段的 rebase/冲突解决会改变 HEAD，但这是“合并目标分支”，不是又开发了一轮；
+      // 不能因此把评审作废、退回开发。提交失败时保留 submit，让用户直接重试推送。
+      const submitting = item.workflow?.stage === 'submit'
+      if (local.status !== 'passed' || submitted || submitting || item.workflow?.rework?.at) {
         out.push(item)
         continue
       }

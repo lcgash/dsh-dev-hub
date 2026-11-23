@@ -2266,3 +2266,10 @@ test('提交：缺失且未跟踪的 pathspec 会被跳过，不再让 git add �
   assert.match(host, /trackedSet/)
   assert.match(host, /skipped/)
 })
+
+test('提交阶段自动 rebase/解决冲突不会把评审作废、退回开发', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /const submitting = item\.workflow\?\.stage === 'submit'/)
+  assert.match(host, /submitted \|\| submitting \|\| item\.workflow\?\.rework/)
+})
