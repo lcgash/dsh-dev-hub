@@ -652,7 +652,7 @@ function launchEditor(editor, path) {
 /** 当前项目的自动化设置：按项目本机保存，缺省完全自动化。 */
 function projectAutomation(profile, repoPath) {
   const key = String(repoPath ?? '').trim()
-  return normalizeAutomation(key ? profile?.projectAutomation?.[key] : null)
+  return normalizeAutomation(key ? (profile?.projectAutomation?.[key] ?? profile?.legacyAutomation) : null)
 }
 
 /**
@@ -1233,6 +1233,7 @@ async function submitWorkspace({ target, ledgerRepo, item, paths, message, branc
       row.pushed = push.ok
       row.status = push.ok ? 'pushed' : 'push-failed'
       row.pushOutput = (push.stdout || push.stderr).slice(-4000)
+      if (push.autoResolved?.length) row.autoResolved = push.autoResolved.slice(0, 20)
       // 自动 rebase 后 HEAD 变了：以实际 HEAD 记录提交
       row.commit = (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim() || row.commit
       if (!push.ok) row.error = `push 失败：${row.pushOutput.slice(-500)}`
@@ -1356,6 +1357,7 @@ async function pushWorktreeToTarget(root, { remote, targetBranch, ctx = null }) 
   if (!targetBranch) throw new Error('缺少目标分支：请重新开工或指定分支')
   // 先同步远端目标分支；fetch 失败不阻断首次创建分支的 push
   const fetched = await git(root, ['fetch', remote, targetBranch], { timeout: 120000 })
+  let autoResolved = []
   if (fetched.ok) {
     const remoteRef = `refs/remotes/${remote}/${targetBranch}`
     const exists = await git(root, ['rev-parse', '--verify', '--quiet', remoteRef])
@@ -1365,7 +1367,7 @@ async function pushWorktreeToTarget(root, { remote, targetBranch, ctx = null }) 
         const rebased = await git(root, ['rebase', remoteRef], { timeout: 120000 })
         if (!rebased.ok) {
           try {
-            await resolveRebaseConflicts(root, { ctx, targetBranch })
+            autoResolved = await resolveRebaseConflicts(root, { ctx, targetBranch })
           } catch (error) {
             await git(root, ['rebase', '--abort'])
             throw new Error(`目标分支 ${targetBranch} 已有新提交，自动解决冲突失败：${String(error?.message ?? error)}；rebase 已回滚，请手工解决后重试`)
@@ -1374,7 +1376,9 @@ async function pushWorktreeToTarget(root, { remote, targetBranch, ctx = null }) 
       }
     }
   }
-  return git(root, ['push', remote, `HEAD:refs/heads/${targetBranch}`], { timeout: 120000 })
+  const pushed = await git(root, ['push', remote, `HEAD:refs/heads/${targetBranch}`], { timeout: 120000 })
+  pushed.autoResolved = autoResolved
+  return pushed
 }
 
 /** 台账里的 worktree 元数据 + 本机推导出的绝对路径。 */
@@ -4520,6 +4524,7 @@ export function apply(ctx) {
             branchMode: pushOnly ? 'retry' : branchMode,
             at: new Date().toISOString(),
             message,
+            ...(push.autoResolved?.length ? { autoResolved: push.autoResolved.slice(0, 20) } : {}),
           }
           const saved = await saveItem(repo, appendHistory(item, 'submit',
             pushed ? `提交 ${commitHash} 并推送到 ${remote}/${branch}` : `提交 ${commitHash}，但推送失败`))
@@ -5466,28 +5471,41 @@ export function apply(ctx) {
           // 默认只删台账；用户显式勾选才丢弃 worktree / 分支上的本地改动。
           // 会话还绑定着时不动 worktree：它可能还是运行中会话的 cwd。
           if (deleteWorktree) {
-            if (existing.session?.id) {
-              throw new Error('这条流程还绑定着开发会话：先解绑/结束会话，再删除 worktree')
+            // 只阻止仍在运行的会话：已结束但还留着 sessionId 的历史流程允许清理。
+            const liveAgent = existing.session?.id ? ctx.get('agents')?.get?.(existing.session.id) : null
+            if (liveAgent) {
+              throw new Error('这条流程的开发会话仍在运行：先结束/解绑会话，再删除 worktree')
             }
             const deleteTarget = workspaceTarget(profile, existing, repo)
             const branches = []
+            const cleanupErrors = []
             if (deleteTarget) {
               for (const member of deleteTarget.members) {
                 if (!member.worktree) continue
-                await removeFlowWorktree(member.path, {
-                  id: memberWorktreeItemId(existing.id, member.name),
-                }).catch(() => {})
+                try {
+                  await removeFlowWorktree(member.path, {
+                    id: memberWorktreeItemId(existing.id, member.name),
+                  })
+                } catch (error) {
+                  cleanupErrors.push(`${member.name}：${String(error?.message ?? error)}`)
+                }
                 if (member.worktree.branch) branches.push({ repo: member.path, branch: member.worktree.branch })
               }
             } else if (existing.workflow?.worktree?.branch) {
-              await removeFlowWorktree(repo, existing).catch(() => {})
+              try { await removeFlowWorktree(repo, existing) } catch (error) {
+                cleanupErrors.push(String(error?.message ?? error))
+              }
               branches.push({ repo, branch: existing.workflow.worktree.branch })
             }
             if (deleteBranch) {
               for (const entry of branches) {
-                await git(entry.repo, ['branch', '-D', entry.branch]).catch(() => {})
+                const removed = await git(entry.repo, ['branch', '-D', entry.branch])
+                if (!removed.ok && /not found|no branch named/i.test(removed.stderr || removed.stdout) === false) {
+                  cleanupErrors.push(`分支 ${entry.branch}：${(removed.stderr || removed.stdout).slice(-300)}`)
+                }
               }
             }
+            if (cleanupErrors.length) throw new Error(`worktree/分支清理失败，流程未删除：${cleanupErrors.join('；')}`)
           }
           const deleted = await deleteItem(repo, id)
           if (!deleted) throw new Error(`开发流程不存在：${id}`)

@@ -1645,7 +1645,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         if (auto) setTab('test')
         return
       }
-      setSubmitResult(`已提交并推送到 ${body.branch}：${body.commit}${body.pushOutput ? '\n' + body.pushOutput : ''}`)
+      const autoResolved = body.item?.workflow?.submission?.autoResolved ?? []
+      setSubmitResult([
+        `已提交并推送到 ${body.branch}：${body.commit}${body.pushOutput ? '\n' + body.pushOutput : ''}`,
+        autoResolved.length ? `自动解决冲突：${autoResolved.join('、')}（已按合并后的代码推送，建议复跑一次测试）` : '',
+      ].filter(Boolean).join('\n\n'))
       setChanges(null)
       const submitNotice = repoResults.length
         ? `已提交并推送 ${repoResults.length} 个成员库（${repoResults.map(repoDisplayName).join('、')}）`

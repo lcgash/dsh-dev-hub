@@ -149,6 +149,8 @@ export async function loadProfile() {
     projectAutomation: raw.projectAutomation && typeof raw.projectAutomation === 'object' && !Array.isArray(raw.projectAutomation)
       ? Object.fromEntries(Object.entries(raw.projectAutomation).map(([key, value]) => [key, normalizeAutomation(value)]))
       : {},
+    // 旧版全局设置：迁移为“还没有项目级覆盖时的默认值”，不直接丢弃用户选择
+    legacyAutomation: raw.automation ? normalizeAutomation(raw.automation) : null,
   }
   // 迁移结果落盘一次，后续所有入口（state/setup/switchRepo）都看到干净 profile
   if (dirty) await writeJsonAtomic(PROFILE_PATH, profile)
