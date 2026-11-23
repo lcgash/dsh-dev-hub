@@ -2248,3 +2248,12 @@ test('提交恢复：commit 已成功但推送失败时，空变更会重试推�
   assert.match(host, /git\(root, \['diff', '--cached', '--quiet'\]\)/)
   assert.match(host, /git\(workRoot, \['diff', '--cached', '--quiet'\]\)/)
 })
+
+test('提交冲突：自动把冲突文件交给模型合并并继续 rebase', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /async function resolveRebaseConflicts/)
+  assert.match(host, /runLlmJson\(ctx,/)
+  assert.match(host, /rebase', '--continue'/)
+  assert.match(host, /自动解决冲突失败/)
+})
