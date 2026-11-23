@@ -1236,7 +1236,9 @@ async function submitWorkspace({ target, ledgerRepo, item, paths, message, branc
       if (push.autoResolved?.length) row.autoResolved = push.autoResolved.slice(0, 20)
       // 自动 rebase 后 HEAD 变了：以实际 HEAD 记录提交
       row.commit = (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim() || row.commit
-      if (!push.ok) row.error = `push 失败：${row.pushOutput.slice(-500)}`
+      if (!push.ok) row.error = push.needsConfirmation
+        ? `自动解决冲突后已停在待提交：${row.autoResolved.join('、')}；请检查 diff、复跑测试后点重试推送`
+        : `push 失败：${row.pushOutput.slice(-500)}`
     } catch (error) {
       row.error = String(error?.message ?? error)
       row.status = 'failed'
@@ -1375,6 +1377,11 @@ async function pushWorktreeToTarget(root, { remote, targetBranch, ctx = null }) 
         }
       }
     }
+  }
+  // 自动合并冲突后不直接推送：先让用户检查 diff / 复跑测试，再点重试推送。
+  // 此时本地已 rebase 到目标分支，下一次 pushOnly 不会再冲突。
+  if (autoResolved.length) {
+    return { ok: false, stdout: '', stderr: '', autoResolved, needsConfirmation: true }
   }
   const pushed = await git(root, ['push', remote, `HEAD:refs/heads/${targetBranch}`], { timeout: 120000 })
   pushed.autoResolved = autoResolved
@@ -4529,9 +4536,14 @@ export function apply(ctx) {
           const saved = await saveItem(repo, appendHistory(item, 'submit',
             pushed ? `提交 ${commitHash} 并推送到 ${remote}/${branch}` : `提交 ${commitHash}，但推送失败`))
           if (!pushed) {
+            const conflictMessage = push.needsConfirmation
+              ? `冲突已自动解决（${(push.autoResolved ?? []).join('、')}），已停在待提交：请检查 diff、复跑测试后点「重试推送」`
+              : `已提交 ${commitHash}，但 push 失败：${pushOutput.slice(-500)}`
             return sendJson(res, 200, {
               ok: false,
-              error: `已提交 ${commitHash}，但 push 失败：${pushOutput.slice(-500)}`,
+              error: conflictMessage,
+              needsConfirmation: Boolean(push.needsConfirmation),
+              autoResolved: push.autoResolved ?? [],
               item: saved,
               commit: commitHash,
               branch,
@@ -6054,17 +6066,25 @@ export function apply(ctx) {
           // 只改 workflow.reviewEnabled，不碰评审历史/测试结论。
           const enabled = nextAutomation.reviewEnabled !== false
           // 设置是当前项目的：只回写当前项目的台账，不影响其他项目
+          const warnings = []
           for (const path of [repoPathForSettings].filter(Boolean)) {
             let items = []
-            try { items = await listItems(path) } catch { continue }
+            try { items = await listItems(path) } catch (error) {
+              warnings.push(`读取流程列表失败：${String(error?.message ?? error)}`)
+              continue
+            }
             for (const item of items) {
               if (!item?.workflow) continue
               if (item.workflow.reviewEnabled === enabled) continue
               item.workflow.reviewEnabled = enabled
-              await saveItem(path, item).catch(() => {})
+              try {
+                await saveItem(path, item)
+              } catch (error) {
+                warnings.push(`${item.id} 回写失败：${String(error?.message ?? error)}`)
+              }
             }
           }
-          return sendJson(res, 200, { ok: true, automation: nextAutomation, repo: repoInfo })
+          return sendJson(res, 200, { ok: true, automation: nextAutomation, repo: repoInfo, warnings })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }

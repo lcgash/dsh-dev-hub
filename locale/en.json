@@ -1868,7 +1868,8 @@
     "用 {value1} 打开当前流程的 worktree": "Open the current worktree with {value1}",
     "删除流程「{value1}」？\n\n{value2}这个操作不可撤销。": "Delete flow \"{value1}\"?\n\n{value2}This cannot be undone.",
     "已删除流程 {value1}（worktree 与分支已清理）": "Deleted flow {value1} (worktree and branch removed)",
-    "自动解决冲突：{value1}（已按合并后的代码推送，建议复跑一次测试）": "Auto-resolved conflicts: {value1} (pushed the merged code; rerun tests recommended)"
+    "自动解决冲突：{value1}（已按合并后的代码推送，建议复跑一次测试）": "Auto-resolved conflicts: {value1} (pushed the merged code; rerun tests recommended)",
+    "{value1}；部分流程未更新：{value2}": "{value1}; some flows were not updated: {value2}"
   },
   "templateValues": {
     "通过": "passed",
