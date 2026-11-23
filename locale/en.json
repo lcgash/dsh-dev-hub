@@ -1402,7 +1402,8 @@
     "同时删除 worktree 和 devhub 分支（未提交/未合并的代码改动会丢失）": "Also delete the worktree and devhub branch (uncommitted/unmerged code changes will be lost)",
     "；当前流程还绑定开发会话，请先解绑/结束会话": " ; this flow is still bound to a development session; unbind or end it first",
     "关键决策": "Key decisions",
-    "术语": "Glossary"
+    "术语": "Glossary",
+    "没有新的改动：尝试推送当前已提交的 HEAD…": "No new changes: trying to push the current committed HEAD…"
   },
   "templates": {
     "成员 {name}": "Member {name}",

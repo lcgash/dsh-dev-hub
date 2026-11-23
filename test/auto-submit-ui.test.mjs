@@ -9,7 +9,7 @@ test('顶栏「提交并推送」是实际操作：自动取变更、生成提�
   assert.match(index, /async function submitCode\(\{ pushOnly = false, auto = false \} = \{\}\)/)
   assert.match(index, /info\.suggestedPaths/)
   assert.match(index, /const prefix = draft\.workflow\?\.intent === 'bug' \? 'fix' : draft\.workflow\?\.intent === 'refactor' \? 'refactor' : 'feat'/)
-  assert.match(index, /没有检测到需要提交的变更/)
+  assert.match(index, /没有新的改动：尝试推送当前已提交的 HEAD/)
 })
 
 test('reviewAdvancePlan：验证都通过/跳过后按钮是「提交并推送」且带自动提交提示', async () => {

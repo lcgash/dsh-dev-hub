@@ -1201,8 +1201,14 @@ async function submitWorkspace({ target, ledgerRepo, item, paths, message, branc
       if (!pushOnly) {
         const add = await git(root, ['add', '--', ...(group?.paths ?? [])])
         if (!add.ok) throw new Error(`git add 失败：${(add.stderr || add.stdout).slice(-1000)}`)
-        const commit = await git(root, ['commit', '-m', message])
-        if (!commit.ok) throw new Error(`git commit 失败：${(commit.stderr || commit.stdout).slice(-1000)}`)
+        const headBefore = (await git(root, ['rev-parse', 'HEAD'])).stdout.trim()
+        // 大仓库的 commit 可能超过默认 8s；超时后 git 可能已经写好 commit，只是进程被杀。
+        // 用 HEAD 是否变化判断真实结果，避免把已成功的提交报成失败。
+        const commit = await git(root, ['commit', '-m', message], { timeout: 120000 })
+        const headAfter = (await git(root, ['rev-parse', 'HEAD'])).stdout.trim()
+        if (!commit.ok && (!headAfter || headAfter === headBefore)) {
+          throw new Error(`git commit 失败：${(commit.stderr || commit.stdout).slice(-1000)}`)
+        }
         row.commit = (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
         row.status = 'committed'
       }
@@ -4387,8 +4393,13 @@ export function apply(ctx) {
           if (!pushOnly) {
             const add = await git(workRoot, ['add', '--', ...paths])
             if (!add.ok) throw new Error(`git add 失败：${(add.stderr || add.stdout).slice(-2000)}`)
-            const commit = await git(workRoot, ['commit', '-m', message])
-            if (!commit.ok) throw new Error(`git commit 失败：${(commit.stderr || commit.stdout).slice(-2000)}`)
+            const headBefore = (await git(workRoot, ['rev-parse', 'HEAD'])).stdout.trim()
+            // 大仓库 commit 可能超过默认 8s；先看 HEAD 是否真的变了，避免成功提交被报失败。
+            const commit = await git(workRoot, ['commit', '-m', message], { timeout: 120000 })
+            const headAfter = (await git(workRoot, ['rev-parse', 'HEAD'])).stdout.trim()
+            if (!commit.ok && (!headAfter || headAfter === headBefore)) {
+              throw new Error(`git commit 失败：${(commit.stderr || commit.stdout).slice(-2000)}`)
+            }
             commitHash = (await git(workRoot, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
           }
 

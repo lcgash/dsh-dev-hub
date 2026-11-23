@@ -2217,3 +2217,32 @@ test('删除流程：可勾选同时清理 worktree 与 devhub 分支', async ()
   assert.match(index, /deleteWorktree, deleteBranch: deleteWorktree/)
   assert.match(index, /worktree 和 devhub 分支/)
 })
+
+
+test('下一步输入框：点击发送即清空，失败才恢复原文；连按不会重复发', async () => {
+  const fs = await import('node:fs/promises')
+  const index = await fs.readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const start = index.indexOf('async function sendUnified()')
+  const block = index.slice(start, index.indexOf('async function', start + 10))
+  const clearAt = block.indexOf("setAskText('')")
+  const dispatchAt = block.indexOf('await api(API.dispatch')
+  assert.ok(clearAt > 0 && dispatchAt > clearAt, '先清空输入框，再发请求')
+  assert.match(block, /catch \(err\)[\s\S]{0,400}setAskText\(\(current\) => \(current \? current : message\)\)/, '失败时恢复原文，但不要覆盖用户新输入')
+  assert.match(block, /sendingRef\.current = true/)
+  assert.match(block, /sendingRef\.current = false/)
+
+  const assistStart = index.indexOf('async function sendAssist()')
+  const assist = index.slice(assistStart, index.indexOf('const pending', assistStart))
+  assert.ok(assist.indexOf("setAskText('')") < assist.indexOf('await api(API.assist'), '补充入口同样先清空')
+  assert.match(assist, /sendingRef\.current = true/)
+})
+
+test('提交恢复：commit 已成功但推送失败时，空变更会重试推送当前 HEAD', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(index, /没有新的改动：尝试推送当前已提交的 HEAD/)
+  assert.match(index, /submitCode\(\{ pushOnly: true, auto: true \}\)/)
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /const headBefore = .*rev-parse.*HEAD/)
+  assert.match(host, /timeout: 120000/)
+})

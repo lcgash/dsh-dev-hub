@@ -660,6 +660,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 「下一步」对话框：进入流程先问"要不要推进 / 有什么改进"，而不是让人自己找按钮
   const [askText, setAskText] = useState('')
   const [askBusy, setAskBusy] = useState(false)
+  // 发送锁：同一个事件循环里连按 Enter/点发送时，state 还没重渲染，不能让同一条消息发两次
+  const sendingRef = useRef(false)
   // 对话式补充：线程只展示最近几轮（完整留痕在 history）
   const [assistBusy, setAssistBusy] = useState(false)
   const [assistLog, setAssistLog] = useState([])
@@ -1558,7 +1560,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     let mode = branchMode
     let name = branchName.trim()
     if (!pushOnly && !(await runPendingChecksBeforeSubmit())) return
-    if (auto) {
+    if (auto && !pushOnly) {
       // 自动化提交：按当前变更自动选文件、生成提交信息、当前分支直接 push，不弹确认
       if (busy) return
       setBusy(true); setError(''); setNotice('')
@@ -1577,12 +1579,17 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         return
       }
       if (!paths.length) {
-        setTab('test')
-        setNotice('没有检测到需要提交的变更（可能已经提交，或工作区是干净的）')
+        // 上一次 commit 已成功但 push 失败/超时：工作区干净时不能只报“没有变更”，
+        // 直接把当前 HEAD 推到目标分支，承接上次未完成的提交。
         setBusy(false)
+        setNotice('没有新的改动：尝试推送当前已提交的 HEAD…')
+        await submitCode({ pushOnly: true, auto: true })
         return
       }
-    } else {
+    } else if (auto && pushOnly) {
+      if (busy) return
+      setBusy(true); setError(''); setNotice('')
+    } else if (!auto) {
       if (!pushOnly && !paths.length) { setError('请选择要提交的文件'); return }
       if (!pushOnly && !String(message).trim()) { setError('请填写提交信息'); return }
       if (mode === 'new' && !pushOnly && !name) { setError('请填写新分支名'); return }
@@ -3448,7 +3455,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
      */
     async function sendUnified() {
       const message = askText.trim()
-      if (!message || busy || assistBusy) return
+      if (!message || busy || assistBusy || sendingRef.current) return
+      sendingRef.current = true
+      // 发送即清空输入框：request 可能跑很久，不能把已发出的内容一直留在框里
+      setAskText('')
       setAssistBusy(true)
       setError('')
       setNotice('')
@@ -3473,12 +3483,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         if (body.action === 'session' && !targetSession) parts.push('但还没绑定开发会话')
         parts.push(`（判定：${{ ledger: '补台账', session: '推进开发', both: '台账+开发', none: '无需处理' }[body.action] ?? body.action}${body.engine === 'local' ? ' · 本地规则降级' : ''}）`)
         setAssistLog((current) => [...current, { role: 'assistant', text: parts.filter(Boolean).join('；') }])
-        setAskText('')
         setNotice(parts.join('；'))
       } catch (err) {
+        // 发送失败且用户还没输入新内容时，把原文放回输入框，避免长消息丢失
+        setAskText((current) => (current ? current : message))
         setAssistLog((current) => [...current, { role: 'assistant', text: `处理失败：${errorText(err)}` }])
         setError(errorText(err))
       } finally {
+        sendingRef.current = false
         setAssistBusy(false)
       }
     }
@@ -3486,7 +3498,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     /** 对话式补充：一句话交给 agent 整理进台账（不是让人逐项填）。 */
     async function sendAssist() {
       const message = askText.trim()
-      if (!message || assistBusy) return
+      if (!message || assistBusy || sendingRef.current) return
+      sendingRef.current = true
+      setAskText('')
       setAssistBusy(true)
       setError('')
       setNotice('')
@@ -3495,14 +3509,15 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         const body = await api(API.assist, { method: 'POST', body: JSON.stringify({ id: draft.id, message }) })
         setAssistLog((current) => [...current, { role: 'assistant', text: body.reply ?? '（没有回复）' }])
         if (body.item) { setDraft(body.item); onSaved?.(body.item) }
-        setAskText('')
         setNotice(body.applied?.length
           ? `已按你的话更新：${body.applied.join('、')}（不满意可点「编辑」纠偏）`
           : '这句话没有产生字段变更；可以换个说法，或直接说"目标/验收/风险要改成…"')
       } catch (err) {
+        setAskText((current) => (current ? current : message))
         setAssistLog((current) => [...current, { role: 'assistant', text: `处理失败：${errorText(err)}` }])
         setError(errorText(err))
       } finally {
+        sendingRef.current = false
         setAssistBusy(false)
       }
     }
