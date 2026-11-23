@@ -325,6 +325,48 @@ export const SKILL_CATALOG = [
     ],
   },
   {
+    id: 'frontend-experience',
+    name: '前端体验审查（Impeccable / UI UX 借鉴）',
+    version: '1.0.0',
+    level: 'L1',
+    appliesTo: ['node', 'java'],
+    optional: true,
+    // 可选包：不默认安装，避免每个前端仓库都被额外 UI 规则压住
+    description: '可选的前端体验审查：渲染证据（375/768/1024/1440）、可访问性、文本/IME 韧性、设计克制与产品语境。借鉴 Impeccable 的 critique/audit 和 UI UX Pro Max 的交付检查，不替换 prototype-ui-designer 的 Gitee 家族规范。',
+    constraints: [
+      {
+        id: 'ux-rendered',
+        title: 'UI 验收必须有渲染证据',
+        rule: '不能只看源码就宣称界面完成：至少检查 375/768/1024/1440 四个宽度，确认布局、截断、焦点和交互状态；有 DESIGN.md/现有设计系统时先对齐再改。',
+        check: { kind: 'checklist', value: 'rendered-evidence' },
+      },
+      {
+        id: 'ux-accessibility',
+        title: '可访问性不是可选项',
+        rule: '正文对比度至少 4.5:1；所有可交互元素键盘可达且焦点可见；状态不能只靠颜色；尊重 prefers-reduced-motion；语义控件优先，ARIA 只做补充。',
+        check: { kind: 'checklist', value: 'accessibility' },
+      },
+      {
+        id: 'ux-resilience',
+        title: '文本、IME 与中断要可用',
+        rule: '长标题/URL/标识不能被裁切；chip/tag 要换行或提供可操作的 +N；输入法组字中的 Enter 不提交；加载、空态、错误、取消都有明确文案和下一步。',
+        check: { kind: 'checklist', value: 'resilient-ui' },
+      },
+      {
+        id: 'ux-restraint',
+        title: '设计克制，避免通用 AI 味',
+        rule: '优先复用现有 token/组件与用户给定的视觉世界；层次靠字重/灰阶/间距，不靠彩虹、泛滥渐变、玻璃拟态或装饰性噪音；一个区域只保留一个主操作。',
+        check: { kind: 'checklist', value: 'design-restraint' },
+      },
+      {
+        id: 'ux-context',
+        title: '先定产品语境，再谈审美',
+        rule: '先判断界面模式：Operate（后台/工具）重扫读与一致性，Read 重理解，Persuade 重决策，Experience 重作品；模式决定密度与表现力，不能把落地页的审美套到管理后台。',
+        check: { kind: 'checklist', value: 'product-mode' },
+      },
+    ],
+  },
+  {
     id: 'generic-quality',
     name: '通用工程质量',
     level: 'L0',
@@ -374,6 +416,7 @@ export function defaultSkillIds(language = 'generic', options = {}) {
   return SKILL_CATALOG
     .filter((pack) => pack.appliesTo.includes(lang) || pack.appliesTo.includes('generic'))
     .filter((pack) => {
+      if (pack.optional) return false
       const triggers = Array.isArray(pack.autoInstall) ? pack.autoInstall : []
       if (!triggers.length) return true
       return triggers.includes('frontend') ? frontend : false

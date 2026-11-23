@@ -237,3 +237,12 @@ test('内置工程判断：需求 grill、影响面、代码负担三项约束',
   const ids = pack.constraints.map((entry) => entry.id)
   assert.deepEqual(ids.sort(), ['code-burden', 'impact-map', 'requirement-grill'])
 })
+
+test('可选前端体验审查：借鉴 Impeccable/UI UX，不默认安装', () => {
+  const pack = findSkill('frontend-experience')
+  assert.ok(pack)
+  assert.equal(pack.level, 'L1')
+  assert.equal(pack.autoInstall, undefined, '可选包不应自动安装')
+  assert.deepEqual(pack.constraints.map((entry) => entry.id).sort(), ['ux-accessibility', 'ux-context', 'ux-rendered', 'ux-resilience', 'ux-restraint'])
+  assert.ok(!defaultSkillIds('node', { frontend: true }).includes('frontend-experience'))
+})
