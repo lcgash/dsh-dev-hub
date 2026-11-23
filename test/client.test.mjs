@@ -2257,3 +2257,12 @@ test('提交冲突：自动把冲突文件交给模型合并并继续 rebase', a
   assert.match(host, /rebase', '--continue'/)
   assert.match(host, /自动解决冲突失败/)
 })
+
+test('提交：缺失且未跟踪的 pathspec 会被跳过，不再让 git add 整体失败', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /async function addSelectedPaths/)
+  assert.match(host, /git add.*--all|'add', '--all'/)
+  assert.match(host, /trackedSet/)
+  assert.match(host, /skipped/)
+})

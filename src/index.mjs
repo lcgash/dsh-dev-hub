@@ -1199,7 +1199,7 @@ async function submitWorkspace({ target, ledgerRepo, item, paths, message, branc
           || (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim())
         : (await git(root, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
       if (!pushOnly) {
-        const add = await git(root, ['add', '--', ...(group?.paths ?? [])])
+        const add = await addSelectedPaths(root, group?.paths ?? [])
         if (!add.ok) throw new Error(`git add 失败：${(add.stderr || add.stdout).slice(-1000)}`)
         const headBefore = (await git(root, ['rev-parse', 'HEAD'])).stdout.trim()
         const staged = await git(root, ['diff', '--cached', '--quiet'])
@@ -1284,6 +1284,24 @@ async function targetBranchForRepo(repo, branch) {
  * - rebase 冲突则 abort 并保留 worktree，要求人工处理；
  * - 不更新本地主工作区的目标分支（避免覆盖用户正在编辑的工作区），远端已更新。
  */
+/** 只 add 真实存在或仍被 git 跟踪的路径；删除文件用 --all 记录，不存在且未跟踪的 pathspec 跳过。 */
+async function addSelectedPaths(root, paths) {
+  const unique = [...new Set((Array.isArray(paths) ? paths : []).map(String).filter(Boolean))]
+  if (!unique.length) return { ok: true, stdout: '', stderr: '', skipped: [] }
+  const tracked = await git(root, ['ls-files', '--', ...unique])
+  const trackedSet = new Set(tracked.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean))
+  const valid = []
+  const skipped = []
+  for (const rel of unique) {
+    if (await exists(join(root, rel))) valid.push(rel)
+    else if (trackedSet.has(rel) || [...trackedSet].some((entry) => entry.startsWith(rel.replace(/\/+$/, '') + '/'))) valid.push(rel)
+    else skipped.push(rel)
+  }
+  if (!valid.length) return { ok: true, stdout: '', stderr: '', skipped }
+  const result = await git(root, ['add', '--all', '--', ...valid])
+  return { ...result, skipped }
+}
+
 /** 自动解决 rebase 冲突：把两份冲突内容交给默认模型合成，写回后继续 rebase。 */
 async function resolveRebaseConflicts(root, { ctx, targetBranch }) {
   if (!ctx?.get?.('llm')?.stream) throw new Error('当前 Host 没有可用模型，无法自动解决冲突')
@@ -4454,7 +4472,7 @@ export function apply(ctx) {
 
           let commitHash = (await git(workRoot, ['rev-parse', '--short', 'HEAD'])).stdout.trim()
           if (!pushOnly) {
-            const add = await git(workRoot, ['add', '--', ...paths])
+            const add = await addSelectedPaths(workRoot, paths)
             if (!add.ok) throw new Error(`git add 失败：${(add.stderr || add.stdout).slice(-2000)}`)
             const headBefore = (await git(workRoot, ['rev-parse', 'HEAD'])).stdout.trim()
             const staged = await git(workRoot, ['diff', '--cached', '--quiet'])
