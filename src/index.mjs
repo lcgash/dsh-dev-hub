@@ -1491,6 +1491,19 @@ async function applyReworkFacts(ctx, profile, repoPath, items) {
       const tests = item.workflow?.tests ?? {}
       const local = tests.local ?? {}
       const submitted = Boolean(String(item.workflow?.submission?.commit ?? '').trim())
+      // 分析流程是只读的：任务/报告/仓库台账变化不应把“分析结论”判成代码又改了一轮。
+      // 否则每次测试完成后的台账/报告写入都会触发 rework，流程会在开发↔验证之间死循环。
+      const analysis = item.workflow?.intent === 'analysis'
+      if (analysis) {
+        if (item.workflow.rework?.at || item.workflow.tests?.local?.stale) {
+          item.workflow.rework = null
+          if (item.workflow.tests?.local) item.workflow.tests.local.stale = false
+          out.push(await saveItem(repoPath, appendHistory(item, 'test', '分析流程只读：清除台账/报告写入造成的测试过期标记')))
+        } else {
+          out.push(item)
+        }
+        continue
+      }
       // 提交阶段的 rebase/冲突解决会改变 HEAD，但这是“合并目标分支”，不是又开发了一轮；
       // 不能因此把评审作废、退回开发。提交失败时保留 submit，让用户直接重试推送。
       const submitting = item.workflow?.stage === 'submit'
