@@ -201,6 +201,75 @@ async function runClaudeJson({ cwd, prompt, schema = null, label = 'devhub-claud
   }
 }
 
+async function runCodexJson({ cwd, prompt, schema = null, label = 'devhub-codex', timeoutMs = 0 } = {}) {
+  const startedAt = Date.now()
+  const bin = await which('codex')
+  if (!bin) throw new Error('未检测到 Codex CLI（请先安装 codex 命令并登录）')
+  const base = join(PROFILE_DIR, 'agent-bridges')
+  await mkdir(base, { recursive: true })
+  const stamp = `${String(label).replace(/[^A-Za-z0-9._-]+/g, '-')}-${randomUUID()}`
+  const schemaFile = join(base, `${stamp}.schema.json`)
+  const outFile = join(base, `${stamp}.out.json`)
+  await writeFile(schemaFile, JSON.stringify(schema ?? { type: 'object', additionalProperties: true }))
+  try {
+    await runExecutable(bin, [
+      'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
+      '-C', cwd, '--output-schema', schemaFile, '-o', outFile, String(prompt ?? ''),
+    ], {
+      timeout: Number(timeoutMs) > 0 ? Number(timeoutMs) : 0,
+      maxBuffer: 16 * 1024 * 1024,
+      env: process.env,
+      windowsHide: true,
+    })
+    const raw = await readFile(outFile, 'utf8')
+    const value = extractJson(raw)
+    if (!value) throw new Error(`Codex 没有返回可解析的 JSON：${raw.slice(0, 800)}`)
+    return { value, sessionId: null, provider: 'codex', elapsedMs: Date.now() - startedAt }
+  } finally {
+    await unlink(schemaFile).catch(() => {})
+    await unlink(outFile).catch(() => {})
+  }
+}
+
+async function runPiJson({ cwd, prompt, schema = null, label = 'devhub-pi', timeoutMs = 0 } = {}) {
+  const startedAt = Date.now()
+  const bin = await which('pi')
+  if (!bin) throw new Error('未检测到 Pi CLI（请先安装 pi 命令并登录）')
+  const schemaText = schema ? `\n\n只输出一个严格 JSON 对象，不要 Markdown/解释。JSON Schema：\n${JSON.stringify(schema)}` : ''
+  const { stdout, stderr } = await runExecutable(bin, [
+    '--print', '--mode', 'json', '--no-session', `${String(prompt ?? '')}${schemaText}`,
+  ], {
+    cwd: cwd ?? process.cwd(),
+    timeout: Number(timeoutMs) > 0 ? Number(timeoutMs) : 0,
+    maxBuffer: 16 * 1024 * 1024,
+    env: process.env,
+    windowsHide: true,
+  })
+  let sessionId = null
+  let text = ''
+  for (const line of String(stdout ?? '').split(/\r?\n/)) {
+    if (!line.trim()) continue
+    let event
+    try { event = JSON.parse(line) } catch { continue }
+    if (event.type === 'session' && event.id) sessionId = String(event.id)
+    if (event.type === 'message_end' && event.message?.role === 'assistant') {
+      const parts = Array.isArray(event.message.content) ? event.message.content : []
+      const next = parts.filter((part) => part?.type === 'text').map((part) => part.text).join('\n').trim()
+      if (next) text = next
+    }
+  }
+  const value = extractJson(text) ?? extractJson(String(stdout ?? ''))
+  if (!value) throw new Error(`Pi 没有返回可解析的 JSON：${(text || stderr || '').slice(0, 800)}`)
+  return { value, sessionId, provider: 'pi', elapsedMs: Date.now() - startedAt }
+}
+
+async function runExternalJson(engine, options) {
+  if (engine === 'claude') return runClaudeJson(options)
+  if (engine === 'codex') return runCodexJson(options)
+  if (engine === 'pi') return runPiJson(options)
+  throw new Error(`不支持的 AI 引擎：${engine}`)
+}
+
 function isLoopback(req) {
   const remote = req.socket.remoteAddress
   if (!remote) return false
@@ -718,6 +787,20 @@ async function applyClaudeRunning(views, items) {
       row.attention = attentionOf(views.ctx, item, true)
     }
   }
+}
+
+function openTerminalWithCommand(root, command) {
+  const work = String(root ?? '')
+  if (process.platform === 'darwin') {
+    const script = `cd ${JSON.stringify(work)} && ${command}`
+    spawn('osascript', ['-e', `tell application "Terminal" to do script ${JSON.stringify(script)}`], { detached: true, stdio: 'ignore' }).unref()
+    return
+  }
+  if (process.platform === 'win32') {
+    spawn('cmd', ['/c', 'start', 'AI terminal', 'cmd', '/k', `cd /d "${work}" && ${command}`], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+    return
+  }
+  spawn('x-terminal-emulator', ['-e', 'sh', '-c', `cd ${JSON.stringify(work)} && ${command}`], { detached: true, stdio: 'ignore' }).unref()
 }
 
 async function claudeLogs(id) {
@@ -3135,8 +3218,8 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
   const evidence = await reviewEvidenceOf({ repo, item, profile })
   const started = startReviewRound(item.workflow.review, { count, basis: evidence.basis })
   const reviewEngine = projectAutomation(profile, repo).engine
-  if (reviewEngine === 'claude') {
-    started.reviewers = started.reviewers.map((reviewer) => ({ ...reviewer, engine: 'claude', external: true }))
+  if (reviewEngine !== 'dsh') {
+    started.reviewers = started.reviewers.map((reviewer) => ({ ...reviewer, engine: reviewEngine, external: true }))
   }
   item.workflow.review = started
   appendHistory(item, 'review', `继续推进：自动开始独立评审（第 ${started.round} 轮 · ${started.reviewers.length} 位审核员：${started.reviewers.map((reviewer) => reviewer.role).join(' / ')}）`)
@@ -3154,8 +3237,8 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
       constraints: evidence.constraints,
       total: started.reviewers.length,
     })
-    const runOnce = (attempt = 1) => (reviewEngine === 'claude'
-      ? runClaudeJson({
+    const runOnce = (attempt = 1) => (reviewEngine !== 'dsh'
+      ? runExternalJson(reviewEngine, {
         cwd: evidence.cwd,
         prompt,
         schema: REVIEW_SCHEMA,
@@ -5132,20 +5215,20 @@ export function apply(ctx) {
           const shortError = (error) => String(error?.message ?? error).replace(/\s+/g, ' ').slice(0, 600)
           const clarifyEngine = projectAutomation(profile, repo).engine
           try {
-            const result = clarifyEngine === 'claude'
-              ? await runClaudeJson({
-                cwd: repo,
-                prompt: clarifyPrompt,
-                schema: CLARIFY_SCHEMA,
-                label: 'devhub-clarify',
-                timeoutMs: 180000,
-              })
-              : await runAgentJson(ctx, {
+            const result = clarifyEngine === 'dsh'
+              ? await runAgentJson(ctx, {
                 cwd: repo,
                 prompt: clarifyPrompt,
                 schema: CLARIFY_SCHEMA,
                 label: 'devhub-clarify',
                 timeoutMs: 90000,
+              })
+              : await runExternalJson(clarifyEngine, {
+                cwd: repo,
+                prompt: clarifyPrompt,
+                schema: CLARIFY_SCHEMA,
+                label: 'devhub-clarify',
+                timeoutMs: 180000,
               })
             const normalized = normalizeClarify(result.value, { round })
             sendJson(res, 200, {
@@ -5404,6 +5487,58 @@ export function apply(ctx) {
           applyDevhubUpdate(item, body.args ?? {})
           const saved = await saveItem(entry.repo, appendHistory(item, 'update', 'Claude CLI 更新开发项'))
           sendJson(res, 200, { ok: true, item: saved })
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
+    // Codex / Pi 目前以终端会话开发；澄清与评审仍走各自的一次性结构化 CLI。
+    {
+      kind: 'exact',
+      path: API.external,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST only' })
+        try {
+          const profile = await loadProfile()
+          const repo = await activeRepo(profile)
+          if (!repo) throw new Error('尚未选择项目')
+          const body = await readBody(req)
+          const engine = String(body.engine ?? '')
+          if (!['codex', 'pi'].includes(engine)) throw new Error(`不支持的外部引擎：${engine}`)
+          const item = await readItemLocal(profile, repo, body.id)
+          if (!item) throw new Error(`开发项不存在：${body.id}`)
+          const root = await workRootOf(repo, item)
+          const bin = await which(engine)
+          if (!bin) throw new Error(`未检测到 ${engine} CLI`)
+          if (body.action === 'open') {
+            openTerminalWithCommand(root, engine)
+            return sendJson(res, 200, { ok: true, sessionId: item.session?.id ?? null })
+          }
+          if (body.action !== 'launch') throw new Error(`未知外部引擎动作：${body.action}`)
+          const bridgeDir = join(PROFILE_DIR, 'agent-bridges')
+          await mkdir(bridgeDir, { recursive: true })
+          const token = randomUUID()
+          const safeId = String(item.id).replace(/[^\p{L}\p{N}._-]+/gu, '-').slice(0, 80)
+          const bridgePath = join(bridgeDir, `${safeId}-${engine}.json`)
+          const promptPath = join(bridgeDir, `${safeId}-${engine}.prompt.txt`)
+          await writeFile(bridgePath, JSON.stringify({ url: `http://${String(req.headers.host ?? '127.0.0.1').replace(/[\r\n]/g, '')}`, token, itemId: item.id }, null, 2))
+          CLAUDE_BRIDGES.set(token, { itemId: item.id, repo, bridgePath, at: Date.now() })
+          const cliHint = [
+            '===== DevHub 联动 CLI =====',
+            `node ${JSON.stringify(CLAUDE_CLI)} get --bridge ${JSON.stringify(bridgePath)}`,
+            `node ${JSON.stringify(CLAUDE_CLI)} update --bridge ${JSON.stringify(bridgePath)} --task "任务文本" --done`,
+            '用它回写任务/变更点/风险；阶段仍由工作站推导。',
+          ].join('\n')
+          await writeFile(promptPath, `${String(body.prompt ?? '')}\n\n${cliHint}`)
+          const command = process.platform === 'win32'
+            ? engine
+            : `${engine} "$(cat ${JSON.stringify(promptPath)})"`
+          openTerminalWithCommand(root, command)
+          item.session = { id: `${engine}-terminal-${Date.now()}`, engine, external: true, cwd: root, promptPath, at: new Date().toISOString() }
+          item.workflow = { ...(item.workflow ?? {}), engine }
+          const saved = await saveItem(repo, appendHistory(item, 'session', `${engine} 终端会话已启动；提示内容：${promptPath}`))
+          sendJson(res, 200, { ok: true, sessionId: saved.session?.id ?? null, item: saved, promptPath })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }
@@ -6316,7 +6451,21 @@ export function apply(ctx) {
           const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 30
           // 审核员等子会话不属于 item.session：允许显式指定 sessionId 读取它的只读动态。
           const sessionId = String(query(req.url, 'sessionId') ?? '').trim() || item.session?.id
-          if (item.session?.engine === 'claude') {
+          if (['claude', 'codex', 'pi'].includes(item.session?.engine)) {
+            if (item.session?.engine === 'codex' || item.session?.engine === 'pi') {
+              return sendJson(res, 200, {
+                ok: true,
+                itemId: item.id,
+                sessionId,
+                alive: true,
+                state: { engine: item.session.engine, external: true },
+                messages: [],
+                total: 0,
+                truncated: false,
+                reason: `${item.session.engine} 终端会话：日志请查看终端`,
+                items: [{ kind: 'assistant', text: `外部终端会话\n${item.session.promptPath ? `提示词：${item.session.promptPath}` : ''}` }],
+              })
+            }
             let output = ''
             let state = null
             try {
@@ -6370,8 +6519,16 @@ export function apply(ctx) {
           const currentAutomation = projectAutomation(profile, repoPathForSettings)
           const repoInfo = { path: repoPathForSettings, name: repoName(repoPathForSettings) }
           if (req.method === 'GET') {
-            const claude = await which('claude')
-            return sendJson(res, 200, { ok: true, automation: currentAutomation, repo: repoInfo, claudeAvailable: Boolean(claude), engine: currentAutomation.engine })
+            const [claude, codex, pi] = await Promise.all([which('claude'), which('codex'), which('pi')])
+            return sendJson(res, 200, {
+              ok: true,
+              automation: currentAutomation,
+              repo: repoInfo,
+              claudeAvailable: Boolean(claude),
+              codexAvailable: Boolean(codex),
+              piAvailable: Boolean(pi),
+              engine: currentAutomation.engine,
+            })
           }
           if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'GET/POST only' })
           const body = await readBody(req)

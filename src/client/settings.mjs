@@ -74,6 +74,8 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
   const [automation, setAutomation] = useState(() => normalizeAutomation(null))
   const [repo, setRepo] = useState(null)
   const [claudeAvailable, setClaudeAvailable] = useState(false)
+  const [codexAvailable, setCodexAvailable] = useState(false)
+  const [piAvailable, setPiAvailable] = useState(false)
   const [section, setSection] = useState(initialSection === 'skills' ? 'skills' : 'automation')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -84,7 +86,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
   useEffect(() => {
     let alive = true
     api(API.settings)
-      .then((body) => { if (alive) { setAutomation(normalizeAutomation(body?.automation)); setRepo(body?.repo ?? null); setClaudeAvailable(Boolean(body?.claudeAvailable)) } })
+      .then((body) => { if (alive) { setAutomation(normalizeAutomation(body?.automation)); setRepo(body?.repo ?? null); setClaudeAvailable(Boolean(body?.claudeAvailable)); setCodexAvailable(Boolean(body?.codexAvailable)); setPiAvailable(Boolean(body?.piAvailable)) } })
       .catch((err) => { if (alive) setLoadError(errorText(err)) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
@@ -182,6 +184,24 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
                 active: automation.engine === 'claude',
                 disabled: !claudeAvailable || saving,
                 onClick: () => { if (claudeAvailable) save({ ...automation, engine: 'claude' }) },
+              }),
+              h(OptionCard, {
+                title: 'Codex',
+                hint: codexAvailable
+                  ? '用本机 Codex CLI 执行澄清和评审；开发阶段在终端中进行，可用 bridge CLI 回写台账。'
+                  : '未检测到 codex 命令：请先安装 Codex CLI 并登录。',
+                active: automation.engine === 'codex',
+                disabled: !codexAvailable || saving,
+                onClick: () => { if (codexAvailable) save({ ...automation, engine: 'codex' }) },
+              }),
+              h(OptionCard, {
+                title: 'Pi',
+                hint: piAvailable
+                  ? '用本机 Pi CLI 执行澄清和评审；开发阶段在终端中进行，可用 bridge CLI 回写台账。'
+                  : '未检测到 pi 命令：请先安装 Pi CLI 并登录。',
+                active: automation.engine === 'pi',
+                disabled: !piAvailable || saving,
+                onClick: () => { if (piAvailable) save({ ...automation, engine: 'pi' }) },
               }),
             ),
             !claudeAvailable

@@ -1418,7 +1418,12 @@
     "AI 引擎（开发 / 澄清 / 评审）": "AI engine (development / clarification / review)",
     "决定开发、需求澄清和独立评审由谁执行。切换只影响之后的调用；已有流程的代码与历史不变。": "Choose who runs development, requirement clarification and independent review. Switching affects only future calls; existing flow code and history stay unchanged.",
     "用 DSH 原生会话执行开发、澄清和评审；自动化与纠偏衔接最完整。": "Use native DSH sessions for development, clarification and review; automation and correction handoff integrate best.",
-    "用本机 Claude Code 执行开发、澄清和评审；开发会话可在工作站查看日志或打开终端。": "Use local Claude Code for development, clarification and review; development sessions can show logs or open a terminal in the workstation."
+    "用本机 Claude Code 执行开发、澄清和评审；开发会话可在工作站查看日志或打开终端。": "Use local Claude Code for development, clarification and review; development sessions can show logs or open a terminal in the workstation.",
+    "外部 Agent": "External agent",
+    "用本机 Codex CLI 执行澄清和评审；开发阶段在终端中进行，可用 bridge CLI 回写台账。": "Use local Codex CLI for clarification and review; development runs in a terminal and the bridge CLI writes back the ledger.",
+    "未检测到 codex 命令：请先安装 Codex CLI 并登录。": "No codex command found: install the Codex CLI and sign in first.",
+    "用本机 Pi CLI 执行澄清和评审；开发阶段在终端中进行，可用 bridge CLI 回写台账。": "Use local Pi CLI for clarification and review; development runs in a terminal and the bridge CLI writes back the ledger.",
+    "未检测到 pi 命令：请先安装 Pi CLI 并登录。": "No pi command found: install the Pi CLI and sign in first."
   },
   "templates": {
     "成员 {name}": "Member {name}",
@@ -1890,7 +1895,12 @@
     "开启新的开发会话？\n\n将新建一个 {value1}，并把「{value2}」的约束与 Context Pack 作为首条消息发送。": "Start a new development session?\n\nA new {value1} will be created and the constraints and Context Pack for \"{value2}\" will be sent as the first message.",
     "{value1}后台会话 {value2}。可在下方查看日志，或点「打开会话」进终端。": "{value1} background session {value2}. View logs below, or open the session in a terminal.",
     "你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：{value1}{value2}。": "You are a Claude Code development session started by the DevHub workstation. Flow: {value1}{value2}.",
-    "选择当前项目（{value1}）由谁执行开发、澄清和评审。": "Choose who runs development, clarification and review for the current project ({value1})."
+    "选择当前项目（{value1}）由谁执行开发、澄清和评审。": "Choose who runs development, clarification and review for the current project ({value1}).",
+    "已打开 {value1} 终端；在终端里继续会话，返回工作站后可继续推进。": "Opened the {value1} terminal; continue there and return to the workstation to advance.",
+    "打开外部引擎失败：{value1}": "Failed to open the external engine: {value1}",
+    "已用 {value1} 打开开发终端；提示词已写入 {value2}，请在终端继续。": "Opened the {value1} development terminal; the prompt was written to {value2}; continue there.",
+    "你是由 DevHub 开发工作站启动的 {value1} 开发会话。开发流程：{value2}{value3}。": "You are a {value1} development session started by the DevHub workstation. Flow: {value2}{value3}.",
+    "{value1} 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。": "{value1} cannot call devhub_get / devhub_update; use the DevHub bridge CLI appended to the launch message to update tasks/change points/risks, and let the user decide on review and tests. Do not fabricate baseline diffs."
   },
   "templateValues": {
     "通过": "passed",

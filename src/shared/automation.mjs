@@ -6,7 +6,7 @@
  */
 export const AUTOMATION_MODES = ['full', 'manual']
 // 开发会话引擎：DSH 原生会话 / 本机 Claude Code（后台会话）
-export const DEVELOPER_ENGINES = ['dsh', 'claude']
+export const DEVELOPER_ENGINES = ['dsh', 'claude', 'codex', 'pi']
 
 export function normalizeAutomation(raw) {
   const value = raw && typeof raw === 'object' ? raw : {}

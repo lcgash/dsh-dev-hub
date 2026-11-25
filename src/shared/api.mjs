@@ -50,6 +50,7 @@ export const API = {
   openIde: '/api/dev-hub/open-ide',
   claude: '/api/dev-hub/claude',
   cli: '/api/dev-hub/cli',
+  external: '/api/dev-hub/external',
   attachment: '/api/dev-hub/attachment',
   capabilities: '/api/dev-hub/capabilities',
   removeRepo: '/api/dev-hub/repo/remove',

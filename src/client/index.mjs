@@ -1094,7 +1094,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
    */
   /** 往当前开发引擎发消息：DSH 会话 / Claude Code 后台会话统一入口。 */
   async function sendToDeveloperSession(sessionId, text) {
-    if (draft?.session?.engine === 'claude') {
+    if (['claude', 'codex', 'pi'].includes(draft?.session?.engine)) {
       try {
         const body = await api(API.claude, {
           method: 'POST',
@@ -4173,7 +4173,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   )
 }
 
-import { launchClaudePrompt, launchDevSession, launchPrompt, sendToSession } from './session.mjs'
+import { launchClaudePrompt, launchDevSession, launchExternalPrompt, launchPrompt, sendToSession } from './session.mjs'
 import { continuePrompt, describeFlow, suggestNextSteps } from './next-steps.mjs'
 
 export { launchDevSession, launchPrompt }
@@ -4527,10 +4527,14 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     if (!id) { setError('该流程还没有绑定开发会话'); return }
     if (current?.session?.engine === 'claude') {
       try {
-        await api(API.claude, { method: 'POST', body: JSON.stringify({ id: current.id, action: 'open', sessionId: id }) })
-        setNotice('已打开 Claude Code 终端；在终端里继续会话，返回工作站后可继续推进。')
+        if (current.session.engine === 'claude') {
+          await api(API.claude, { method: 'POST', body: JSON.stringify({ id: current.id, action: 'open', sessionId: id }) })
+        } else {
+          await api(API.external, { method: 'POST', body: JSON.stringify({ id: current.id, engine: current.session.engine, action: 'open' }) })
+        }
+        setNotice(`已打开 ${current.session.engine} 终端；在终端里继续会话，返回工作站后可继续推进。`)
       } catch (error) {
-        setError(`打开 Claude Code 失败：${errorText(error)}`)
+        setError(`打开外部引擎失败：${errorText(error)}`)
       }
       return
     }
@@ -4625,7 +4629,20 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
       setState((current) => current ? { ...current, selectedItem: started.item } : current)
       const prompt = engine === 'claude'
         ? launchClaudePrompt(started.context?.prompt, started.item ?? item)
-        : launchPrompt(started.context?.prompt, started.item ?? item)
+        : engine === 'codex' || engine === 'pi'
+          ? launchExternalPrompt(started.context?.prompt, started.item ?? item, engine === 'codex' ? 'Codex' : 'Pi')
+          : launchPrompt(started.context?.prompt, started.item ?? item)
+      if (engine === 'codex' || engine === 'pi') {
+        const body = await api(API.external, {
+          method: 'POST',
+          body: JSON.stringify({ id, engine, action: 'launch', prompt }),
+        })
+        const sessionId = body?.sessionId ?? null
+        setState((current) => current ? { ...current, selectedItem: body?.item ?? current.selectedItem } : current)
+        setNotice(`已用 ${engine} 打开开发终端；提示词已写入 ${body?.promptPath ?? '工作区'}，请在终端继续。`)
+        await reload()
+        return { sessionId, sent: true, continued: false }
+      }
       if (engine === 'claude') {
         const body = await api(API.claude, {
           method: 'POST',
