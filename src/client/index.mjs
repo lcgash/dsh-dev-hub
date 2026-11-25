@@ -167,6 +167,25 @@ function HeaderMenu({ items = [], title = '更多（低频操作）' }) {
   )
 }
 
+function BrandMark({ size = 20, tone = T.brand, accent = T.brand }) {
+  return h('svg', {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    'aria-hidden': true,
+    style: { display: 'block', flex: '0 0 auto' },
+  },
+    h('path', {
+      d: 'M7 6.5 12 12M7 17.5 12 12M12 12h5',
+      fill: 'none', stroke: tone, strokeWidth: 1.8, strokeLinecap: 'round',
+    }),
+    h('circle', { cx: 7, cy: 6.5, r: 1.7, fill: tone }),
+    h('circle', { cx: 7, cy: 17.5, r: 1.7, fill: tone }),
+    h('circle', { cx: 17.5, cy: 12, r: 1.7, fill: tone }),
+    h('path', { d: 'M12 9.6l2.4 2.4-2.4 2.4-2.4-2.4z', fill: accent }),
+  )
+}
+
 function EditorLogo({ id, size = 16 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', 'aria-hidden': true, style: { display: 'block' } }
   if (id === 'vscode') {
@@ -5136,26 +5155,7 @@ function DevHubIcon({ size = 18, active = false }) {
     return () => { stop = true; clearInterval(timer) }
   }, [])
   return h('span', { style: { position: 'relative', display: 'inline-flex', width: edge, height: edge } },
-    h('svg', {
-      width: edge,
-      height: edge,
-      viewBox: '0 0 32 32',
-      'aria-hidden': true,
-      style: { display: 'block', opacity: active ? 1 : 0.9 },
-    },
-      h('rect', { x: 1.5, y: 1.5, width: 29, height: 29, rx: 8.5, fill: T.brand }),
-      h('rect', { x: 1.5, y: 1.5, width: 29, height: 29, rx: 8.5, fill: 'none', stroke: '#fff', strokeOpacity: .16, strokeWidth: .8 }),
-      h('path', {
-        d: 'M9.5 11.5h5M9.5 11.5v5M9.5 20.5h5M9.5 20.5v-5M22.5 11.5h-5M22.5 11.5v5M22.5 20.5h-5M22.5 20.5v-5',
-        fill: 'none', stroke: '#fff', strokeOpacity: .55, strokeWidth: .9, strokeLinecap: 'round',
-      }),
-      h('circle', { cx: 9.5, cy: 11.5, r: 2, fill: '#fff' }),
-      h('circle', { cx: 22.5, cy: 11.5, r: 2, fill: '#fff' }),
-      h('circle', { cx: 9.5, cy: 20.5, r: 2, fill: '#fff' }),
-      h('circle', { cx: 22.5, cy: 20.5, r: 2, fill: '#fff' }),
-      h('path', { d: 'M16 12.2l3.8 3.8-3.8 3.8-3.8-3.8z', fill: '#fff' }),
-      h('path', { d: 'M16 14.1l1.9 1.9-1.9 1.9-1.9-1.9z', fill: T.brand }),
-    ),
+    h(BrandMark, { size: edge, tone: active ? T.brand : T.text3, accent: T.brand }),
     count > 0
       ? h('span', {
         style: {
@@ -5553,7 +5553,7 @@ function DevHubPage({ ctx }) {
     },
       // 左：品牌 + 标题
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, overflow: 'hidden' } },
-        h(IconSeat, { size: 30 }, '◈'),
+        h(BrandMark, { size: 30, tone: T.brand, accent: T.brand }),
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 } },
           h('div', { style: styles.pageTitle }, '开发工作站'),
           h('div', {
