@@ -106,6 +106,22 @@ export async function sendToSession(ctx, sessionId, text) {
   }
 }
 
+/** 给 Claude Code 的首条消息：它没有 DSH 的 devhub_* 工具，不要让它调用。 */
+export function launchClaudePrompt(pack, item) {
+  const title = item?.title ?? item?.id ?? '未命名流程'
+  const id = item?.id ?? ''
+  return [
+    `你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：${title}${id ? `（${id}）` : ''}。`,
+    '请严格按下方的 Context Pack 开发，其中【项目约束】是本次开发的硬规则；与仓库门禁冲突时以门禁为准。',
+    `【阶段边界】${DEV_STAGE_RULE}`,
+    'Claude Code 无法调用 devhub_get / devhub_update；完成后在工作站里更新任务/变更点，并让用户决定评审与测试。不要编造 baseline diff。',
+    '',
+    '===== Context Pack =====',
+    '',
+  String(pack ?? ''),
+  ].join('\n')
+}
+
 /** 给开发会话的首条消息：说明来源，并把它钉在 Context Pack 的规范上。 */
 export function launchPrompt(pack, item) {
   const title = item?.title ?? item?.id ?? '未命名流程'

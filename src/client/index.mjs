@@ -796,7 +796,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const statusLabelText = STATUS_LABELS[draft.status] ?? draft.status
   const showStageTag = stageLabelText !== statusLabelText
   // 会话正在跑时当前这步还没完：主按钮不应再给「继续推进」（否则会重复排队一次推进）
-  const sessionRunning = Boolean(draft.session?.id) && Boolean(session?.running)
+  const sessionRunning = Boolean(draft.session?.id) && Boolean(session?.running ?? draft.running)
   const reviewAction = advance.action === 'dispatch' || advance.action === 'retry'
   const questions = workflow.questions ?? []
   const answered = questions.filter((question) => String(question.answer ?? '').trim()).length
@@ -1092,6 +1092,22 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
    * 自动创建评审轮（复用 Host 的 dispatch/runReviewRound），不再让人到独立评审页手工派发；
    * 已有 pending 评审时不重复派发；failed/error 时再点即重试（见 startReview）。
    */
+  /** 往当前开发引擎发消息：DSH 会话 / Claude Code 后台会话统一入口。 */
+  async function sendToDeveloperSession(sessionId, text) {
+    if (draft?.session?.engine === 'claude') {
+      try {
+        const body = await api(API.claude, {
+          method: 'POST',
+          body: JSON.stringify({ id: draft.id, action: 'send', sessionId, prompt: text }),
+        })
+        return { sent: Boolean(body?.sessionId || sessionId), sessionId: body?.sessionId ?? sessionId }
+      } catch (error) {
+        return { sent: false, reason: errorText(error) }
+      }
+    }
+    return sendToSession(ctx, sessionId, text)
+  }
+
   /** 把审核员的纠偏意见发回开发会话：评审失败后的正确入口，而不是再次点评审。 */
   async function reworkFromReview() {
     if (busy) return
@@ -1117,7 +1133,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     ].join('\n')
     setBusy(true); setError(''); setNotice(''); setAdvanceError('')
     try {
-      const result = await sendToSession(ctx, boundId, prompt)
+      const result = await sendToDeveloperSession(boundId, prompt)
       if (!result.sent) throw new Error(result.reason ?? '发送失败')
       // 台账记下“已进入纠偏返工”：本轮不再展示人工通过，避免返工中绕回评审门禁
       try {
@@ -1162,7 +1178,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     }
     setBusy(true); setError(''); setNotice(''); setAdvanceError('')
     try {
-      const result = await sendToSession(ctx, boundId, continuePrompt(describeFlow(draft, session)))
+      const result = await sendToDeveloperSession(boundId, continuePrompt(describeFlow(draft, session)))
       if (!result.sent) throw new Error(result.reason ?? '发送失败')
       setAdvanceError('')
       setNotice(`已让开发会话继续推进（${boundId}）；进度与结果看下方「关联会话」。`)
@@ -3477,7 +3493,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           if (session?.running) {
             setNotice('开发会话正在工作：等当前这步结束再推进；这次没有把消息排队发给会话')
           } else {
-            const sent = await sendToSession(ctx, targetSession, body.sessionMessage || message)
+            const sent = await sendToDeveloperSession(targetSession, body.sessionMessage || message)
             sentToSession = Boolean(sent?.sent)
           }
         }
@@ -4157,7 +4173,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   )
 }
 
-import { launchDevSession, launchPrompt, sendToSession } from './session.mjs'
+import { launchClaudePrompt, launchDevSession, launchPrompt, sendToSession } from './session.mjs'
 import { continuePrompt, describeFlow, suggestNextSteps } from './next-steps.mjs'
 
 export { launchDevSession, launchPrompt }
@@ -4507,7 +4523,17 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   /** 打开已绑定的 DSH 会话；壳的 openSession 不存在/报错时明确提示，不假装成功。 */
   async function openSession(sessionId) {
     const id = String(sessionId ?? '').trim()
+    const current = state?.selectedItem
     if (!id) { setError('该流程还没有绑定开发会话'); return }
+    if (current?.session?.engine === 'claude') {
+      try {
+        await api(API.claude, { method: 'POST', body: JSON.stringify({ id: current.id, action: 'open', sessionId: id }) })
+        setNotice('已打开 Claude Code 终端；在终端里继续会话，返回工作站后可继续推进。')
+      } catch (error) {
+        setError(`打开 Claude Code 失败：${errorText(error)}`)
+      }
+      return
+    }
     const workspace = ctx?.get?.('uiWorkspace')
     if (!workspace || typeof workspace.openSession !== 'function') {
       setError('当前环境没有可用的会话工作区，无法跳转开发会话')
@@ -4578,12 +4604,18 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     const item = state?.selectedItem
     const title = item?.title ?? id
     if (!state?.repo?.path) { setError('尚未选择项目'); return }
+    let engine = 'dsh'
+    try {
+      const settings = await api(API.settings)
+      engine = settings?.automation?.engine === 'claude' ? 'claude' : 'dsh'
+    } catch { /* 读设置失败时按默认 DSH 引擎，不阻断开启 */ }
     const previous = item?.session?.id
-    const continueExisting = Boolean(previous) && !fresh
+    const previousEngine = item?.session?.engine === 'claude' ? 'claude' : 'dsh'
+    const continueExisting = Boolean(previous) && !fresh && engine === previousEngine
     // resync 来自「更多」里的显式低频按钮，标签已说明后果，不再弹确认。
     if (!resync && !confirmText(continueExisting
       ? `把「${title}」的最新 Context Pack 重发到 ${previous}？（之前聊过的内容、决定与工具结果都还在）\n\n日常推进用「继续推进」就够了；要开新的，请在「更多 → 换一条开发会话」里新建。`
-      : `开启新的开发会话？\n\n将新建一个 DSH 会话，并把「${title}」的约束与 Context Pack 作为首条消息发送。`)) return
+      : `开启新的开发会话？\n\n将新建一个 ${engine === 'claude' ? 'Claude Code 后台会话' : 'DSH 会话'}，并把「${title}」的约束与 Context Pack 作为首条消息发送。`)) return
     setBusy(true); setError(''); setNotice('')
     try {
       // 重发上下文只读台账、重新生成 Context Pack；不能走 start（那会把阶段打回 develop、并记一条 baseline）
@@ -4591,10 +4623,31 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
         ? await api(API.context, { method: 'POST', body: JSON.stringify({ id }) })
         : await api(API.start, { method: 'POST', body: JSON.stringify({ id }) })
       setState((current) => current ? { ...current, selectedItem: started.item } : current)
+      const prompt = engine === 'claude'
+        ? launchClaudePrompt(started.context?.prompt, started.item ?? item)
+        : launchPrompt(started.context?.prompt, started.item ?? item)
+      if (engine === 'claude') {
+        const body = await api(API.claude, {
+          method: 'POST',
+          body: JSON.stringify({
+            id,
+            action: continueExisting ? 'send' : 'launch',
+            sessionId: continueExisting ? previous : null,
+            prompt,
+          }),
+        })
+        const sessionId = body?.sessionId ?? null
+        setState((current) => current ? { ...current, selectedItem: body?.item ?? current.selectedItem } : current)
+        setNotice(sessionId
+          ? `${continueExisting ? '已把最新上下文追加到' : '已用 Claude Code 启动'}后台会话 ${sessionId}。可在下方查看日志，或点「打开会话」进终端。`
+          : 'Claude Code 已启动，但没有拿到会话 id；请打开终端确认。')
+        await reload()
+        return { sessionId, sent: Boolean(sessionId), continued: continueExisting }
+      }
       const result = await launchDevSession(ctx, {
         // 独立工作区：开发会话必须开在 worktree 里，否则会和其他流程互相污染
         cwd: started.workRoot ?? state.repo.path,
-        prompt: launchPrompt(started.context?.prompt, started.item ?? item),
+        prompt,
         continueSessionId: continueExisting ? previous : null,
         // 不跳转会话页：进度与结果就在本页「关联会话 + 会话内容」里看
         open: false,

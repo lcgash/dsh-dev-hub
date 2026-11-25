@@ -1403,7 +1403,18 @@
     "；当前流程还绑定开发会话，请先解绑/结束会话": "；当前流程还绑定开发会话，请先解绑/结束会话",
     "关键决策": "关键决策",
     "术语": "术语",
-    "没有新的改动：尝试推送当前已提交的 HEAD…": "没有新的改动：尝试推送当前已提交的 HEAD…"
+    "没有新的改动：尝试推送当前已提交的 HEAD…": "没有新的改动：尝试推送当前已提交的 HEAD…",
+    "开发引擎": "开发引擎",
+    "开发会话引擎": "开发会话引擎",
+    "决定「开启开发会话」时由谁执行代码开发。切换只影响之后启动的会话；已有流程的代码与历史不变。": "决定「开启开发会话」时由谁执行代码开发。切换只影响之后启动的会话；已有流程的代码与历史不变。",
+    "DSH 原生会话": "DSH 原生会话",
+    "在工作站内开启会话；进度、评审纠偏、自动化衔接最完整。": "在工作站内开启会话；进度、评审纠偏、自动化衔接最完整。",
+    "用本机 Claude Code 后台会话开发；可在工作站查看日志、追加纠偏或打开终端。": "用本机 Claude Code 后台会话开发；可在工作站查看日志、追加纠偏或打开终端。",
+    "未检测到 claude 命令：请先安装 Claude Code CLI 并登录。": "未检测到 claude 命令：请先安装 Claude Code CLI 并登录。",
+    "安装参考：curl -fsSL https://claude.ai/install.sh | bash（安装后确认 claude --version 可用）": "安装参考：curl -fsSL https://claude.ai/install.sh | bash（安装后确认 claude --version 可用）",
+    "已打开 Claude Code 终端；在终端里继续会话，返回工作站后可继续推进。": "已打开 Claude Code 终端；在终端里继续会话，返回工作站后可继续推进。",
+    "Claude Code 已启动，但没有拿到会话 id；请打开终端确认。": "Claude Code 已启动，但没有拿到会话 id；请打开终端确认。",
+    "Claude Code 无法调用 devhub_get / devhub_update；完成后在工作站里更新任务/变更点，并让用户决定评审与测试。不要编造 baseline diff。": "Claude Code 无法调用 devhub_get / devhub_update；完成后在工作站里更新任务/变更点，并让用户决定评审与测试。不要编造 baseline diff。"
   },
   "templates": {
     "成员 {name}": "成员 {name}",
@@ -1869,7 +1880,12 @@
     "删除流程「{value1}」？\n\n{value2}这个操作不可撤销。": "删除流程「{value1}」？\n\n{value2}这个操作不可撤销。",
     "已删除流程 {value1}（worktree 与分支已清理）": "已删除流程 {value1}（worktree 与分支已清理）",
     "自动解决冲突：{value1}（已按合并后的代码推送，建议复跑一次测试）": "自动解决冲突：{value1}（已按合并后的代码推送，建议复跑一次测试）",
-    "{value1}；部分流程未更新：{value2}": "{value1}；部分流程未更新：{value2}"
+    "{value1}；部分流程未更新：{value2}": "{value1}；部分流程未更新：{value2}",
+    "选择当前项目（{value1}）由谁执行代码开发。": "选择当前项目（{value1}）由谁执行代码开发。",
+    "打开 Claude Code 失败：{value1}": "打开 Claude Code 失败：{value1}",
+    "开启新的开发会话？\n\n将新建一个 {value1}，并把「{value2}」的约束与 Context Pack 作为首条消息发送。": "开启新的开发会话？\n\n将新建一个 {value1}，并把「{value2}」的约束与 Context Pack 作为首条消息发送。",
+    "{value1}后台会话 {value2}。可在下方查看日志，或点「打开会话」进终端。": "{value1}后台会话 {value2}。可在下方查看日志，或点「打开会话」进终端。",
+    "你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：{value1}{value2}。": "你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：{value1}{value2}。"
   },
   "templateValues": {
     "通过": "通过",

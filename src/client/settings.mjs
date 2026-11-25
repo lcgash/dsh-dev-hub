@@ -11,10 +11,11 @@ import { normalizeAutomation } from '../shared/automation.mjs'
 import { SkillsPanel } from './skills.mjs'
 import { Button, Pill, T, api, errorText, styles } from './common.mjs'
 
-function OptionCard({ active, title, hint, onSelect }) {
+function OptionCard({ active, title, hint, onSelect, disabled = false }) {
   return h('button', {
     type: 'button',
-    onClick: onSelect,
+    disabled,
+    onClick: disabled ? undefined : onSelect,
     style: {
       textAlign: 'left',
       display: 'flex',
@@ -25,7 +26,8 @@ function OptionCard({ active, title, hint, onSelect }) {
       borderRadius: T.rLg,
       background: active ? T.brandSoft : T.surface,
       color: T.text,
-      cursor: 'pointer',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.55 : 1,
       fontFamily: 'inherit',
       boxShadow: active ? `0 0 0 2px rgba(96,73,231,.10)` : T.shadowCard,
     },
@@ -47,7 +49,7 @@ function SettingRow({ title, hint, children }) {
   )
 }
 
-function NavButton({ active, children, onClick }) {
+function NavButton({ active, children, onClick, disabled = false }) {
   return h('button', {
     type: 'button',
     onClick,
@@ -59,7 +61,8 @@ function NavButton({ active, children, onClick }) {
       borderRadius: T.rBase,
       background: active ? T.brandSoft : 'transparent',
       color: active ? T.brand : T.text2,
-      cursor: 'pointer',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.55 : 1,
       fontFamily: 'inherit',
       fontSize: T.font.sm,
       fontWeight: active ? 600 : 500,
@@ -70,6 +73,7 @@ function NavButton({ active, children, onClick }) {
 export function AutomationSettings({ initialSection = 'automation' } = {}) {
   const [automation, setAutomation] = useState(() => normalizeAutomation(null))
   const [repo, setRepo] = useState(null)
+  const [claudeAvailable, setClaudeAvailable] = useState(false)
   const [section, setSection] = useState(initialSection === 'skills' ? 'skills' : 'automation')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -80,7 +84,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
   useEffect(() => {
     let alive = true
     api(API.settings)
-      .then((body) => { if (alive) { setAutomation(normalizeAutomation(body?.automation)); setRepo(body?.repo ?? null) } })
+      .then((body) => { if (alive) { setAutomation(normalizeAutomation(body?.automation)); setRepo(body?.repo ?? null); setClaudeAvailable(Boolean(body?.claudeAvailable)) } })
       .catch((err) => { if (alive) setLoadError(errorText(err)) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
@@ -106,6 +110,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
   const sections = [
     { id: 'automation', label: '自动化推进' },
     { id: 'review', label: '独立评审' },
+    { id: 'engine', label: '开发引擎' },
     { id: 'skills', label: '技能' },
   ]
   const current = sections.find((entry) => entry.id === section) ?? sections[0]
@@ -143,10 +148,12 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
           h('div', { style: styles.sectionHint },
             current.id === 'automation'
               ? `控制当前项目（${repo?.name ?? '当前项目'}）的推进动作；提交与推送始终由你确认。`
-              : current.id === 'skills'
-                ? `管理当前项目（${repo?.name ?? '当前项目'}）的技能包与约束。`
-                : '控制是否引入独立评审，以及按规模选择评审强度。')),
-        current.id === 'skills'
+              : current.id === 'engine'
+                ? `选择当前项目（${repo?.name ?? '当前项目'}）由谁执行代码开发。`
+                : current.id === 'skills'
+                  ? `管理当前项目（${repo?.name ?? '当前项目'}）的技能包与约束。`
+                  : '控制是否引入独立评审，以及按规模选择评审强度。')),
+        current.id === 'skills' || current.id === 'engine'
           ? null
           : h(Button, { primary: true, disabled: loading || saving, onClick: () => save(), children: saving ? '保存中…' : '保存设置' }),
       ),
@@ -154,7 +161,34 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
       saveError ? h('div', { style: styles.dangerCard }, `保存失败：${saveError}`) : null,
       notice ? h('div', { style: styles.infoCard }, notice) : null,
 
-      section === 'skills'
+      section === 'engine'
+        ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
+          h('div', { style: { ...styles.card, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 } },
+            h('div', { style: { fontSize: T.font.md, fontWeight: 650, color: T.text } }, '开发会话引擎'),
+            h('div', { style: styles.sectionHint },
+              '决定「开启开发会话」时由谁执行代码开发。切换只影响之后启动的会话；已有流程的代码与历史不变。'),
+            h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
+              h(OptionCard, {
+                title: 'DSH 原生会话',
+                hint: '在工作站内开启会话；进度、评审纠偏、自动化衔接最完整。',
+                active: automation.engine !== 'claude',
+                onClick: () => save({ ...automation, engine: 'dsh' }),
+              }),
+              h(OptionCard, {
+                title: 'Claude Code',
+                hint: claudeAvailable
+                  ? '用本机 Claude Code 后台会话开发；可在工作站查看日志、追加纠偏或打开终端。'
+                  : '未检测到 claude 命令：请先安装 Claude Code CLI 并登录。',
+                active: automation.engine === 'claude',
+                disabled: !claudeAvailable || saving,
+                onClick: () => { if (claudeAvailable) save({ ...automation, engine: 'claude' }) },
+              }),
+            ),
+            !claudeAvailable
+              ? h('div', { style: styles.sectionHint }, '安装参考：curl -fsSL https://claude.ai/install.sh | bash（安装后确认 claude --version 可用）')
+              : null,
+          ))
+        : section === 'skills'
         ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
           h(SkillsPanel))
         : section === 'automation'

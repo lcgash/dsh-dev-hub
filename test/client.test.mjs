@@ -868,7 +868,7 @@ test('回归：会话动作只保留一个（开启/继续推进），重发上�
   const continueStart = index.indexOf('async function continueDev()')
   assert.ok(continueStart > 0, '缺少轻量继续实现 continueDev')
   const body = index.slice(continueStart, index.indexOf('async function', continueStart + 10))
-  assert.match(body, /sendToSession\(ctx, boundId, continuePrompt\(/)
+  assert.match(body, /sendToDeveloperSession\(boundId, continuePrompt\(/)
   assert.doesNotMatch(body, /launchPrompt|API\.start|window\.confirm/)
   // 重发整包上下文降为「更多」里的低频动作
   assert.match(index, /重发最新上下文/)
@@ -886,7 +886,7 @@ test('回归：会话动作只保留一个（开启/继续推进），重发上�
 test('回归：会话运行中主按钮变成禁用的「正在开发…」，不再提供继续推进；评审可确认覆盖', async () => {
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
-  assert.match(index, /const sessionRunning = Boolean\(draft\.session\?\.id\) && Boolean\(session\?\.running\)/)
+  assert.match(index, /const sessionRunning = Boolean\(draft\.session\?\.id\) && Boolean\(session\?\.running \?\? draft\.running\)/)
   assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| reviewBusy \|\| advance\.disabled \|\| \(sessionRunning && !reviewAction\)/)
   assert.match(index, /开发会话还在运行。现在开始评审可能读到半成品代码/)
   assert.match(index, /sessionRunning && reviewAction/)
@@ -2278,4 +2278,19 @@ test('提交阶段自动 rebase/解决冲突不会把评审作废、退回开发
   assert.match(host, /分析流程只读：清除台账\/报告写入造成的测试过期标记/)
   assert.match(host, /const submitting = item\.workflow\?\.stage === 'submit'/)
   assert.match(host, /submitted \|\| submitting \|\| item\.workflow\?\.rework/)
+})
+
+test('开发引擎可切换：DSH / Claude Code，Claude 走后台会话与追加消息', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const settings = await readFile(new URL('../src/client/settings.mjs', import.meta.url), 'utf8')
+  const automation = await readFile(new URL('../src/shared/automation.mjs', import.meta.url), 'utf8')
+  const api = await readFile(new URL('../src/shared/api.mjs', import.meta.url), 'utf8')
+  assert.match(automation, /DEVELOPER_ENGINES/)
+  assert.match(api, /claude: '\/api\/dev-hub\/claude'/)
+  assert.match(settings, /开发会话引擎/)
+  assert.match(settings, /claudeAvailable/)
+  assert.match(index, /API\.claude/)
+  assert.match(index, /action: continueExisting \? 'send' : 'launch'/)
+  assert.match(index, /sendToDeveloperSession/)
 })

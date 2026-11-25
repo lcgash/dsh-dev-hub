@@ -1403,7 +1403,18 @@
     "；当前流程还绑定开发会话，请先解绑/结束会话": " ; this flow is still bound to a development session; unbind or end it first",
     "关键决策": "Key decisions",
     "术语": "Glossary",
-    "没有新的改动：尝试推送当前已提交的 HEAD…": "No new changes: trying to push the current committed HEAD…"
+    "没有新的改动：尝试推送当前已提交的 HEAD…": "No new changes: trying to push the current committed HEAD…",
+    "开发引擎": "Developer engine",
+    "开发会话引擎": "Development session engine",
+    "决定「开启开发会话」时由谁执行代码开发。切换只影响之后启动的会话；已有流程的代码与历史不变。": "Choose who does the coding when starting a development session. Switching affects only future sessions; existing flow code and history stay unchanged.",
+    "DSH 原生会话": "Native DSH session",
+    "在工作站内开启会话；进度、评审纠偏、自动化衔接最完整。": "Start a session inside the workstation; progress, review corrections and automation integrate best.",
+    "用本机 Claude Code 后台会话开发；可在工作站查看日志、追加纠偏或打开终端。": "Develop with a local Claude Code background session; view logs, send corrections or open a terminal from the workstation.",
+    "未检测到 claude 命令：请先安装 Claude Code CLI 并登录。": "No claude command found: install the Claude Code CLI and sign in first.",
+    "安装参考：curl -fsSL https://claude.ai/install.sh | bash（安装后确认 claude --version 可用）": "Install: curl -fsSL https://claude.ai/install.sh | bash (verify claude --version after installing)",
+    "已打开 Claude Code 终端；在终端里继续会话，返回工作站后可继续推进。": "Claude Code terminal opened; continue there and return to the workstation to advance.",
+    "Claude Code 已启动，但没有拿到会话 id；请打开终端确认。": "Claude Code started but no session id was returned; check the terminal.",
+    "Claude Code 无法调用 devhub_get / devhub_update；完成后在工作站里更新任务/变更点，并让用户决定评审与测试。不要编造 baseline diff。": "Claude Code cannot call devhub_get / devhub_update; update tasks/change points in the workstation afterwards and let the user decide on review and tests. Do not fabricate baseline diffs."
   },
   "templates": {
     "成员 {name}": "Member {name}",
@@ -1869,7 +1880,12 @@
     "删除流程「{value1}」？\n\n{value2}这个操作不可撤销。": "Delete flow \"{value1}\"?\n\n{value2}This cannot be undone.",
     "已删除流程 {value1}（worktree 与分支已清理）": "Deleted flow {value1} (worktree and branch removed)",
     "自动解决冲突：{value1}（已按合并后的代码推送，建议复跑一次测试）": "Auto-resolved conflicts: {value1} (pushed the merged code; rerun tests recommended)",
-    "{value1}；部分流程未更新：{value2}": "{value1}; some flows were not updated: {value2}"
+    "{value1}；部分流程未更新：{value2}": "{value1}; some flows were not updated: {value2}",
+    "选择当前项目（{value1}）由谁执行代码开发。": "Choose who does the coding for the current project ({value1}).",
+    "打开 Claude Code 失败：{value1}": "Failed to open Claude Code: {value1}",
+    "开启新的开发会话？\n\n将新建一个 {value1}，并把「{value2}」的约束与 Context Pack 作为首条消息发送。": "Start a new development session?\n\nA new {value1} will be created and the constraints and Context Pack for \"{value2}\" will be sent as the first message.",
+    "{value1}后台会话 {value2}。可在下方查看日志，或点「打开会话」进终端。": "{value1} background session {value2}. View logs below, or open the session in a terminal.",
+    "你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：{value1}{value2}。": "You are a Claude Code development session started by the DevHub workstation. Flow: {value1}{value2}."
   },
   "templateValues": {
     "通过": "passed",

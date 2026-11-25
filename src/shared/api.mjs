@@ -48,6 +48,7 @@ export const API = {
   attach: '/api/dev-hub/attach',
   settings: '/api/dev-hub/settings',
   openIde: '/api/dev-hub/open-ide',
+  claude: '/api/dev-hub/claude',
   attachment: '/api/dev-hub/attachment',
   capabilities: '/api/dev-hub/capabilities',
   removeRepo: '/api/dev-hub/repo/remove',

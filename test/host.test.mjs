@@ -848,6 +848,7 @@ test('IDE 打开路由：只接受当前流程 id，未知流程明确报错', a
     apply(ctx)
     await call(routes, API.setup, { method: 'POST', body: { repoPath: repo, name: '张三' } })
     assert.ok(routes.has(API.openIde), '应注册 open-ide 路由')
+    assert.ok(routes.has(API.claude), '应注册 Claude 引擎路由')
     const detected = await call(routes, API.openIde, { method: 'GET' })
     assert.equal(detected.status, 200)
     assert.ok(Array.isArray(detected.body.editors), 'GET 应返回本机 IDE 列表')

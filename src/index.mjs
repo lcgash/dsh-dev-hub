@@ -155,6 +155,7 @@ export const inject = ['webServer', 'sessions', 'subagents']
 
 const MAX_BODY = 1024 * 1024
 const execAsync = promisify(exec)
+const execFileAsync = promisify(execFile)
 
 function isLoopback(req) {
   const remote = req.socket.remoteAddress
@@ -604,6 +605,104 @@ async function activeRepo(profile) {
   }
   if (await exists(active)) return active
   return null
+}
+
+/** Claude Code 后台会话：启动/追加/日志/状态，全部走本机 `claude` CLI。 */
+async function claudeBinary() {
+  const found = await which('claude')
+  if (!found) throw new Error('未检测到 Claude Code CLI（请先安装 claude 命令并登录）')
+  return found
+}
+
+function claudeSessionId(output) {
+  const text = String(output ?? '')
+  const match = /backgrounded\s*[·•]\s*([0-9a-f-]{6,})/i.exec(text)
+    ?? /session(?:\s+id)?\s*[:=]\s*([0-9a-f-]{6,})/i.exec(text)
+  return match?.[1] ?? null
+}
+
+async function runClaudeBackground(root, prompt, { resumeId = null } = {}) {
+  const bin = await claudeBinary()
+  const text = String(prompt ?? '').trim()
+  if (!text) throw new Error('Claude Code 启动内容为空')
+  const args = ['--bg', '--permission-mode', 'acceptEdits']
+  if (resumeId) args.push('--resume', String(resumeId))
+  args.push(text)
+  const { stdout, stderr } = await execFileAsync(bin, args, {
+    cwd: root,
+    timeout: 120000,
+    maxBuffer: 8 * 1024 * 1024,
+    env: process.env,
+    windowsHide: true,
+  })
+  const output = `${stdout ?? ''}${stderr ? '\n' + stderr : ''}`.trim()
+  return { id: claudeSessionId(output), output }
+}
+
+let claudeAgentsCache = { at: 0, rows: [] }
+async function claudeAgents() {
+  if (Date.now() - claudeAgentsCache.at < 3000) return claudeAgentsCache.rows
+  const bin = await claudeBinary()
+  const { stdout } = await execFileAsync(bin, ['agents', '--json', '--all'], {
+    timeout: 20000,
+    maxBuffer: 8 * 1024 * 1024,
+    env: process.env,
+    windowsHide: true,
+  })
+  const parsed = JSON.parse(String(stdout ?? '[]'))
+  const rows = Array.isArray(parsed) ? parsed : []
+  claudeAgentsCache = { at: Date.now(), rows }
+  return rows
+}
+
+const CLAUDE_ACTIVE_STATES = new Set(['running', 'working', 'in_progress', 'blocked'])
+
+/** 把 Claude Code 后台会话的实时状态合到流程 running，自动化才不会在 Claude 还没跑完时抢跑评审。 */
+async function applyClaudeRunning(views, items) {
+  const claudeItems = items.filter((item) => item?.session?.engine === 'claude' && item.session?.id)
+  if (!claudeItems.length) return
+  let agents = []
+  try { agents = await claudeAgents() } catch { return }
+  for (const row of views.items) {
+    const item = claudeItems.find((entry) => entry.id === row.id)
+    if (!item) continue
+    const agent = agents.find((entry) => entry.id === item.session.id || entry.sessionId === item.session.id)
+    if (!agent) continue
+    const running = CLAUDE_ACTIVE_STATES.has(String(agent.state ?? '').toLowerCase())
+    if (running) {
+      row.running = true
+      row.attention = attentionOf(views.ctx, item, true)
+    }
+  }
+}
+
+async function claudeLogs(id) {
+  const bin = await claudeBinary()
+  const { stdout, stderr } = await execFileAsync(bin, ['logs', String(id)], {
+    timeout: 20000,
+    maxBuffer: 8 * 1024 * 1024,
+    env: process.env,
+    windowsHide: true,
+  })
+  return `${stdout ?? ''}${stderr ? '\n' + stderr : ''}`.trim()
+}
+
+function openClaudeTerminal(root, id) {
+  const work = String(root ?? '')
+  const attach = `claude attach ${String(id ?? '')}`
+  if (process.platform === 'darwin') {
+    const script = `cd ${JSON.stringify(work)} && ${attach}`
+    const child = spawn('osascript', ['-e', `tell application "Terminal" to do script ${JSON.stringify(script)}`], { detached: true, stdio: 'ignore' })
+    child.unref()
+    return
+  }
+  if (process.platform === 'win32') {
+    const child = spawn('cmd', ['/c', 'start', 'Claude Code', 'cmd', '/k', `cd /d ${work} && ${attach}`], { detached: true, stdio: 'ignore', windowsHide: true })
+    child.unref()
+    return
+  }
+  const child = spawn('x-terminal-emulator', ['-e', 'sh', '-c', `cd ${JSON.stringify(work)} && ${attach}`], { detached: true, stdio: 'ignore' })
+  child.unref()
 }
 
 /** 本机可用 IDE：固定候选命令 + macOS 应用目录，不执行用户输入的命令。 */
@@ -2151,6 +2250,9 @@ async function stateFor(repo, profile, ctx) {
   if (repo) warmRepoIndex(repo)
   for (const member of (active?.repos ?? []).slice(0, 4)) warmRepoIndex(member)
   const views = itemViews(ctx, items)
+  views.ctx = ctx
+  await applyClaudeRunning(views, items)
+  delete views.ctx
   const memberName = localLedger
     ? (workspaceMember(profile, active?.workspace) ?? entry?.member ?? null)
     : (entry?.member ?? null)
@@ -5132,6 +5234,57 @@ export function apply(ctx) {
       },
     },
     // 附件上传：粘贴的截图/文件先落到本机附件目录，再把路径注入提示词（read_image / read）
+    // Claude Code 作为开发引擎：后台启动/追加消息/打开终端/查看日志。
+    {
+      kind: 'exact',
+      path: API.claude,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST only' })
+        try {
+          const profile = await loadProfile()
+          const repo = await activeRepo(profile)
+          if (!repo) throw new Error('尚未选择项目')
+          const body = await readBody(req)
+          const action = String(body.action ?? 'launch')
+          const item = await readItemLocal(profile, repo, body.id)
+          if (!item) throw new Error(`开发项不存在：${body.id}`)
+          const root = await workRootOf(repo, item)
+          if (action === 'status') {
+            const agents = await claudeAgents()
+            const id = String(body.sessionId ?? item.session?.id ?? '').trim()
+            const found = agents.find((entry) => entry.id === id || entry.sessionId === id || String(entry.sessionId ?? '').startsWith(id))
+            return sendJson(res, 200, { ok: true, sessionId: id || null, state: found ? { status: found.state, cwd: found.cwd, name: found.name } : null })
+          }
+          if (action === 'logs') {
+            const id = String(body.sessionId ?? item.session?.id ?? '').trim()
+            if (!id) throw new Error('没有 Claude Code 会话 id')
+            return sendJson(res, 200, { ok: true, sessionId: id, output: await claudeLogs(id) })
+          }
+          if (action === 'open') {
+            const id = String(body.sessionId ?? item.session?.id ?? '').trim()
+            if (!id) throw new Error('没有 Claude Code 会话 id')
+            openClaudeTerminal(root, id)
+            return sendJson(res, 200, { ok: true, sessionId: id })
+          }
+          if (action === 'send') {
+            const id = String(body.sessionId ?? item.session?.id ?? '').trim()
+            if (!id) throw new Error('没有 Claude Code 会话 id')
+            const result = await runClaudeBackground(root, body.prompt, { resumeId: id })
+            return sendJson(res, 200, { ok: true, sessionId: result.id || id, output: result.output })
+          }
+          if (action !== 'launch') throw new Error(`未知 Claude Code 动作：${action}`)
+          const result = await runClaudeBackground(root, body.prompt)
+          if (!result.id) throw new Error(`Claude Code 已启动但没拿到会话 id：${result.output.slice(-600)}`)
+          item.session = { id: result.id, engine: 'claude', external: true, cwd: root, at: new Date().toISOString() }
+          item.workflow = { ...(item.workflow ?? {}), engine: 'claude' }
+          const saved = await saveItem(repo, appendHistory(item, 'session', `Claude Code 后台会话已启动：${result.id}`))
+          sendJson(res, 200, { ok: true, sessionId: result.id, item: saved, output: result.output })
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
     // 在 IDE 打开当前流程的独立工作区：worktree 不能 checkout 到主仓库，必须打开实际 workRoot。
     {
       kind: 'exact',
@@ -6039,6 +6192,31 @@ export function apply(ctx) {
           const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 100) : 30
           // 审核员等子会话不属于 item.session：允许显式指定 sessionId 读取它的只读动态。
           const sessionId = String(query(req.url, 'sessionId') ?? '').trim() || item.session?.id
+          if (item.session?.engine === 'claude') {
+            let output = ''
+            let state = null
+            try {
+              output = sessionId ? await claudeLogs(sessionId) : ''
+              const agents = await claudeAgents()
+              const found = agents.find((entry) => entry.id === sessionId || entry.sessionId === sessionId || String(entry.sessionId ?? '').startsWith(sessionId))
+              if (found) state = { engine: 'claude', status: found.state, cwd: found.cwd, name: found.name }
+            } catch (error) {
+              output = `读取 Claude Code 日志失败：${String(error?.message ?? error)}`
+            }
+            const active = ['running', 'working', 'in_progress'].includes(String(state?.status ?? '').toLowerCase())
+            return sendJson(res, 200, {
+              ok: true,
+              itemId: item.id,
+              sessionId,
+              alive: active || Boolean(state),
+              state: state ?? { engine: 'claude' },
+              messages: [],
+              total: 0,
+              truncated: false,
+              reason: active ? '' : 'Claude Code 后台会话',
+              items: output ? [{ kind: 'assistant', text: output.slice(-20000) }] : [],
+            })
+          }
           sendJson(res, 200, {
             ok: true,
             itemId: item.id,
@@ -6068,7 +6246,8 @@ export function apply(ctx) {
           const currentAutomation = projectAutomation(profile, repoPathForSettings)
           const repoInfo = { path: repoPathForSettings, name: repoName(repoPathForSettings) }
           if (req.method === 'GET') {
-            return sendJson(res, 200, { ok: true, automation: currentAutomation, repo: repoInfo })
+            const claude = await which('claude')
+            return sendJson(res, 200, { ok: true, automation: currentAutomation, repo: repoInfo, claudeAvailable: Boolean(claude), engine: currentAutomation.engine })
           }
           if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'GET/POST only' })
           const body = await readBody(req)
