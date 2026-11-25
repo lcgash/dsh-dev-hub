@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="200" viewBox="0 0 640 200" role="img" aria-label="DevHub 开发工作站">
+  <defs>
+    <linearGradient id="hubBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#7b67f2"/>
+      <stop offset="1" stop-color="#4a35c9"/>
+    </linearGradient>
+    <linearGradient id="hubCore" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#e9e5ff"/>
+    </linearGradient>
+  </defs>
+
+  <!-- mark -->
+  <rect x="28" y="28" width="144" height="144" rx="38" fill="url(#hubBg)"/>
+  <rect x="28" y="28" width="144" height="144" rx="38" fill="none" stroke="#ffffff" stroke-opacity=".16" stroke-width="2"/>
+  <path d="M67 72h26M67 72v26M67 128h26M67 128v-26M123 72H97M123 72v26M123 128H97M123 128v-26"
+        fill="none" stroke="#ffffff" stroke-opacity=".55" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="67" cy="72" r="9" fill="#ffffff"/>
+  <circle cx="123" cy="72" r="9" fill="#ffffff"/>
+  <circle cx="67" cy="128" r="9" fill="#ffffff"/>
+  <circle cx="123" cy="128" r="9" fill="#ffffff"/>
+  <path d="M95 78l17 17-17 17-17-17z" fill="url(#hubCore)"/>
+  <path d="M95 86l9 9-9 9-9-9z" fill="#6049e7"/>
+
+  <!-- wordmark -->
+  <text x="208" y="102" fill="#18181b" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="62" font-weight="750" letter-spacing="-2">DevHub</text>
+  <text x="211" y="138" fill="#6b6b76" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        font-size="21" font-weight="500" letter-spacing=".4">开发工作站 · Development Workstation</text>
+</svg>

@@ -2,6 +2,10 @@
   <img src="docs/assets/screenshots/workbench.png" alt="dsh-dev-hub 开发工作站" width="920" />
 </p>
 
+<p align="center">
+  <img src="docs/assets/devhub-mark.svg" width="72" alt="DevHub logo" />
+</p>
+
 <h1 align="center">dsh-dev-hub</h1>
 
 <p align="center">

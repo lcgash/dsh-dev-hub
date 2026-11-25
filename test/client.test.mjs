@@ -44,7 +44,8 @@ test('client apply 把入口挂到左上角面板列表，并在 main 里渲染�
   // 图标是可渲染的 svg（owner 传 size/active），页面壳在未加载数据时也要能渲染
   const icon = renderToStaticMarkup(h(registered[0].Component, { size: 18, active: true }))
   assert.match(icon, /<svg/)
-  assert.match(icon, /currentColor/)
+  assert.match(icon, /viewBox="0 0 32 32"/)
+  assert.match(icon, /#6049e7/i)
   const page = renderToStaticMarkup(h(registered[1].Component))
   assert.match(page, /开发工作站/)
 })
