@@ -114,7 +114,7 @@ export function launchClaudePrompt(pack, item) {
     `你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：${title}${id ? `（${id}）` : ''}。`,
     '请严格按下方的 Context Pack 开发，其中【项目约束】是本次开发的硬规则；与仓库门禁冲突时以门禁为准。',
     `【阶段边界】${DEV_STAGE_RULE}`,
-    'Claude Code 无法调用 devhub_get / devhub_update；完成后在工作站里更新任务/变更点，并让用户决定评审与测试。不要编造 baseline diff。',
+    'Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。',
     '',
     '===== Context Pack =====',
     '',

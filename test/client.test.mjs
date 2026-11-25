@@ -2303,3 +2303,17 @@ test('Windows 兼容：Claude CLI 的 .cmd/.bat 经 cmd.exe 启动', async () =>
   assert.match(host, /cmd\.exe|ComSpec/)
   assert.match(host, /runExecutable\(bin, args/)
 })
+
+test('Claude 联动 CLI：bridge token 路由、get/update 协议与绝对路径提示', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  const cli = await readFile(new URL('../bin/devhub.mjs', import.meta.url), 'utf8')
+  assert.match(host, /CLAUDE_BRIDGES/)
+  assert.match(host, /path: API.cli/)
+  assert.match(host, /x-devhub-token/)
+  assert.match(host, /CLAUDE_CLI/)
+  assert.match(cli, /action: parsed\.action/)
+  assert.match(cli, /taskText/)
+  assert.match(cli, /changePoint/)
+  assert.match(cli, /risk/)
+})

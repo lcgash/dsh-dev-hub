@@ -249,6 +249,22 @@ npm test            # node:test 测试
 
 仓库刻意保持较小、依赖较少。`src/core/` 不应引入 DSH Host 依赖，保证不启动 Harness 也能测试核心逻辑。
 
+### Claude Code 联动 CLI
+
+选择 Claude Code 作为开发引擎时，工作站会在启动消息末尾附带一个本地 CLI 和一次性 bridge 文件：
+
+```bash
+node <plugin>/bin/devhub.mjs get --bridge <bridge.json>
+node <plugin>/bin/devhub.mjs update --bridge <bridge.json> --task "..." --done
+node <plugin>/bin/devhub.mjs update --bridge <bridge.json> --change-point "..."
+node <plugin>/bin/devhub.mjs update --bridge <bridge.json> --risk "..."
+```
+
+- bridge 文件在 `~/.dev-hub/claude-bridges/`，含 loopback URL、一次性 token 与流程 id，不会提交；
+- CLI 通过 Host 的 `/api/dev-hub/cli` 协议读写台账，阶段仍由工作站按事实推导；
+- Claude Code 不再需要伪造 `devhub_update` 调用；
+- 重启 Host 后旧 bridge token 失效，重新开启会话即可刷新。
+
 ### 跨平台开发规则（Windows）
 
 这个工作站同时运行在 macOS、Linux 和 Windows；任何改动都必须按三平台验证，不能只以 macOS 为准：

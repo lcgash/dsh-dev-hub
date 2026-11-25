@@ -268,6 +268,19 @@ npm test            # node:test suite
 
 The repository is intentionally small and dependency-light. Core modules should remain free of DSH host imports so they can be tested without a running harness.
 
+### Claude Code bridge CLI
+
+When Claude Code is selected as the developer engine, the launch message includes a local CLI and a one-time bridge file:
+
+```bash
+node <plugin>/bin/devhub.mjs get --bridge <bridge.json>
+node <plugin>/bin/devhub.mjs update --bridge <bridge.json> --task "..." --done
+node <plugin>/bin/devhub.mjs update --bridge <bridge.json> --change-point "..."
+node <plugin>/bin/devhub.mjs update --bridge <bridge.json> --risk "..."
+```
+
+The bridge file lives under `~/.dev-hub/claude-bridges/`, contains a loopback URL, one-time token and flow id, and is never committed. The CLI uses the `/api/dev-hub/cli` protocol; stages remain derived by the workstation. Tokens expire when the Host restarts, so relaunch the session to refresh.
+
 ### Cross-platform rule (Windows)
 
 The workstation runs on macOS, Linux and Windows; changes must be checked across all three, not only macOS:

@@ -9,6 +9,8 @@ import { exec, execFile, spawn } from 'node:child_process'
 import { access, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
+import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { API, STATUS_ORDER } from './shared/api.mjs'
@@ -1670,6 +1672,10 @@ async function applyReworkFacts(ctx, profile, repoPath, items) {
  * - 虚拟库：成员库平权的事实（无主库），台账/证据写本机独立目录。
  */
 const MEMORY_DIR = join(PROFILE_DIR, 'memory')
+// Claude Code CLI 桥：token → 台账目标（只在本进程有效；重启后重新开启会话会刷新）
+const CLAUDE_BRIDGES = new Map()
+const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
+const CLAUDE_CLI = join(PLUGIN_ROOT, 'bin', 'devhub.mjs')
 const INDEX_DIR = join(PROFILE_DIR, 'index')
 // 每个仓库/进程只热身一次：选中代码库后在后台建索引，第一次需求扫描就不用等全量 walk
 const warmedIndexes = new Set()
@@ -2517,6 +2523,24 @@ function toolOutput(properties = {}) {
   }
 }
 
+/** devhub_update 与 Claude CLI 共用的台账更新逻辑；阶段由 Host 事实推导，不手工写。 */
+function applyDevhubUpdate(item, args = {}) {
+  if (args.status && STATUS_ORDER.includes(args.status)) item.status = args.status
+  if (args.stage) item.workflow.stage = args.stage
+  if (args.rootProblem) item.workflow.rootProblem = args.rootProblem
+  if (args.planSummary) item.workflow.plan.summary = args.planSummary
+  if (args.estimateSize) item.workflow.plan.estimate.size = args.estimateSize
+  if (typeof args.estimateDays === 'number') item.workflow.plan.estimate.days = args.estimateDays
+  if (args.taskText) {
+    const existing = item.tasks.find((task) => task.text === args.taskText)
+    if (existing) existing.done = Boolean(args.taskDone)
+    else item.tasks.push({ text: args.taskText, done: Boolean(args.taskDone) })
+  }
+  if (args.changePoint) item.changePoints.push({ type: 'manual', summary: args.changePoint })
+  if (args.risk) item.risks.push(args.risk)
+  return item
+}
+
 function registerTools(ctx) {
   const tools = ctx.get('tools')
   if (!tools) return
@@ -2604,19 +2628,7 @@ function registerTools(ctx) {
           item.session = { id: sessionId, boundAt: at, updatedAt: at }
           appendHistory(item, 'session', `自动绑定更新流程的开发会话：${sessionId}`)
         }
-        if (args.status && STATUS_ORDER.includes(args.status)) item.status = args.status
-        if (args.stage) item.workflow.stage = args.stage
-        if (args.rootProblem) item.workflow.rootProblem = args.rootProblem
-        if (args.planSummary) item.workflow.plan.summary = args.planSummary
-        if (args.estimateSize) item.workflow.plan.estimate.size = args.estimateSize
-        if (typeof args.estimateDays === 'number') item.workflow.plan.estimate.days = args.estimateDays
-        if (args.taskText) {
-          const existing = item.tasks.find((task) => task.text === args.taskText)
-          if (existing) existing.done = Boolean(args.taskDone)
-          else item.tasks.push({ text: args.taskText, done: Boolean(args.taskDone) })
-        }
-        if (args.changePoint) item.changePoints.push({ type: 'manual', summary: args.changePoint })
-        if (args.risk) item.risks.push(args.risk)
+        applyDevhubUpdate(item, args)
         const saved = await saveItem(repo, appendHistory(item, 'update', 'Agent 更新开发项'))
         return { item: saved }
       },
@@ -5287,12 +5299,57 @@ export function apply(ctx) {
             return sendJson(res, 200, { ok: true, sessionId: result.id || id, output: result.output })
           }
           if (action !== 'launch') throw new Error(`未知 Claude Code 动作：${action}`)
-          const result = await runClaudeBackground(root, body.prompt)
+          // 给 Claude 一个本地 CLI 桥：它可以读/回写台账，但 token 只存在本机 profile 目录，不提交。
+          const bridgeDir = join(PROFILE_DIR, 'claude-bridges')
+          await mkdir(bridgeDir, { recursive: true })
+          const token = randomUUID()
+          const safeId = String(item.id).replace(/[^\p{L}\p{N}._-]+/gu, '-').slice(0, 80)
+          const bridgePath = join(bridgeDir, `${safeId}.json`)
+          const host = String(req.headers.host ?? '127.0.0.1').replace(/[\r\n]/g, '')
+          const bridge = { url: `http://${host}`, token, itemId: item.id, repo, bridgePath }
+          await writeFile(bridgePath, JSON.stringify({ url: bridge.url, token, itemId: item.id }, null, 2))
+          CLAUDE_BRIDGES.set(token, { itemId: item.id, repo, bridgePath, at: Date.now() })
+          const cliHint = [
+            '',
+            '===== DevHub 联动 CLI（Claude 没有 devhub_* 工具时用这个）=====',
+            `node ${JSON.stringify(CLAUDE_CLI)} get --bridge ${JSON.stringify(bridgePath)}`,
+            `node ${JSON.stringify(CLAUDE_CLI)} update --bridge ${JSON.stringify(bridgePath)} --task "任务文本" --done`,
+            `node ${JSON.stringify(CLAUDE_CLI)} update --bridge ${JSON.stringify(bridgePath)} --change-point "变更点"`,
+            `node ${JSON.stringify(CLAUDE_CLI)} update --bridge ${JSON.stringify(bridgePath)} --risk "风险"`,
+            '用它回写任务/变更点/风险；阶段仍由工作站按事实推导，不要手工传 stage。',
+          ].join('\n')
+          const result = await runClaudeBackground(root, `${body.prompt}${cliHint}`)
           if (!result.id) throw new Error(`Claude Code 已启动但没拿到会话 id：${result.output.slice(-600)}`)
           item.session = { id: result.id, engine: 'claude', external: true, cwd: root, at: new Date().toISOString() }
           item.workflow = { ...(item.workflow ?? {}), engine: 'claude' }
           const saved = await saveItem(repo, appendHistory(item, 'session', `Claude Code 后台会话已启动：${result.id}`))
           sendJson(res, 200, { ok: true, sessionId: result.id, item: saved, output: result.output })
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
+    // Claude Code / 外部 Agent 的联动 CLI 协议：用一次性 bridge token 读写当前台账。
+    {
+      kind: 'exact',
+      path: API.cli,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'POST only' })
+        try {
+          const body = await readBody(req)
+          const token = String(body.token ?? req.headers['x-devhub-token'] ?? '').trim()
+          const entry = CLAUDE_BRIDGES.get(token)
+          if (!entry) throw new Error('DevHub bridge token 无效或已过期：请在流程里重新开启 Claude Code 会话')
+          const profile = await loadProfile()
+          const item = await readItemLocal(profile, entry.repo, entry.itemId)
+          if (!item) throw new Error(`开发项不存在：${entry.itemId}`)
+          const action = String(body.action ?? 'get')
+          if (action === 'get') return sendJson(res, 200, { ok: true, item })
+          if (action !== 'update') throw new Error(`未知 CLI 动作：${action}`)
+          applyDevhubUpdate(item, body.args ?? {})
+          const saved = await saveItem(entry.repo, appendHistory(item, 'update', 'Claude CLI 更新开发项'))
+          sendJson(res, 200, { ok: true, item: saved })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }
