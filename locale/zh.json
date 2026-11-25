@@ -1411,10 +1411,10 @@
     "在工作站内开启会话；进度、评审纠偏、自动化衔接最完整。": "在工作站内开启会话；进度、评审纠偏、自动化衔接最完整。",
     "用本机 Claude Code 后台会话开发；可在工作站查看日志、追加纠偏或打开终端。": "用本机 Claude Code 后台会话开发；可在工作站查看日志、追加纠偏或打开终端。",
     "未检测到 claude 命令：请先安装 Claude Code CLI 并登录。": "未检测到 claude 命令：请先安装 Claude Code CLI 并登录。",
-    "安装参考：curl -fsSL https://claude.ai/install.sh | bash（安装后确认 claude --version 可用）": "安装参考：curl -fsSL https://claude.ai/install.sh | bash（安装后确认 claude --version 可用）",
     "已打开 Claude Code 终端；在终端里继续会话，返回工作站后可继续推进。": "已打开 Claude Code 终端；在终端里继续会话，返回工作站后可继续推进。",
     "Claude Code 已启动，但没有拿到会话 id；请打开终端确认。": "Claude Code 已启动，但没有拿到会话 id；请打开终端确认。",
-    "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。": "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。"
+    "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。": "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。",
+    "安装参考：macOS/Linux 用 curl -fsSL https://claude.ai/install.sh | bash；Windows 用 irm https://claude.ai/install.ps1 | iex；安装后确认 claude --version 可用": "安装参考：macOS/Linux 用 curl -fsSL https://claude.ai/install.sh | bash；Windows 用 irm https://claude.ai/install.ps1 | iex；安装后确认 claude --version 可用"
   },
   "templates": {
     "成员 {name}": "成员 {name}",

@@ -2317,3 +2317,13 @@ test('Claude 联动 CLI：bridge token 路由、get/update 协议与绝对路径
   assert.match(cli, /changePoint/)
   assert.match(cli, /risk/)
 })
+
+test('Windows 路径：提交路径拒绝盘符/UNC，展示不再按 / 切割盘符', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /const windowsAbsolute = \/\^\[A-Za-z\]:/)
+  assert.match(host, /value\.startsWith/)
+  assert.match(host, /windowsAbsolute/)
+  assert.match(index, /repoBaseName\(repoPath\)/)
+})

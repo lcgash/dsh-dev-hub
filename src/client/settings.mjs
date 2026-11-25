@@ -185,7 +185,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
               }),
             ),
             !claudeAvailable
-              ? h('div', { style: styles.sectionHint }, '安装参考：curl -fsSL https://claude.ai/install.sh | bash（安装后确认 claude --version 可用）')
+              ? h('div', { style: styles.sectionHint }, '安装参考：macOS/Linux 用 curl -fsSL https://claude.ai/install.sh | bash；Windows 用 irm https://claude.ai/install.ps1 | iex；安装后确认 claude --version 可用')
               : null,
           ))
         : section === 'skills'

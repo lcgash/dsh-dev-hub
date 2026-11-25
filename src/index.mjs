@@ -712,7 +712,7 @@ function openClaudeTerminal(root, id) {
     return
   }
   if (process.platform === 'win32') {
-    const child = spawn('cmd', ['/c', 'start', 'Claude Code', 'cmd', '/k', `cd /d ${work} && ${attach}`], { detached: true, stdio: 'ignore', windowsHide: true })
+    const child = spawn('cmd', ['/c', 'start', 'Claude Code', 'cmd', '/k', `cd /d "${work}" && ${attach}`], { detached: true, stdio: 'ignore', windowsHide: true })
     child.unref()
     return
   }
@@ -1827,8 +1827,9 @@ async function probeLocalCommand(repo, command) {
   const token = String(command ?? '').trim().split(/\s+/)[0] ?? ''
   if (!token) return { ok: false, kind: 'empty', reason: '命令为空' }
   if (/[|&;<>()$`"'*?]/.test(token)) return { ok: true, kind: 'shell', reason: '包含 shell 语法，未探测可执行文件' }
-  if (token.startsWith('/') || token.startsWith('./') || token.startsWith('../')) {
-    const path = token.startsWith('/') ? token : join(repo, token)
+  const windowsAbsolute = /^[A-Za-z]:/.test(token) || token.startsWith('\\\\')
+  if (token.startsWith('/') || windowsAbsolute || token.startsWith('./') || token.startsWith('../')) {
+    const path = token.startsWith('/') || windowsAbsolute ? token : join(repo, token)
     return (await exists(path))
       ? { ok: true, kind: 'file', token, path }
       : { ok: false, kind: 'file', token, reason: `找不到文件：${token}` }

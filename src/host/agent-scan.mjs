@@ -88,7 +88,7 @@ export function normalizeScan(raw, { limit = MAX_FILES } = {}) {
   const seen = new Set()
   for (const entry of files) {
     const path = String(entry?.path ?? '').replace(/\\/g, '/').replace(/^\.\//, '').trim()
-    if (!path || path.startsWith('/') || path.includes('..') || seen.has(path)) continue
+    if (!path || path.startsWith('/') || /^[A-Za-z]:/.test(path) || path.includes('..') || seen.has(path)) continue
     seen.add(path)
     out.push({
       path,
@@ -99,7 +99,7 @@ export function normalizeScan(raw, { limit = MAX_FILES } = {}) {
   }
   const scope = [...new Set((Array.isArray(raw?.scope) ? raw.scope : [])
     .map((value) => String(value ?? '').trim().replace(/^\.\//, '').replace(/\/+$/, ''))
-    .filter((value) => value && !value.startsWith('/') && !value.includes('..')))]
+    .filter((value) => value && !value.startsWith('/') && !/^[A-Za-z]:/.test(value) && !value.includes('..')))]
   return { files: out, scope, notes: String(raw?.notes ?? '').trim().slice(0, 320) }
 }
 

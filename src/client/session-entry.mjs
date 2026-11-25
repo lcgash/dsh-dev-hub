@@ -216,7 +216,7 @@ export function DevHubSessionQuick({ sessionId, ctx }) {
                 textOverflow: 'ellipsis',
                 whiteSpace: 'nowrap',
               },
-            }, path.split('/').filter(Boolean).pop() ?? path)),
+            }, path.split(/[\\/]/).filter(Boolean).pop() ?? path)),
           )
           : null,
         error ? h('div', { style: styles.smallDanger }, error) : null,

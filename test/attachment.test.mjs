@@ -49,3 +49,9 @@ test('attachmentPrompt：图片要求 read_image，并声明"模型不支持就�
   assert.match(prompt, /read/)
   assert.equal(attachmentPrompt([]), '', '没有附件时不注入任何内容')
 })
+
+test('Windows 盘符附件路径也按绝对路径保留', () => {
+  const list = normalizeAttachments([{ path: 'C:\\Users\\me\\shot.png', mediaType: 'image/png', name: 'shot.png' }])
+  assert.equal(list.length, 1)
+  assert.equal(list[0].path, 'C:\\Users\\me\\shot.png')
+})

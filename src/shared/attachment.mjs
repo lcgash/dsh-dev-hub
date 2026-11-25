@@ -37,7 +37,7 @@ export function normalizeAttachments(raw, { limit = ATTACHMENT_LIMIT } = {}) {
     if (!entry || typeof entry !== 'object') continue
     const path = text(entry.path, 1000)
     if (!path || path.includes('..')) continue
-    if (!path.startsWith('/')) continue
+    if (!path.startsWith('/') && !/^[A-Za-z]:/.test(path) && !path.startsWith('\\\\')) continue
     if (seen.has(path)) continue
     seen.add(path)
     const mediaType = text(entry.mediaType, 100) || 'application/octet-stream'

@@ -280,3 +280,9 @@ test('runAgentJson：startActivation 用平铺 spec（parent 在顶层），不�
   assert.equal(seen.request, undefined)
   assert.equal(seen.cwd, '/repo')
 })
+
+test('扫描结果拒绝 Windows 盘符绝对路径', () => {
+  const result = normalizeScan({ files: [{ path: 'C:\\tmp\\evil.js' }, { path: 'src/a.js' }], scope: ['C:\\tmp', 'src'] })
+  assert.deepEqual(result.files.map((file) => file.path), ['src/a.js'])
+  assert.deepEqual(result.scope, ['src'])
+})

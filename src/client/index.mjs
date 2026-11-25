@@ -4831,7 +4831,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   }
 
   async function removeRepo(repoPath) {
-    const name = repoPath.split('/').filter(Boolean).pop() || repoPath
+    const name = repoBaseName(repoPath) || repoPath
     const ok = typeof window !== 'undefined' && confirmText(
       `从列表移除项目「${name}」？\n\n只删本机列表登记，不会删除磁盘上的代码/流程台账；以后还能重新添加。`,
     )

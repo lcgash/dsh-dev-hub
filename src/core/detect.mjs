@@ -155,7 +155,7 @@ async function detectShell() {
   } catch {
     // not Linux
   }
-  return { path, name: path.split('/').pop() || path, wsl }
+  return { path, name: path.split(/[\\/]/).pop() || path, wsl }
 }
 
 /** Fixed tool list; adding a tool here is an explicit, reviewable change. */

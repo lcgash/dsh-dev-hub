@@ -276,7 +276,7 @@ function TargetSummary({ repo, member, activeWorkspace, switchingRepo, onScan, o
 }
 
 function RepoCard({ path, name: givenName, exists = true, active, busy, isRepo, branch, head, initialized, workspaces, onSelect, onRemove, tabAttached = false }) {
-  const name = givenName || String(path ?? '').split('/').filter(Boolean).pop() || path
+  const name = givenName || String(path ?? '').split(/[\\/]/).filter(Boolean).pop() || path
   const [hovered, setHovered] = useState(false)
   // 多库项目归属只放 tooltip：footer 再挂一个「多库项目 · xxx」会让项目卡看起来像多库项目卡
   const workspaceNames = (Array.isArray(workspaces) ? workspaces : []).filter(Boolean)
