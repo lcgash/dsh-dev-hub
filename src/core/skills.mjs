@@ -381,6 +381,12 @@ export const SKILL_CATALOG = [
         doc: 'docs/code-guide/CODING-STANDARDS.md',
       },
       {
+        id: 'windows-compat',
+        title: 'Windows 也要能跑',
+        rule: '所有代码、脚本、命令、路径和进程启动必须同时兼容 macOS / Linux / Windows：路径用 path.join/resolve，不硬编码 / 或盘符；命令探测用 which/where 分流；spawn 启动 .cmd/.bat 要经 shell 或 cmd /c；不要假设 POSIX shell、单引号、chmod、/tmp；UTF-8/CRLF、文件名大小写与保留字符要处理；终端/IDE 启动在 mac 用 open/osascript、Windows 用 start；界面快捷键不能只写 ⌘，要提供 Ctrl 等价；跨平台相关改动至少补 Windows 路径/命令测试。',
+        check: { kind: 'checklist', value: 'windows-compat' },
+      },
+      {
         id: 'fail-loud',
         title: '失败要显式',
         rule: '不吞异常、不静默降级；降级要可见（日志/界面提示），不假装成功。',

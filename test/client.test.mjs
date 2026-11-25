@@ -2294,3 +2294,12 @@ test('开发引擎可切换：DSH / Claude Code，Claude 走后台会话与追�
   assert.match(index, /action: continueExisting \? 'send' : 'launch'/)
   assert.match(index, /sendToDeveloperSession/)
 })
+
+test('Windows 兼容：Claude CLI 的 .cmd/.bat 经 cmd.exe 启动', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /async function runExecutable/)
+  assert.match(host, /process\.platform === 'win32'/)
+  assert.match(host, /cmd\.exe|ComSpec/)
+  assert.match(host, /runExecutable\(bin, args/)
+})

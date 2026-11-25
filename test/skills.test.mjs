@@ -246,3 +246,13 @@ test('可选前端体验审查：借鉴 Impeccable/UI UX，不默认安装', () 
   assert.deepEqual(pack.constraints.map((entry) => entry.id).sort(), ['ux-accessibility', 'ux-context', 'ux-rendered', 'ux-resilience', 'ux-restraint'])
   assert.ok(!defaultSkillIds('node', { frontend: true }).includes('frontend-experience'))
 })
+
+test('开发规则内置 Windows 兼容约束', () => {
+  const pack = findSkill('generic-quality')
+  const rule = pack.constraints.find((entry) => entry.id === 'windows-compat')
+  assert.ok(rule, '缺少 windows-compat 约束')
+  assert.match(rule.rule, /path\.join/)
+  assert.match(rule.rule, /where|which/)
+  assert.match(rule.rule, /\.cmd|\.bat/)
+  assert.match(rule.rule, /Ctrl/)
+})

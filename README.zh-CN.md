@@ -249,6 +249,20 @@ npm test            # node:test 测试
 
 仓库刻意保持较小、依赖较少。`src/core/` 不应引入 DSH Host 依赖，保证不启动 Harness 也能测试核心逻辑。
 
+### 跨平台开发规则（Windows）
+
+这个工作站同时运行在 macOS、Linux 和 Windows；任何改动都必须按三平台验证，不能只以 macOS 为准：
+
+- 路径统一用 `path.join` / `path.resolve`，不硬编码 `/` 或盘符；URL 路径与文件系统路径分开处理；
+- 命令探测用 `which`（Unix）或 `where`（Windows）；不能假设存在 `sh`、单引号、`chmod`、`/tmp`；
+- 启动 `.cmd` / `.bat` 必须通过 shell 或 `cmd /c`；参数拼装要处理空格与引号；
+- 文本编码用 UTF-8，换行、文件名大小写和 Windows 保留字符都要处理；
+- 打开终端/IDE 要分别处理 macOS（`open`/`osascript`）、Windows（`start`）、Linux；
+- 快捷键不能只写 `⌘`，同时提供 `Ctrl` 等价路径；
+- 与路径、进程、文件系统相关的改动，测试至少覆盖 Windows 形态。
+
+以上规则也写入了内置技能包 `generic-quality` 的 `windows-compat` 约束；新项目默认安装，旧项目可在「设置 → 技能」重新生成规范。
+
 ## 安全与隐私
 
 - Host 路由只监听 loopback；

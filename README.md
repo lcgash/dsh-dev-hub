@@ -268,6 +268,20 @@ npm test            # node:test suite
 
 The repository is intentionally small and dependency-light. Core modules should remain free of DSH host imports so they can be tested without a running harness.
 
+### Cross-platform rule (Windows)
+
+The workstation runs on macOS, Linux and Windows; changes must be checked across all three, not only macOS:
+
+- use `path.join` / `path.resolve`, never hard-coded `/` or drive letters; keep URL paths and filesystem paths separate;
+- detect commands with `which` on Unix and `where` on Windows; do not assume `sh`, single quotes, `chmod` or `/tmp`;
+- launch `.cmd` / `.bat` through a shell or `cmd /c`, with correct quoting for spaces;
+- use UTF-8, and handle line endings, filename case and Windows reserved characters;
+- open terminals/IDEs with `open`/`osascript` on macOS, `start` on Windows and a Linux terminal fallback;
+- do not expose only `⌘` shortcuts; provide the `Ctrl` equivalent;
+- path/process/filesystem changes need at least a Windows-shaped test.
+
+This rule is also built into the `generic-quality` skill as the `windows-compat` constraint. New projects install it by default; older projects can regenerate conventions under Settings → Skills.
+
 ## Security and privacy
 
 - Host routes are loopback-only.

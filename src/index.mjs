@@ -157,6 +157,19 @@ const MAX_BODY = 1024 * 1024
 const execAsync = promisify(exec)
 const execFileAsync = promisify(execFile)
 
+/** Windows 的 claude 通常是 .cmd/.bat：execFile 不能直接执行，必须经 cmd.exe；参数统一加引号。 */
+function quoteWinArg(value) {
+  return `"${String(value ?? '').replace(/"/g, '\\"')}"`
+}
+
+async function runExecutable(bin, args, options = {}) {
+  const command = String(bin ?? '')
+  if (process.platform === 'win32' && /\.(cmd|bat)$/i.test(command)) {
+    const line = [command, ...args].map(quoteWinArg).join(' ')
+    return execFileAsync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', line], options)
+  }
+  return execFileAsync(command, args, options)
+}
 function isLoopback(req) {
   const remote = req.socket.remoteAddress
   if (!remote) return false
@@ -628,7 +641,7 @@ async function runClaudeBackground(root, prompt, { resumeId = null } = {}) {
   const args = ['--bg', '--permission-mode', 'acceptEdits']
   if (resumeId) args.push('--resume', String(resumeId))
   args.push(text)
-  const { stdout, stderr } = await execFileAsync(bin, args, {
+  const { stdout, stderr } = await runExecutable(bin, args, {
     cwd: root,
     timeout: 120000,
     maxBuffer: 8 * 1024 * 1024,
@@ -643,7 +656,7 @@ let claudeAgentsCache = { at: 0, rows: [] }
 async function claudeAgents() {
   if (Date.now() - claudeAgentsCache.at < 3000) return claudeAgentsCache.rows
   const bin = await claudeBinary()
-  const { stdout } = await execFileAsync(bin, ['agents', '--json', '--all'], {
+  const { stdout } = await runExecutable(bin, ['agents', '--json', '--all'], {
     timeout: 20000,
     maxBuffer: 8 * 1024 * 1024,
     env: process.env,
@@ -678,7 +691,7 @@ async function applyClaudeRunning(views, items) {
 
 async function claudeLogs(id) {
   const bin = await claudeBinary()
-  const { stdout, stderr } = await execFileAsync(bin, ['logs', String(id)], {
+  const { stdout, stderr } = await runExecutable(bin, ['logs', String(id)], {
     timeout: 20000,
     maxBuffer: 8 * 1024 * 1024,
     env: process.env,
