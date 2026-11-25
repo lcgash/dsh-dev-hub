@@ -9,9 +9,28 @@ import { h } from './i18n.mjs'
 import { API } from '../shared/api.mjs'
 import { normalizeAutomation } from '../shared/automation.mjs'
 import { SkillsPanel } from './skills.mjs'
-import { Button, Pill, T, api, errorText, styles } from './common.mjs'
+import { Button, IconSeat, Pill, T, api, errorText, styles } from './common.mjs'
 
-function OptionCard({ active, title, hint, onSelect, disabled = false }) {
+function EngineIcon({ id }) {
+  if (id === 'dsh') {
+    return h(IconSeat, { size: 28, tone: 'accent' }, '✦')
+  }
+  if (id === 'claude') {
+    return h('svg', { width: 28, height: 28, viewBox: '0 0 28 28', 'aria-hidden': true },
+      h('circle', { cx: 14, cy: 14, r: 13, fill: '#f5e9e2' }),
+      h('path', { fill: 'none', stroke: '#d97757', strokeWidth: 2.2, strokeLinecap: 'round', d: 'M14 4v7M14 17v7M4 14h7M17 14h7M6.9 6.9l5 5M16.1 16.1l5 5M6.9 21.1l5-5M16.1 11.9l5-5' }))
+  }
+  if (id === 'codex') {
+    return h('svg', { width: 28, height: 28, viewBox: '0 0 28 28', 'aria-hidden': true },
+      h('rect', { x: 2, y: 2, width: 24, height: 24, rx: 7, fill: '#111827' }),
+      h('text', { x: 14, y: 19, textAnchor: 'middle', fill: '#fff', fontFamily: 'Menlo, monospace', fontSize: 13, fontWeight: 700 }, '>_'))
+  }
+  return h('svg', { width: 28, height: 28, viewBox: '0 0 28 28', 'aria-hidden': true },
+    h('rect', { x: 2, y: 2, width: 24, height: 24, rx: 7, fill: '#e8f1ff' }),
+    h('text', { x: 14, y: 20, textAnchor: 'middle', fill: '#2563eb', fontFamily: 'Georgia, serif', fontSize: 18, fontWeight: 700 }, 'π'))
+}
+
+function OptionCard({ active, title, hint, icon = null, onSelect, disabled = false }) {
   return h('button', {
     type: 'button',
     disabled,
@@ -22,6 +41,7 @@ function OptionCard({ active, title, hint, onSelect, disabled = false }) {
       flexDirection: 'column',
       gap: 6,
       padding: '14px 16px',
+      height: '100%',
       border: `1px solid ${active ? T.brand : T.borderSoft}`,
       borderRadius: T.rLg,
       background: active ? T.brandSoft : T.surface,
@@ -32,8 +52,9 @@ function OptionCard({ active, title, hint, onSelect, disabled = false }) {
       boxShadow: active ? `0 0 0 2px rgba(96,73,231,.10)` : T.shadowCard,
     },
   },
-    h('div', { style: { display: 'flex', alignItems: 'center', gap: 8 } },
-      h('span', { style: { fontSize: T.font.base, fontWeight: 650 } }, title),
+    h('div', { style: { display: 'flex', alignItems: 'center', gap: 9 } },
+      icon ? h('span', { style: { flex: '0 0 auto', display: 'inline-flex' } }, icon) : null,
+      h('span', { style: { fontSize: T.font.base, fontWeight: 650, minWidth: 0 } }, title),
       active ? h(Pill, { tone: 'accent' }, '当前') : null),
     h('div', { style: { ...styles.sectionHint, lineHeight: 1.65 } }, hint),
   )
@@ -169,14 +190,16 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
             h('div', { style: { fontSize: T.font.md, fontWeight: 650, color: T.text } }, 'AI 引擎（开发 / 澄清 / 评审）'),
             h('div', { style: styles.sectionHint },
               '决定开发、需求澄清和独立评审由谁执行。切换只影响之后的调用；已有流程的代码与历史不变。'),
-            h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
+            h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 } },
               h(OptionCard, {
+                icon: h(EngineIcon, { id: 'dsh' }),
                 title: 'DSH 原生会话',
                 hint: '用 DSH 原生会话执行开发、澄清和评审；自动化与纠偏衔接最完整。',
-                active: automation.engine !== 'claude',
+                active: automation.engine === 'dsh',
                 onClick: () => save({ ...automation, engine: 'dsh' }),
               }),
               h(OptionCard, {
+                icon: h(EngineIcon, { id: 'claude' }),
                 title: 'Claude Code',
                 hint: claudeAvailable
                   ? '用本机 Claude Code 执行开发、澄清和评审；开发会话可在工作站查看日志或打开终端。'
@@ -186,6 +209,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
                 onClick: () => { if (claudeAvailable) save({ ...automation, engine: 'claude' }) },
               }),
               h(OptionCard, {
+                icon: h(EngineIcon, { id: 'codex' }),
                 title: 'Codex',
                 hint: codexAvailable
                   ? '用本机 Codex CLI 执行澄清和评审；开发阶段在终端中进行，可用 bridge CLI 回写台账。'
@@ -195,6 +219,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
                 onClick: () => { if (codexAvailable) save({ ...automation, engine: 'codex' }) },
               }),
               h(OptionCard, {
+                icon: h(EngineIcon, { id: 'pi' }),
                 title: 'Pi',
                 hint: piAvailable
                   ? '用本机 Pi CLI 执行澄清和评审；开发阶段在终端中进行，可用 bridge CLI 回写台账。'
