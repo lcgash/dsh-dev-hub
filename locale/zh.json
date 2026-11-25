@@ -1414,7 +1414,11 @@
     "已打开 Claude Code 终端；在终端里继续会话，返回工作站后可继续推进。": "已打开 Claude Code 终端；在终端里继续会话，返回工作站后可继续推进。",
     "Claude Code 已启动，但没有拿到会话 id；请打开终端确认。": "Claude Code 已启动，但没有拿到会话 id；请打开终端确认。",
     "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。": "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。",
-    "安装参考：macOS/Linux 用 curl -fsSL https://claude.ai/install.sh | bash；Windows 用 irm https://claude.ai/install.ps1 | iex；安装后确认 claude --version 可用": "安装参考：macOS/Linux 用 curl -fsSL https://claude.ai/install.sh | bash；Windows 用 irm https://claude.ai/install.ps1 | iex；安装后确认 claude --version 可用"
+    "安装参考：macOS/Linux 用 curl -fsSL https://claude.ai/install.sh | bash；Windows 用 irm https://claude.ai/install.ps1 | iex；安装后确认 claude --version 可用": "安装参考：macOS/Linux 用 curl -fsSL https://claude.ai/install.sh | bash；Windows 用 irm https://claude.ai/install.ps1 | iex；安装后确认 claude --version 可用",
+    "AI 引擎（开发 / 澄清 / 评审）": "AI 引擎（开发 / 澄清 / 评审）",
+    "决定开发、需求澄清和独立评审由谁执行。切换只影响之后的调用；已有流程的代码与历史不变。": "决定开发、需求澄清和独立评审由谁执行。切换只影响之后的调用；已有流程的代码与历史不变。",
+    "用 DSH 原生会话执行开发、澄清和评审；自动化与纠偏衔接最完整。": "用 DSH 原生会话执行开发、澄清和评审；自动化与纠偏衔接最完整。",
+    "用本机 Claude Code 执行开发、澄清和评审；开发会话可在工作站查看日志或打开终端。": "用本机 Claude Code 执行开发、澄清和评审；开发会话可在工作站查看日志或打开终端。"
   },
   "templates": {
     "成员 {name}": "成员 {name}",
@@ -1885,7 +1889,8 @@
     "打开 Claude Code 失败：{value1}": "打开 Claude Code 失败：{value1}",
     "开启新的开发会话？\n\n将新建一个 {value1}，并把「{value2}」的约束与 Context Pack 作为首条消息发送。": "开启新的开发会话？\n\n将新建一个 {value1}，并把「{value2}」的约束与 Context Pack 作为首条消息发送。",
     "{value1}后台会话 {value2}。可在下方查看日志，或点「打开会话」进终端。": "{value1}后台会话 {value2}。可在下方查看日志，或点「打开会话」进终端。",
-    "你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：{value1}{value2}。": "你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：{value1}{value2}。"
+    "你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：{value1}{value2}。": "你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：{value1}{value2}。",
+    "选择当前项目（{value1}）由谁执行开发、澄清和评审。": "选择当前项目（{value1}）由谁执行开发、澄清和评审。"
   },
   "templateValues": {
     "通过": "通过",

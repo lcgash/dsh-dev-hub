@@ -149,7 +149,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
             current.id === 'automation'
               ? `控制当前项目（${repo?.name ?? '当前项目'}）的推进动作；提交与推送始终由你确认。`
               : current.id === 'engine'
-                ? `选择当前项目（${repo?.name ?? '当前项目'}）由谁执行代码开发。`
+                ? `选择当前项目（${repo?.name ?? '当前项目'}）由谁执行开发、澄清和评审。`
                 : current.id === 'skills'
                   ? `管理当前项目（${repo?.name ?? '当前项目'}）的技能包与约束。`
                   : '控制是否引入独立评审，以及按规模选择评审强度。')),
@@ -164,20 +164,20 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
       section === 'engine'
         ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 10 } },
           h('div', { style: { ...styles.card, padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 8 } },
-            h('div', { style: { fontSize: T.font.md, fontWeight: 650, color: T.text } }, '开发会话引擎'),
+            h('div', { style: { fontSize: T.font.md, fontWeight: 650, color: T.text } }, 'AI 引擎（开发 / 澄清 / 评审）'),
             h('div', { style: styles.sectionHint },
-              '决定「开启开发会话」时由谁执行代码开发。切换只影响之后启动的会话；已有流程的代码与历史不变。'),
+              '决定开发、需求澄清和独立评审由谁执行。切换只影响之后的调用；已有流程的代码与历史不变。'),
             h('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
               h(OptionCard, {
                 title: 'DSH 原生会话',
-                hint: '在工作站内开启会话；进度、评审纠偏、自动化衔接最完整。',
+                hint: '用 DSH 原生会话执行开发、澄清和评审；自动化与纠偏衔接最完整。',
                 active: automation.engine !== 'claude',
                 onClick: () => save({ ...automation, engine: 'dsh' }),
               }),
               h(OptionCard, {
                 title: 'Claude Code',
                 hint: claudeAvailable
-                  ? '用本机 Claude Code 后台会话开发；可在工作站查看日志、追加纠偏或打开终端。'
+                  ? '用本机 Claude Code 执行开发、澄清和评审；开发会话可在工作站查看日志或打开终端。'
                   : '未检测到 claude 命令：请先安装 Claude Code CLI 并登录。',
                 active: automation.engine === 'claude',
                 disabled: !claudeAvailable || saving,

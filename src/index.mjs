@@ -48,7 +48,7 @@ import { normalizeScope, suggestModules } from './core/modules.mjs'
 import { extractTokens, reconRepo } from './core/recon.mjs'
 import { ensureRepoIndex, queryRepoIndex } from './core/repo-index.mjs'
 import { candidateHintPrompt, scanWithDshAgent, scanWithLlm } from './host/agent-scan.mjs'
-import { runAgentJson, runLlmJson } from './host/agent-run.mjs'
+import { extractJson, runAgentJson, runLlmJson } from './host/agent-run.mjs'
 import { answerPendingQuestion, readPendingApprovals, readPendingQuestions } from './host/pending-questions.mjs'
 import { ASSIST_SCHEMA, applyAssistUpdates, buildAssistPrompt } from './core/assist.mjs'
 import { sessionState, sessionStates } from './host/session-state.mjs'
@@ -172,6 +172,35 @@ async function runExecutable(bin, args, options = {}) {
   }
   return execFileAsync(command, args, options)
 }
+/** 用 Claude Code 的一次性 -p 会话跑结构化任务（澄清/评审等只读阶段）。 */
+async function runClaudeJson({ cwd, prompt, schema = null, label = 'devhub-claude', timeoutMs = 0 } = {}) {
+  const startedAt = Date.now()
+  const bin = await claudeBinary()
+  const schemaText = schema
+    ? `\n\n只输出一个严格 JSON 对象，不要 Markdown/解释。JSON Schema：\n${JSON.stringify(schema)}`
+    : ''
+  const args = ['-p', `${String(prompt ?? '')}${schemaText}`, '--output-format', 'json', '--permission-mode', 'plan', '--name', String(label).slice(0, 60)]
+  const { stdout, stderr } = await runExecutable(bin, args, {
+    cwd: cwd ?? process.cwd(),
+    timeout: Number(timeoutMs) > 0 ? Number(timeoutMs) : 0,
+    maxBuffer: 16 * 1024 * 1024,
+    env: process.env,
+    windowsHide: true,
+  })
+  let outer = null
+  try { outer = JSON.parse(String(stdout ?? '')) } catch { outer = null }
+  if (outer?.is_error) throw new Error(`Claude 返回错误：${String(outer.result ?? outer.error ?? '').slice(0, 800)}`)
+  const text = String(outer?.result ?? outer?.message ?? stdout ?? '').trim()
+  const value = extractJson(text) ?? extractJson(String(stdout ?? ''))
+  if (!value) throw new Error(`Claude 没有返回可解析的 JSON：${(text || stderr || '').slice(0, 800)}`)
+  return {
+    value,
+    sessionId: String(outer?.session_id ?? outer?.sessionId ?? '').trim() || null,
+    provider: 'claude',
+    elapsedMs: Date.now() - startedAt,
+  }
+}
+
 function isLoopback(req) {
   const remote = req.socket.remoteAddress
   if (!remote) return false
@@ -3105,6 +3134,10 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
   if (before.status === 'pending' || (before.status === 'error' && before.pending > 0)) return item
   const evidence = await reviewEvidenceOf({ repo, item, profile })
   const started = startReviewRound(item.workflow.review, { count, basis: evidence.basis })
+  const reviewEngine = projectAutomation(profile, repo).engine
+  if (reviewEngine === 'claude') {
+    started.reviewers = started.reviewers.map((reviewer) => ({ ...reviewer, engine: 'claude', external: true }))
+  }
   item.workflow.review = started
   appendHistory(item, 'review', `继续推进：自动开始独立评审（第 ${started.round} 轮 · ${started.reviewers.length} 位审核员：${started.reviewers.map((reviewer) => reviewer.role).join(' / ')}）`)
   let saved = await saveItem(repo, item)
@@ -3121,7 +3154,18 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
       constraints: evidence.constraints,
       total: started.reviewers.length,
     })
-    const runOnce = (attempt = 1) => runAgentJson(ctx, {
+    const runOnce = (attempt = 1) => (reviewEngine === 'claude'
+      ? runClaudeJson({
+        cwd: evidence.cwd,
+        prompt,
+        schema: REVIEW_SCHEMA,
+        label: `devhub-${reviewer.id}${attempt > 1 ? '-retry' : ''}`,
+        timeoutMs: (() => {
+          const value = Number(process.env.DEVHUB_CLAUDE_REVIEW_TIMEOUT_MS)
+          return Number.isFinite(value) && value > 0 ? value : 0
+        })(),
+      })
+      : runAgentJson(ctx, {
       cwd: evidence.cwd,
       prompt,
       schema: REVIEW_SCHEMA,
@@ -3150,7 +3194,7 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
         saved = latest
         await saveItem(repo, saved)
       },
-    })
+    }))
     let result
     try {
       result = await runOnce()
@@ -5086,18 +5130,27 @@ export function apply(ctx) {
             .filter(Boolean)
             .join('\n')
           const shortError = (error) => String(error?.message ?? error).replace(/\s+/g, ' ').slice(0, 600)
+          const clarifyEngine = projectAutomation(profile, repo).engine
           try {
-            const result = await runAgentJson(ctx, {
-              cwd: repo,
-              prompt: clarifyPrompt,
-              schema: CLARIFY_SCHEMA,
-              label: 'devhub-clarify',
-              timeoutMs: 90000,
-            })
+            const result = clarifyEngine === 'claude'
+              ? await runClaudeJson({
+                cwd: repo,
+                prompt: clarifyPrompt,
+                schema: CLARIFY_SCHEMA,
+                label: 'devhub-clarify',
+                timeoutMs: 180000,
+              })
+              : await runAgentJson(ctx, {
+                cwd: repo,
+                prompt: clarifyPrompt,
+                schema: CLARIFY_SCHEMA,
+                label: 'devhub-clarify',
+                timeoutMs: 90000,
+              })
             const normalized = normalizeClarify(result.value, { round })
             sendJson(res, 200, {
               ok: true,
-              engine: 'dsh',
+              engine: clarifyEngine,
               elapsedMs: result.elapsedMs,
               sessionId: result.sessionId ?? null,
               ...normalized,

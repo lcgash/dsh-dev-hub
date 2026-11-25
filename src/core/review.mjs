@@ -100,6 +100,8 @@ function normalizeReviewer(raw, index) {
     // runAgentJson 的外层 root agent（真正能用来判断“协程还在不在”的 live 句柄）
     parentSessionId: str(raw?.parentSessionId, 120),
     provider: str(raw?.provider, 40),
+    engine: raw?.engine === 'claude' ? 'claude' : 'dsh',
+    external: raw?.external === true || raw?.engine === 'claude',
     elapsedMs: Number.isFinite(Number(raw?.elapsedMs)) ? Number(raw.elapsedMs) : null,
     error: str(raw?.error, 1200),
     dispatchedAt: raw?.dispatchedAt || null,
@@ -199,6 +201,8 @@ export function staleReviewerFailures(review, {
   const outcomes = []
   for (const reviewer of normalized.reviewers ?? []) {
     if (reviewer.status !== 'pending') continue
+    // 外部引擎（Claude Code）不经过 DSH live registry，不能按 session 存活时间判失联
+    if (reviewer.engine === 'claude' || reviewer.external) continue
     const dispatchedAt = Date.parse(reviewer.dispatchedAt ?? normalized.dispatchedAt ?? '')
     if (!Number.isFinite(dispatchedAt)) continue
     const age = now - dispatchedAt
