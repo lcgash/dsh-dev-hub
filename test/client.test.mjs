@@ -45,7 +45,7 @@ test('client apply 把入口挂到左上角面板列表，并在 main 里渲染�
   const icon = renderToStaticMarkup(h(registered[0].Component, { size: 18, active: true }))
   assert.match(icon, /<svg/)
   assert.match(icon, /viewBox="0 0 24 24"/)
-  assert.match(icon, /M7 6\.5 12 12/)
+  assert.match(icon, /M7 11\.5l2\.6-2\.6/)
   const page = renderToStaticMarkup(h(registered[1].Component))
   assert.match(page, /开发工作站/)
 })

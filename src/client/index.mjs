@@ -167,6 +167,27 @@ function HeaderMenu({ items = [], title = '更多（低频操作）' }) {
   )
 }
 
+/** 侧栏用的黑线条 glyph：比品牌 mark 更适合 18px 小尺寸，保持可读性。 */
+function DevHubGlyph({ size = 18, active = false }) {
+  return h('svg', {
+    width: size,
+    height: size,
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: active ? 2.1 : 1.75,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+    style: { display: 'block' },
+  },
+    h('rect', { x: 3, y: 4, width: 18, height: 12, rx: 2 }),
+    h('path', { d: 'M12 16v4' }),
+    h('path', { d: 'M8.5 20h7' }),
+    h('path', { d: 'M7 11.5l2.6-2.6L12 11.4l2.2-3 2.8 3.1' }),
+  )
+}
+
 function BrandMark({ size = 20, tone = T.brand, accent = T.brand }) {
   return h('svg', {
     width: size,
@@ -5155,7 +5176,7 @@ function DevHubIcon({ size = 18, active = false }) {
     return () => { stop = true; clearInterval(timer) }
   }, [])
   return h('span', { style: { position: 'relative', display: 'inline-flex', width: edge, height: edge } },
-    h(BrandMark, { size: edge, tone: active ? T.brand : T.text3, accent: T.brand }),
+    h(DevHubGlyph, { size: edge, active }),
     count > 0
       ? h('span', {
         style: {
