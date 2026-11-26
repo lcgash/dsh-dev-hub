@@ -2363,6 +2363,7 @@ test('扫描也跟随 AI 引擎：Claude/Codex/Pi 不走 DSH 扫描', async () =
   assert.match(host, /scanWithExternalEngine/)
   assert.match(host, /scanEngine === 'dsh'/)
   assert.match(host, /engine = scanEngine/)
+  assert.match(host, /engineLabel: \{ dsh: 'DSH 扫描', 'dsh-llm': 'DSH 模型筛选', claude: 'Claude Code 扫描'/)
   assert.match(chat, /Claude Code 扫描/)
   assert.match(chat, /Codex 扫描/)
   assert.match(chat, /Pi 扫描/)
