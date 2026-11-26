@@ -4564,6 +4564,8 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   // 这里每 8 秒拉一次（仅在内容变化时更新），让用户不用手动刷新就能看到阶段回退。
   useEffect(() => {
     if (!selected || !state?.repo || detailEditing) return undefined
+    // 外部会话（Claude/Codex/Pi）通过 bridge 回写任务；运行中 2 秒刷新一次，空闲 5 秒
+    const interval = state?.selectedItem?.running ? 2000 : 5000
     const timer = setInterval(async () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       const seq = selectedLoadSeqRef.current
@@ -4578,9 +4580,9 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
       } catch {
         // 静默刷新失败保留当前详情，下一轮再试（不打断正在看的页面）
       }
-    }, 8000)
+    }, interval)
     return () => clearInterval(timer)
-  }, [selected, state?.repo?.path, detailEditing])
+  }, [selected, state?.repo?.path, detailEditing, state?.selectedItem?.running])
 
   function setSelectedItem(item) {
     setState((current) => current ? { ...current, selectedItem: item } : current)

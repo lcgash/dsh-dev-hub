@@ -2459,3 +2459,10 @@ test('详情耗时条：流程耗时、会话耗时、最近活动可见并按�
   assert.match(index, /开发会话.*分析会话|分析会话.*开发会话/s)
   assert.match(index, /const interval = \(draft\?\.running \|\| session\?\.running\) \? 1000 : 30000/)
 })
+
+test('详情进度轮询：运行中 2 秒刷新，及时同步任务与阶段', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(index, /const interval = state\?\.selectedItem\?\.running \? 2000 : 5000/)
+  assert.match(index, /\}, interval\)/)
+})
