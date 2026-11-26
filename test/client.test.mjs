@@ -2432,3 +2432,12 @@ test('Claude 等待授权时继续推进会打开终端，而不是假成功', a
   assert.match(index, /draft\.externalState\?\.status === 'blocked'/)
   assert.match(index, /已打开终端，请处理后回来继续/)
 })
+
+test('Claude resume fork：新会话 id 必须重新绑定到台账', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /if \(nextId !== id\)/)
+  assert.match(host, /Claude Code 会话已切换/)
+  assert.match(index, /if \(body\?\.item\) \{ setDraft\(body\.item\)/)
+})

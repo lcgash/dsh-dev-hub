@@ -1177,6 +1177,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           method: 'POST',
           body: JSON.stringify({ id: draft.id, action: 'send', sessionId, prompt: text }),
         })
+        if (body?.item) { setDraft(body.item); onSaved?.(body.item) }
         return { sent: Boolean(body?.sessionId || sessionId), sessionId: body?.sessionId ?? sessionId }
       } catch (error) {
         return { sent: false, reason: errorText(error) }

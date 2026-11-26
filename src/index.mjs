@@ -5503,7 +5503,15 @@ export function apply(ctx) {
               resumeId: id,
               permissionMode: projectAutomation(profile, repo).claudePermissionMode,
             })
-            return sendJson(res, 200, { ok: true, sessionId: result.id || id, output: result.output })
+            const nextId = result.id || id
+            if (nextId !== id) {
+              // Claude 在 blocked 状态下 --resume 可能 fork 出一个新会话；必须把台账重新绑定到实际工作的那个 id
+              item.session = { id: nextId, engine: 'claude', external: true, cwd: root, at: new Date().toISOString() }
+              item.workflow = { ...(item.workflow ?? {}), engine: 'claude' }
+              const saved = await saveItem(repo, appendHistory(item, 'session', `Claude Code 会话已切换：${id} → ${nextId}`))
+              return sendJson(res, 200, { ok: true, sessionId: nextId, item: saved, output: result.output })
+            }
+            return sendJson(res, 200, { ok: true, sessionId: nextId, output: result.output })
           }
           if (action !== 'launch') throw new Error(`未知 Claude Code 动作：${action}`)
           // 给 Claude 一个本地 CLI 桥：它可以读/回写台账，但 token 只存在本机 profile 目录，不提交。
