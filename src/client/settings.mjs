@@ -196,7 +196,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
                 title: 'DSH 原生会话',
                 hint: '用 DSH 原生会话执行开发、澄清和评审；自动化与纠偏衔接最完整。',
                 active: automation.engine === 'dsh',
-                onClick: () => save({ ...automation, engine: 'dsh' }),
+                onSelect: () => save({ ...automation, engine: 'dsh' }),
               }),
               h(OptionCard, {
                 icon: h(EngineIcon, { id: 'claude' }),
@@ -206,7 +206,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
                   : '未检测到 claude 命令：请先安装 Claude Code CLI 并登录。',
                 active: automation.engine === 'claude',
                 disabled: !claudeAvailable || saving,
-                onClick: () => { if (claudeAvailable) save({ ...automation, engine: 'claude' }) },
+                onSelect: () => { if (claudeAvailable) save({ ...automation, engine: 'claude' }) },
               }),
               h(OptionCard, {
                 icon: h(EngineIcon, { id: 'codex' }),
@@ -216,7 +216,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
                   : '未检测到 codex 命令：请先安装 Codex CLI 并登录。',
                 active: automation.engine === 'codex',
                 disabled: !codexAvailable || saving,
-                onClick: () => { if (codexAvailable) save({ ...automation, engine: 'codex' }) },
+                onSelect: () => { if (codexAvailable) save({ ...automation, engine: 'codex' }) },
               }),
               h(OptionCard, {
                 icon: h(EngineIcon, { id: 'pi' }),
@@ -226,7 +226,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
                   : '未检测到 pi 命令：请先安装 Pi CLI 并登录。',
                 active: automation.engine === 'pi',
                 disabled: !piAvailable || saving,
-                onClick: () => { if (piAvailable) save({ ...automation, engine: 'pi' }) },
+                onSelect: () => { if (piAvailable) save({ ...automation, engine: 'pi' }) },
               }),
             ),
             !claudeAvailable

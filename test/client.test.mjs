@@ -2291,6 +2291,8 @@ test('开发引擎可切换：DSH / Claude Code，Claude 走后台会话与追�
   assert.match(api, /claude: '\/api\/dev-hub\/claude'/)
   assert.match(settings, /AI 引擎（开发 \/ 澄清 \/ 评审）/)
   assert.match(settings, /claudeAvailable/)
+  // 引擎卡必须用 OptionCard 的 onSelect；用 onClick 会表现为点了没反应
+  assert.doesNotMatch(settings, /onClick: \(\) => \{\s*if \(claudeAvailable\)/s)
   assert.match(index, /API\.claude/)
   assert.match(index, /action: continueExisting \? 'send' : 'launch'/)
   assert.match(index, /sendToDeveloperSession/)
