@@ -68,6 +68,24 @@ import { ATTACHMENT_MAX_BYTES, attachmentLabel, isImageAttachment, normalizeAtta
  */
 const ACTIVE_RUNS = new Set()
 
+const CLARIFY_ENGINE_LABEL = {
+  dsh: 'DSH 对话',
+  'dsh-llm': 'DSH 模型',
+  claude: 'Claude Code',
+  codex: 'Codex',
+  pi: 'Pi',
+  local: '本地规则',
+}
+
+function clarifyEngineLabel(engine) {
+  return CLARIFY_ENGINE_LABEL[engine] ?? '本地规则'
+}
+
+function clarifyEngineTone(engine) {
+  return engine === 'local' ? 'warn' : engine === 'dsh' || engine === 'dsh-llm' || ['claude', 'codex', 'pi'].includes(engine) ? 'accent' : 'neutral'
+}
+
+
 function runKey(repoPath, scope, conversationId, kind) {
   return `${repoPath ?? 'unknown'}::${scope ?? 'new'}::${conversationId ?? 'unknown'}::${kind}`
 }
@@ -760,7 +778,7 @@ function ClarifyCard({ card, answers, busy, title, onTitleChange, onPick, onSubm
         h(IconSeat, { size: 28 }, '◈'),
         h('strong', null, `需求澄清 · 第 ${card?.round ?? 1} 轮`),
         h(Pill, { tone: 'ok' }, '已提交'),
-        card?.engine === 'dsh' || card?.engine === 'dsh-llm' ? h(Pill, { tone: 'accent' }, card.engine === 'dsh-llm' ? 'DSH 模型' : 'DSH 对话') : null,
+        h(Pill, { tone: clarifyEngineTone(card?.engine) }, clarifyEngineLabel(card?.engine)),
       ),
       title
         ? h('div', { style: { display: 'flex', gap: 8, alignItems: 'baseline', marginTop: 8 } },
@@ -802,7 +820,7 @@ function ClarifyCard({ card, answers, busy, title, onTitleChange, onPick, onSubm
     h('div', { style: styles.row },
       h(IconSeat, { size: 28 }, '◈'),
       h('strong', null, `需求澄清 · 第 ${card?.round ?? 1} 轮`),
-      h(Pill, { tone: card?.engine === 'dsh' || card?.engine === 'dsh-llm' ? 'accent' : 'neutral' }, card?.engine === 'dsh' ? 'DSH 对话' : card?.engine === 'dsh-llm' ? 'DSH 模型' : '本地规则'),
+      h(Pill, { tone: clarifyEngineTone(card?.engine) }, clarifyEngineLabel(card?.engine)),
       card?.degraded ? h(Pill, { tone: 'warn' }, '已降级') : null,
     ),
     card?.reply ? h('div', { style: { marginTop: 6, color: T.text2, fontSize: T.font.base, whiteSpace: 'pre-wrap', lineHeight: 1.7 } }, card.reply) : null,
