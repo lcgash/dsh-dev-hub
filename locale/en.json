@@ -1900,7 +1900,8 @@
     "打开外部引擎失败：{value1}": "Failed to open the external engine: {value1}",
     "已用 {value1} 打开开发终端；提示词已写入 {value2}，请在终端继续。": "Opened the {value1} development terminal; the prompt was written to {value2}; continue there.",
     "你是由 DevHub 开发工作站启动的 {value1} 开发会话。开发流程：{value2}{value3}。": "You are a {value1} development session started by the DevHub workstation. Flow: {value2}{value3}.",
-    "{value1} 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。": "{value1} cannot call devhub_get / devhub_update; use the DevHub bridge CLI appended to the launch message to update tasks/change points/risks, and let the user decide on review and tests. Do not fabricate baseline diffs."
+    "{value1} 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。": "{value1} cannot call devhub_get / devhub_update; use the DevHub bridge CLI appended to the launch message to update tasks/change points/risks, and let the user decide on review and tests. Do not fabricate baseline diffs.",
+    "已切换 AI 引擎：{value1}（开发、澄清、评审都会使用它）": "AI engine switched: {value1} (used for development, clarification and review)."
   },
   "templateValues": {
     "通过": "passed",

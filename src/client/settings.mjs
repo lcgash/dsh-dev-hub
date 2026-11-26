@@ -117,12 +117,19 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
     setSaving(true); setSaveError(''); setNotice('')
     try {
       const body = await api(API.settings, { method: 'POST', body: JSON.stringify({ automation: next }) })
-      setAutomation(normalizeAutomation(body?.automation ?? next))
-      const baseNotice = next.mode === 'full'
-        ? (next.reviewEnabled === false
-          ? '已保存：完全自动化 + 已关闭独立评审，流程直接进入测试验证'
-          : '已保存：评审、本机自测、环境测试会自动推进，停在提交前')
-        : '已保存：每个节点都需要你手动触发'
+      const previous = normalizeAutomation(automation)
+      const nextValue = normalizeAutomation(body?.automation ?? next)
+      setAutomation(nextValue)
+      const engineChanged = nextValue.engine !== previous.engine
+      const modeChanged = nextValue.mode !== previous.mode || nextValue.reviewEnabled !== previous.reviewEnabled
+      const engineLabel = { dsh: 'DSH 原生会话', claude: 'Claude Code', codex: 'Codex', pi: 'Pi' }[nextValue.engine] ?? nextValue.engine
+      const baseNotice = engineChanged && !modeChanged
+        ? `已切换 AI 引擎：${engineLabel}（开发、澄清、评审都会使用它）`
+        : nextValue.mode === 'full'
+          ? (nextValue.reviewEnabled === false
+            ? '已保存：完全自动化 + 已关闭独立评审，流程直接进入测试验证'
+            : '已保存：评审、本机自测、环境测试会自动推进，停在提交前')
+          : '已保存：每个节点都需要你手动触发'
       const warnings = Array.isArray(body?.warnings) ? body.warnings : []
       setNotice(warnings.length ? `${baseNotice}；部分流程未更新：${warnings.slice(0, 3).join('；')}` : baseNotice)
     } catch (err) {
