@@ -59,8 +59,11 @@ export function deriveStage(item) {
   const techDocReady = Boolean(workflow.techDoc?.decision)
   const review = normalizeReview(workflow.review)
   const gate = reviewGate(item)
+  const tasksDone = (item?.tasks?.length ?? 0) > 0 && item.tasks.every((task) => Boolean(task?.done))
 
   if (submitted) return { stage: 'done', reason: '已提交代码' }
+  // 分析流程没有开发→评审→测试→提交的交付链：结论回写、任务完成即结束。
+  if (isAnalysis && tasksDone) return { stage: 'done', reason: '分析流程：结论与任务已产出，不进入评审/测试/提交' }
   // 评审被否/未完成时，测试通过也不能把流程往前推：先纠偏或先把评审结论拿回来
   if (review?.status === 'failed') return { stage: 'develop', reason: gate.reason }
   if (review?.status === 'pending') return { stage: 'review', reason: gate.reason }

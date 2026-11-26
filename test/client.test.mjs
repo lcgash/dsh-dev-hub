@@ -888,7 +888,7 @@ test('回归：会话运行中主按钮变成禁用的「正在开发…」，�
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /const sessionRunning = Boolean\(draft\.session\?\.id\) && Boolean\(session\?\.running \?\? draft\.running\)/)
-  assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| reviewBusy \|\| advance\.disabled \|\| \(sessionRunning && !reviewAction\)/)
+  assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| reviewBusy \|\| \(isAnalysisFlow \? false : advance\.disabled\)/)
   assert.match(index, /开发会话还在运行。现在开始评审可能读到半成品代码/)
   assert.match(index, /sessionRunning && reviewAction/)
   assert.match(index, /advance\.label \|\| '评审'/)
@@ -1202,7 +1202,7 @@ test('回归：流程类型支持第三类「分析」，详情/列表/报告/�
 
   const nextSteps = await readFile(new URL('../src/client/next-steps.mjs', import.meta.url), 'utf8')
   assert.match(nextSteps, /开启分析会话/)
-  assert.match(nextSteps, /不进入提交/)
+  assert.doesNotMatch(nextSteps, /action: 'local-test'/)
 })
 
 test('回归：下一步只保留一个"发送"，由工作站判断补台账还是发会话', async () => {
@@ -1721,7 +1721,7 @@ test('开发报告：详情新增「报告」页签，ReportView 只在报告页
   // 顶栏顺序与高度：继续推进（主）→ 预览报告 → ⋯ 更多；三者同高 32
   const headerStart = index.indexOf('// 顶栏操作从主到次')
   // 顶栏新增了「上次评审失败原因」内联提示，切片长度跟着放宽（顺序断言不变）
-  const headerActions = index.slice(headerStart, headerStart + 4200)
+  const headerActions = index.slice(headerStart, headerStart + 5200)
   const primaryAt = headerActions.indexOf("'继续推进'")
   const previewAt = headerActions.indexOf("children: '预览报告'")
   const moreAt = headerActions.indexOf('h(HeaderMenu')

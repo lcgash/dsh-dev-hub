@@ -1435,7 +1435,15 @@
     "Claude Code 开发权限": "Claude Code development permission",
     "acceptEdits 会在需要命令行权限时停下；请在终端处理。bypassPermissions 会自动放行所有工具，需先在终端接受免责声明，风险更高。": "acceptEdits pauses when command permissions are needed; handle them in the terminal. bypassPermissions auto-approves all tools, requires accepting the disclaimer in the terminal first, and is riskier.",
     "acceptEdits（推荐）": "acceptEdits (recommended)",
-    "bypassPermissions（高风险）": "bypassPermissions (high risk)"
+    "bypassPermissions（高风险）": "bypassPermissions (high risk)",
+    "分析会话还在工作，等当前这步结束再继续": "The analysis session is still working; wait for this step to finish.",
+    "继续完成只读分析：把剩余结论、证据与任务更新回写，不修改仓库文件，不进入评审/测试/提交。": "Continue the read-only analysis: write back the remaining conclusions, evidence and task updates; do not modify repository files or enter review/testing/submission.",
+    "已让分析会话继续；完成后任务会自动结项": "The analysis session continues; tasks will close automatically when done.",
+    "流程已完成：只读分析结论与任务已归档（不进入评审/测试/提交）": "Flow complete: read-only analysis conclusions and tasks are archived (no review/testing/submission).",
+    "正在分析…": "Analyzing…",
+    "继续分析中…": "Continuing analysis…",
+    "继续分析": "Continue analysis",
+    "分析流程：结论与任务已产出，不进入评审/测试/提交": "Analysis flow: conclusions and tasks are complete; it does not enter review/testing/submission"
   },
   "templates": {
     "成员 {name}": "Member {name}",

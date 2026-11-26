@@ -212,9 +212,7 @@ test('suggestNextSteps：分析流程只读，不建议评审/环境测试/提�
   const summary = describeFlow(analysis, { sessionId: 's1', running: false })
   assert.equal(summary.intent, 'analysis')
   const next = suggestNextSteps(analysis, { sessionId: 's1', running: false })
-  assert.ok(next.steps.some((step) => step.action === 'local-test'))
-  assert.ok(!next.steps.some((step) => ['review', 'env-test', 'submit'].includes(step.action)))
-  assert.match(next.steps.find((step) => step.action === 'local-test').hint, /只读证据/)
+  assert.ok(!next.steps.some((step) => ['local-test', 'review', 'env-test', 'submit'].includes(step.action)))
 
   // 没有会话时，开场提示也要说清是只读分析
   const fresh = suggestNextSteps(analysis, null)

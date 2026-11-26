@@ -49,8 +49,13 @@ export function deriveAttention(item, { running = false, pendingQuestions = 0, p
     && !(tests.environment?.status === 'passed' || tests.environment?.status === 'skipped')) {
     return { kind: 'ready-env', label: '本机自测已跳过：可以跑环境测试', tone: 'accent' }
   }
-  // 开发完成先评审（评审在测试验证之前）；分析流程例外：本机自测通过即结束
+  // 分析流程只读：任务完成即结束，不需要评审/测试动作
   const intent = item?.workflow?.intent
+  if (intent === 'analysis') {
+    const tasks = Array.isArray(item?.tasks) ? item.tasks : []
+    if (tasks.length > 0 && tasks.every((task) => Boolean(task?.done))) return null
+  }
+  // 开发完成先评审（评审在测试验证之前）；分析流程例外
   if (review.status === 'idle' && stage === 'develop' && intent !== 'analysis') {
     const tasks = Array.isArray(item?.tasks) ? item.tasks : []
     const allDone = tasks.length > 0 && tasks.every((task) => Boolean(task?.done))

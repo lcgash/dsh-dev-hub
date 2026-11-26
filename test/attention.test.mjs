@@ -93,12 +93,12 @@ test('开发完成先评审：任务全部完成 + develop + 会话空闲 → re
   // 不传 facts 时默认 running=false，结论一致
   assert.equal(deriveAttention(ready).kind, 'ready-review')
 
-  // 分析流程例外：本机自测通过即结束，开发完成仍先提示跑本机自测
+  // 分析流程只读：任务完成即结束，不再提示跑测试/评审
   const analysis = bound({
     workflow: { stage: 'develop', intent: 'analysis', tests: {} },
     tasks: [{ text: 'a', done: true }],
   })
-  assert.deepEqual(deriveAttention(analysis), { kind: 'ready-test', label: '可以跑本机自测', tone: 'accent' })
+  assert.equal(deriveAttention(analysis), null)
 
   // 评审已通过、还没跑本机自测：此时才提示本机自测
   const reviewed = bound({

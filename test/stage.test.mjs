@@ -240,3 +240,13 @@ test('deriveStage：人工跳过测试允许推进，但报告/阶段会显式�
   staleSkip.workflow.tests = { local: { status: 'skipped', stale: true }, environment: { status: 'not_run' } }
   assert.equal(deriveStage(staleSkip).stage, 'develop')
 })
+
+test('分析流程任务完成即结束，不要求评审/测试/提交', () => {
+  const analysis = base({ intent: 'analysis' })
+  analysis.baseline = { commit: 'abc', branch: 'main', startedAt: new Date().toISOString() }
+  analysis.tasks = [{ text: '输出结论', done: false }]
+  assert.equal(deriveStage(analysis).stage, 'develop')
+  analysis.tasks = [{ text: '输出结论', done: true }]
+  assert.equal(deriveStage(analysis).stage, 'done')
+  assert.match(deriveStage(analysis).reason, /不进入评审\/测试\/提交/)
+})

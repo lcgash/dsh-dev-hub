@@ -154,7 +154,10 @@ export function suggestNextSteps(item, session) {
   // 评审通过，或小改动自动免评审且尚未派发过：都算评审已清关
   const reviewCleared = review.status === 'passed' || (review.required === false && review.status === 'idle')
   if (summary.session.bound && !summary.session.running) {
-    if (review.status === 'failed') {
+    // 分析流程只读：不产生评审/测试/提交步骤；任务未完成由底部的 edit-plan 兜底提示。
+    if (isAnalysis) {
+      // no-op
+    } else if (review.status === 'failed') {
       if (review.exhausted) {
         push('review', '评审已达自动轮次上限，人工决定', `已自动进行 ${review.round}/${review.maxRounds} 轮评审；系统不再自动返工/复审，请到评审页选择人工通过、重置或手工重试`)
       } else if (review.reworkAt) {
@@ -166,11 +169,6 @@ export function suggestNextSteps(item, session) {
       push('start-review', '重试评审', '有审核员未返回结论：点它重试派发（流程标记为待处理，不能当成通过）')
     } else if (review.status === 'pending') {
       push('review', '独立评审进行中', `第 ${review.round} 轮：${review.passed}/${review.total} 位已返回，等结论（不重复派发）`)
-    } else if (isAnalysis) {
-      // 分析流程没有「开发→评审→测试」的强顺序：本机自测只作为只读证据，由工作站执行
-      if (!localTestDone) {
-        push('local-test', '跑本机自测', `分析流程用本机自测作为只读证据（当前${summary.localTestLabel}）；通过即结束，不进入提交；也可以跳过（原因会进报告）`)
-      }
     } else if (reviewCleared) {
       // 评审通过或小改动免评审后进入测试验证：测试统一由工作站按钮执行，不催开发会话自己跑
       if (!localTestDone) {

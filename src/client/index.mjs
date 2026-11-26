@@ -685,6 +685,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const [branchName, setBranchName] = useState('')
   // 详情页局部状态：当前页签 + 当前唯一展开的编辑区（一次只编辑一处）+ 编辑前快照（取消时回滚）
   const [tab, setTab] = useState('overview')
+  useEffect(() => {
+    if (draft?.workflow?.intent === 'analysis' && ['review', 'test'].includes(tab)) setTab('overview')
+  }, [draft?.workflow?.intent, tab])
   // 报告随时可预览：顶栏按钮打开弹窗，保存到本机的能力在弹窗内的报告工具栏里
   const [reportPreviewOpen, setReportPreviewOpen] = useState(false)
   // 会话动态默认收起：它是过程证据，不应把"开发到哪一步"挤出首屏
@@ -830,7 +833,12 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 「继续推进」在评审这一步的去向（自动开始/评审中禁用/失败重试）：与 core/next-steps 同一口径
   const advance = reviewAdvancePlan(draft)
   const advanceHint = advanceError || (advance.action === 'retry' ? advance.hint : '')
-  const stageIndex = WORKFLOW_STAGES.findIndex((entry) => entry.id === stage)
+  const stageSteps = workflow.intent === 'analysis'
+    ? WORKFLOW_STAGES.filter((entry) => !['review', 'verify', 'submit'].includes(entry.id))
+    : draft.workflow?.gitRepo === false
+      ? WORKFLOW_STAGES.filter((entry) => entry.id !== 'submit')
+      : WORKFLOW_STAGES
+  const stageIndex = stageSteps.findIndex((entry) => entry.id === stage)
   // 状态与阶段文案经常同义（开发中/开发中、已完成/已完成）：并排只显示一次，避免重复标签
   const stageLabelText = STAGE_LABELS[stage] ?? stage
   const statusLabelText = STATUS_LABELS[draft.status] ?? draft.status
@@ -838,6 +846,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 会话正在跑时当前这步还没完：主按钮不应再给「继续推进」（否则会重复排队一次推进）
   const sessionRunning = Boolean(draft.session?.id) && Boolean(session?.running ?? draft.running)
   const reviewAction = advance.action === 'dispatch' || advance.action === 'retry'
+  const isAnalysisFlow = workflow.intent === 'analysis'
   const questions = workflow.questions ?? []
   const answered = questions.filter((question) => String(question.answer ?? '').trim()).length
   const tasks = draft.tasks ?? []
@@ -1196,6 +1205,25 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       return
     }
     runTest('local')
+  }
+
+  /** 分析流程只读：继续分析会话，不进入评审/测试/提交。 */
+  async function continueAnalysis() {
+    if (busy) return
+    const boundId = draft.session?.id
+    if (!boundId) { onLaunch?.(draft.id); return }
+    if (sessionRunning) {
+      setNotice('分析会话还在工作，等当前这步结束再继续')
+      return
+    }
+    setBusy(true); setError(''); setNotice('')
+    try {
+      const result = await sendToDeveloperSession(boundId, '继续完成只读分析：把剩余结论、证据与任务更新回写，不修改仓库文件，不进入评审/测试/提交。')
+      if (!result.sent) throw new Error(result.reason ?? '发送失败')
+      setNotice('已让分析会话继续；完成后任务会自动结项')
+    } catch (err) {
+      setError(errorText(err))
+    } finally { setBusy(false) }
   }
 
   async function continueDev() {
@@ -3469,7 +3497,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         h('div', { style: styles.row },
           h(Button, { primary: true, onClick: () => setReportPreviewOpen(true), children: '预览开发报告' }),
           h(Button, { onClick: () => setTab('overview'), children: '查看变更文件' }),
-          h(Button, { onClick: () => setTab('test'), children: '查看测试与提交' }),
+          isAnalysisFlow ? null : h(Button, { onClick: () => setTab('test'), children: '查看测试与提交' }),
         ),
       )
     }
@@ -3824,8 +3852,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         h('span', { style: { ...styles.num, fontSize: T.font.sm, color: T.text2, fontWeight: 600 } },
           tasks.length ? `开发任务 ${doneCount}/${tasks.length}` : '任务清单为空'),
         h('span', { style: styles.sectionHint }, '进度条只统计开发任务，不代表流程完成'),
-        h(Tag, { tone: tests.local?.stale ? 'warn' : testTone(tests.local) }, `本机自测 ${tests.local?.stale ? '已过期' : testLabel(tests.local)}`),
-        h(Tag, { tone: tests.environment?.stale ? 'warn' : testTone(tests.environment) }, `环境测试 ${tests.environment?.stale ? '已过期' : testLabel(tests.environment)}`),
+        isAnalysisFlow ? null : h(Tag, { tone: tests.local?.stale ? 'warn' : testTone(tests.local) }, `本机自测 ${tests.local?.stale ? '已过期' : testLabel(tests.local)}`),
+        isAnalysisFlow ? null : h(Tag, { tone: tests.environment?.stale ? 'warn' : testTone(tests.environment) }, `环境测试 ${tests.environment?.stale ? '已过期' : testLabel(tests.environment)}`),
         checks.length ? h(Tag, { tone: checksPassed === checks.length ? 'ok' : 'warn' }, `验收 ${checksPassed}/${checks.length}`) : null,
         totals
           ? h('span', { style: styles.sectionHint }, `变更 ${totals.files ?? 0} 文件 · +${totals.added ?? 0} / -${totals.removed ?? 0}`)
@@ -3842,7 +3870,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         },
       }, pendingStep
         ? `开发任务${tasks.length && doneCount >= tasks.length ? '已完成' : '进行中'}，流程未结束：${pendingStep}${pendingTasks.length ? `；${pendingTasks.length} 个任务未完成（${pendingTasks.slice(0, 2).map((task) => task.text).join('、')}${pendingTasks.length > 2 ? ' 等' : ''}）` : ''}`
-        : '流程已完成：开发任务、评审、测试与提交都已完成'),
+        : isAnalysisFlow ? '流程已完成：只读分析结论与任务已归档（不进入评审/测试/提交）' : '流程已完成：开发任务、评审、测试与提交都已完成'),
     )
   }
 
@@ -3966,8 +3994,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const tabOptions = [
     { value: 'overview', label: '概览' },
     { value: 'plan', label: '计划' },
-    { value: 'review', label: '独立评审' },
-    { value: 'test', label: '测试与提交' },
+    ...(isAnalysisFlow ? [] : [{ value: 'review', label: '独立评审' }, { value: 'test', label: '测试与提交' }]),
     { value: 'report', label: '报告' },
   ]
 
@@ -4055,11 +4082,16 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               },
               // 评审 running（pending）时禁用并显示「评审中」；失败/异常时保持可点，再点即重试派发
               // 评审动作即使开发会话还在跑也允许点击：先确认是否接受“可能审到半成品”
-              disabled: busy || Boolean(launchBusy) || reviewBusy || advance.disabled || (sessionRunning && !reviewAction),
+              disabled: busy || Boolean(launchBusy) || reviewBusy || (isAnalysisFlow ? false : advance.disabled) || (sessionRunning && !reviewAction),
               title: sessionRunning
                 ? (reviewAction ? '开发会话还在运行：点击会先确认是否现在评审' : '开发会话正在工作：等当前这步结束再继续推进')
                 : (advanceHint || undefined),
               onClick: () => {
+                if (isAnalysisFlow) {
+                  if (draft.session?.id) runLaunch('continue', continueAnalysis)
+                  else runLaunch('open', () => onLaunch?.(draft.id))
+                  return
+                }
                 if (advance.action === 'manual') { setTab('review'); setNotice(advance.hint); return }
                 if (advance.action === 'rework') { runLaunch('rework', reworkFromReview); return }
                 if (advance.action === 'verify') { advanceVerify(advance); return }
@@ -4072,7 +4104,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                 if (draft.session?.id) runLaunch('continue', continueDev)
                 else runLaunch('open', () => onLaunch?.(draft.id))
               },
-              children: reviewBusy || launchBusy === 'review'
+              children: isAnalysisFlow
+                ? (sessionRunning || launchBusy === 'continue'
+                  ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), sessionRunning ? '正在分析…' : '继续分析中…']
+                  : (!draft.session?.id ? '开启分析会话' : '继续分析'))
+                : reviewBusy || launchBusy === 'review'
                 ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '评审中…']
                 : sessionRunning && reviewAction
                   ? `${advance.label || '评审'}（开发中）`
@@ -4128,9 +4164,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           : '阶段随工作自动推进：开发任务完成后点「继续推进」开始独立评审；评审通过 → 测试验证（本机/环境测试由工作站执行）→ 待提交 → 完成'),
       ),
       h(ArrowSteps, {
-        stages: draft.workflow?.gitRepo === false || draft.workflow?.intent === 'analysis'
-          ? WORKFLOW_STAGES.filter((entry) => entry.id !== 'submit')
-          : WORKFLOW_STAGES,
+        stages: stageSteps,
         stageIndex,
         activePartial: stage === 'verify' && tests.local?.status === 'passed' && !tests.local?.stale && tests.environment?.status !== 'passed',
         // 当前阶段正在干活：用转圈替代静态圆点，阶段条本身也在“动”。
