@@ -773,11 +773,11 @@ function claudeSessionId(output) {
   return match?.[1] ?? null
 }
 
-async function runClaudeBackground(root, prompt, { resumeId = null, permissionMode = 'acceptEdits' } = {}) {
+async function runClaudeBackground(root, prompt, { resumeId = null, permissionMode = 'auto' } = {}) {
   const bin = await claudeBinary()
   const text = String(prompt ?? '').trim()
   if (!text) throw new Error('Claude Code 启动内容为空')
-  const args = ['--bg', '--permission-mode', String(permissionMode || 'acceptEdits')]
+  const args = ['--bg', '--permission-mode', String(permissionMode || 'auto')]
   if (resumeId) args.push('--resume', String(resumeId))
   args.push(text)
   const { stdout, stderr } = await runExecutable(bin, args, {

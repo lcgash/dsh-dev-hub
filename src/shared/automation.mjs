@@ -7,7 +7,7 @@
 export const AUTOMATION_MODES = ['full', 'manual']
 // 开发会话引擎：DSH 原生会话 / 本机 Claude Code（后台会话）
 export const DEVELOPER_ENGINES = ['dsh', 'claude', 'codex', 'pi']
-export const CLAUDE_PERMISSION_MODES = ['acceptEdits', 'bypassPermissions']
+export const CLAUDE_PERMISSION_MODES = ['auto', 'acceptEdits', 'bypassPermissions']
 
 export function normalizeAutomation(raw) {
   const value = raw && typeof raw === 'object' ? raw : {}
@@ -17,6 +17,6 @@ export function normalizeAutomation(raw) {
     reviewEnabled: value.reviewEnabled === false ? false : true,
     engine: DEVELOPER_ENGINES.includes(value.engine) ? value.engine : 'dsh',
     // Claude Code 后台开发会话的权限模式；bypass 需要用户先在终端接受免责声明
-    claudePermissionMode: CLAUDE_PERMISSION_MODES.includes(value.claudePermissionMode) ? value.claudePermissionMode : 'acceptEdits',
+    claudePermissionMode: CLAUDE_PERMISSION_MODES.includes(value.claudePermissionMode) ? value.claudePermissionMode : 'auto',
   }
 }

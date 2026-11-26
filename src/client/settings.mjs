@@ -243,13 +243,13 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
               ? h('div', { style: { ...styles.card, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 } },
                 h('span', { style: { fontSize: T.font.base, fontWeight: 600, color: T.text } }, 'Claude Code 开发权限'),
                 h('span', { style: styles.sectionHint },
-                  'acceptEdits 会在需要命令行权限时停下；请在终端处理。bypassPermissions 会自动放行所有工具，需先在终端接受免责声明，风险更高。'),
+                  'auto 会自动处理常见的命令权限请求，推荐；acceptEdits 会在需要命令行权限时停下，需去终端处理；bypassPermissions 会放行所有工具，需先在终端接受免责声明，风险更高。'),
                 h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
-                  ...['acceptEdits', 'bypassPermissions'].map((mode) => h(Button, {
+                  ...['auto', 'acceptEdits', 'bypassPermissions'].map((mode) => h(Button, {
                     key: mode,
                     style: automation.claudePermissionMode === mode ? { borderColor: T.brand, background: T.brandSoft, color: T.brand } : {},
                     onClick: () => save({ ...automation, claudePermissionMode: mode }),
-                    children: mode === 'acceptEdits' ? 'acceptEdits（推荐）' : 'bypassPermissions（高风险）',
+                    children: mode === 'auto' ? 'auto（推荐）' : mode === 'acceptEdits' ? 'acceptEdits' : 'bypassPermissions（高风险）',
                   })),
                 ),
               )

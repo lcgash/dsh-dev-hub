@@ -207,6 +207,25 @@ function BrandMark({ size = 20, tone = T.brand, accent = T.brand }) {
   )
 }
 
+function EngineGlyph({ id, size = 16 }) {
+  const common = { width: size, height: size, viewBox: '0 0 24 24', 'aria-hidden': true, style: { display: 'block' } }
+  if (id === 'claude') {
+    return h('svg', common, h('path', {
+      fill: 'none', stroke: '#d97757', strokeWidth: 2.2, strokeLinecap: 'round',
+      d: 'M12 3v6M12 15v6M3 12h6M15 12h6M5.6 5.6l4.2 4.2M14.2 14.2l4.2 4.2M5.6 18.4l4.2-4.2M14.2 9.8l4.2-4.2',
+    }))
+  }
+  if (id === 'codex') {
+    return h('svg', common, h('rect', { x: 3, y: 3, width: 18, height: 18, rx: 4, fill: '#111827' }),
+      h('text', { x: 12, y: 16, textAnchor: 'middle', fill: '#fff', fontFamily: 'Menlo, monospace', fontSize: 9, fontWeight: 700 }, '>_'))
+  }
+  if (id === 'pi') {
+    return h('svg', common, h('rect', { x: 3, y: 3, width: 18, height: 18, rx: 4, fill: '#e8f1ff' }),
+      h('text', { x: 12, y: 16, textAnchor: 'middle', fill: '#2563eb', fontFamily: 'Georgia, serif', fontSize: 13, fontWeight: 700 }, 'π'))
+  }
+  return h('svg', common, h('circle', { cx: 12, cy: 12, r: 5, fill: T.brand }), h('circle', { cx: 12, cy: 12, r: 1.8, fill: '#fff' }))
+}
+
 function EditorLogo({ id, size = 16 }) {
   const common = { width: size, height: size, viewBox: '0 0 24 24', 'aria-hidden': true, style: { display: 'block' } }
   if (id === 'vscode') {
@@ -825,6 +844,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const plan = workflow.plan ?? {}
   const estimate = plan.estimate ?? {}
   const isAnalysisFlow = workflow.intent === 'analysis'
+  const engineNow = draft.workflow?.engine || draft.session?.engine || automation?.engine || 'dsh'
+  const engineName = { dsh: 'DSH', claude: 'Claude Code', codex: 'Codex', pi: 'Pi' }[engineNow] ?? 'DSH'
   const analysisTasksDone = isAnalysisFlow
     && (draft.tasks ?? []).length > 0
     && (draft.tasks ?? []).every((task) => Boolean(task?.done))
@@ -4055,6 +4076,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                 commit({ ...draft, workflow: { ...workflow, intent: nextIntent } }, '已更新流程类型')
               },
             }, INTENT_LABEL[intentOf(workflow.intent)]),
+            h(Tag, {
+              tone: 'info',
+              title: `当前 AI 引擎：${engineName}（开发/澄清/评审）`,
+              style: { gap: 6 },
+            }, h(EngineGlyph, { id: engineNow, size: 15 }), engineName),
           ),
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' } },
             h('span', { style: { ...styles.mono, color: T.text4 } }, draft.id),
