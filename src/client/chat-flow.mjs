@@ -308,6 +308,9 @@ export async function confirmAndStart(deps, plan) {
 
   const launched = await deps.launch({
     cwd: started?.workRoot ?? plan.cwd,
+    itemId: item.id,
+    contextPack: started?.context?.prompt ?? '',
+    item: started?.item ?? item,
     prompt: deps.prompt(started?.context?.prompt, started?.item ?? item),
   })
   messages.push(stationMessage(launched?.sent

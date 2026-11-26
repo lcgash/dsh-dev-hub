@@ -55,7 +55,7 @@ import {
   summarizeRecon,
   userMessage,
 } from './chat-flow.mjs'
-import { launchDevSession, launchPrompt } from './session.mjs'
+import { launchClaudePrompt, launchDevSession, launchExternalPrompt, launchPrompt } from './session.mjs'
 import { clearConversationJob, getActiveChat, getActiveConversationId, getConversation, listChats, saveChat, selectChat, startNewChat, titleOf } from './chat-store.mjs'
 import { ATTACHMENT_MAX_BYTES, attachmentLabel, isImageAttachment, normalizeAttachments } from '../shared/attachment.mjs'
 
@@ -1134,7 +1134,23 @@ function makeDeps(ctx) {
     create: (payload) => api(API.wizard, { method: 'POST', body: JSON.stringify({ action: 'create', ...payload }) }),
     start: (id) => api(API.start, { method: 'POST', body: JSON.stringify({ id }) }),
     sync: (id) => api(API.sync, { method: 'POST', body: JSON.stringify({ id }) }),
-    launch: ({ cwd, prompt }) => launchDevSession(ctx, { cwd, prompt, open: false }),
+    launch: async ({ cwd, prompt, itemId, contextPack, item }) => {
+      let engine = 'dsh'
+      try {
+        const settings = await api(API.settings)
+        engine = settings?.automation?.engine ?? 'dsh'
+      } catch { /* 读设置失败按 DSH，不阻断开工 */ }
+      if (engine === 'claude' || engine === 'codex' || engine === 'pi') {
+        const packPrompt = engine === 'claude'
+          ? launchClaudePrompt(contextPack, item)
+          : launchExternalPrompt(contextPack, item, engine === 'codex' ? 'Codex' : 'Pi')
+        const body = engine === 'claude'
+          ? await api(API.claude, { method: 'POST', body: JSON.stringify({ id: itemId, action: 'launch', prompt: packPrompt }) })
+          : await api(API.external, { method: 'POST', body: JSON.stringify({ id: itemId, engine, action: 'launch', prompt: packPrompt }) })
+        return { sessionId: body?.sessionId ?? null, sent: Boolean(body?.sessionId), engine, item: body?.item }
+      }
+      return launchDevSession(ctx, { cwd, prompt, open: false })
+    },
     prompt: launchPrompt,
   }
 }

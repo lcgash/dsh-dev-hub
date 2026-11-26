@@ -2400,3 +2400,14 @@ test('长任务进度：计时从 job.at 恢复，文案显示实际 AI 引擎',
   assert.match(chat, /正在扫描仓库、定位可能要改的文件/)
   assert.match(chat, /props|flex: '0 0 auto', whiteSpace: 'nowrap'/)
 })
+
+test('聊天式建流程也按项目 AI 引擎启动开发会话', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
+  const flow = await readFile(new URL('../src/client/chat-flow.mjs', import.meta.url), 'utf8')
+  assert.match(flow, /itemId: item\.id/)
+  assert.match(chat, /const settings = await api\(API\.settings\)/)
+  assert.match(chat, /engine = settings\?\.automation\?\.engine/)
+  assert.match(chat, /API\.claude/)
+  assert.match(chat, /API\.external/)
+})

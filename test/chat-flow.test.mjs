@@ -73,7 +73,13 @@ test('confirmAndStart：首次先落规范，再建流程、记 baseline、开�
   assert.equal(created.rootProblem, undefined, '不把原始描述直接当根因')
   assert.equal(created.goal, undefined, '不把原始描述直接当目标')
   assert.deepEqual(created.spec, { problem: 'webhook 失败后没有重试，通知丢失', goals: ['给 webhook 增加失败重试'] }, '澄清规格要透传给 Host')
-  assert.deepEqual(calls[3][1], { cwd: '/repo', prompt: 'HEAD|gitlab-webhook|PACK' })
+  assert.deepEqual(calls[3][1], {
+    cwd: '/repo',
+    itemId: 'gitlab-webhook',
+    contextPack: 'PACK',
+    item: { id: 'gitlab-webhook', title: 'Gitlab webhook' },
+    prompt: 'HEAD|gitlab-webhook|PACK',
+  })
   assert.equal(result.sessionId, 'session-3')
   assert.equal(result.messages.length, 4, '首次：规范 + 流程 + baseline + 会话 四条工作站消息')
   assert.match(result.messages[0].text, /12 条约束/)
