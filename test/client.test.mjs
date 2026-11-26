@@ -2422,3 +2422,13 @@ test('所有 Agent 流程都通过当前 AI 引擎：扫描/澄清/评审/需求
   assert.match(host, /label: 'devhub-conflict-resolve'/)
   assert.match(host, /engine: projectAutomation\(profile, repo\)\.engine/)
 })
+
+test('Claude 等待授权时继续推进会打开终端，而不是假成功', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /正在等待.*授权\/选择/)
+  assert.match(host, /current\.state/)
+  assert.match(index, /draft\.externalState\?\.status === 'blocked'/)
+  assert.match(index, /已打开终端，请处理后回来继续/)
+})

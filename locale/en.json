@@ -1455,7 +1455,8 @@
     "分析会话动态（默认收起，避免挤占进度）": "Analysis session activity (collapsed by default)",
     "只读分析，不进入评审/测试/提交": "Read-only analysis; no review/testing/submission",
     "auto 会自动处理常见的命令权限请求，推荐；acceptEdits 会在需要命令行权限时停下，需去终端处理；bypassPermissions 会放行所有工具，需先在终端接受免责声明，风险更高。": "auto handles common command permission requests automatically (recommended); acceptEdits pauses and requires handling in the terminal; bypassPermissions allows all tools and requires accepting the disclaimer first, with higher risk.",
-    "auto（推荐）": "auto (recommended)"
+    "auto（推荐）": "auto (recommended)",
+    "Claude Code 正在等待授权/选择：已打开终端，请处理后回来继续": "Claude Code is waiting for approval/a choice: the terminal was opened; handle it and return."
   },
   "templates": {
     "成员 {name}": "Member {name}",

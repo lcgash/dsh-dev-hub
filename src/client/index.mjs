@@ -1267,6 +1267,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     if (advance.action === 'wait') return
     const boundId = draft.session?.id
     if (!boundId) { onLaunch?.(draft.id); return }
+    if (draft.externalState?.status === 'blocked') {
+      setNotice('Claude Code 正在等待授权/选择：已打开终端，请处理后回来继续')
+      onOpenSession?.(boundId)
+      return
+    }
     // 防御：即使按钮状态还没刷新，也不在会话运行时再排一条“继续推进”
     if (session?.running) {
       setNotice('开发会话正在工作，等当前这步结束再继续推进')
