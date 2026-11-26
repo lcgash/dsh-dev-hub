@@ -3920,9 +3920,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         },
       },
         h('span', { style: { fontWeight: 600, color: T.text2 } }, '⏱'),
-        h('span', null, '流程耗时：', h('strong', { style: { color: T.text2 } }, formatDuration(clockNow - Number(draft.baseline?.startedAt || draft.createdAt || clockNow)))),
+        h('span', null, '流程耗时：', h('strong', { style: { color: T.text2 } }, formatDuration(clockNow - Date.parse(draft.baseline?.startedAt || draft.createdAt || new Date().toISOString())))),
         draft.session?.id
-          ? h('span', null, `${isAnalysisFlow ? '分析会话' : '开发会话'}：`, h('strong', { style: { color: T.text2 } }, formatDuration(clockNow - Number(draft.session?.boundAt || clockNow))))
+          ? h('span', null, `${isAnalysisFlow ? '分析会话' : '开发会话'}：`, h('strong', { style: { color: T.text2 } }, formatDuration(clockNow - Date.parse(draft.session?.boundAt || new Date().toISOString()))))
           : null,
         h('span', null, '最近活动：', h('strong', { style: { color: T.text2 } }, formatDuration(clockNow - Number(draft.updatedAt ? Date.parse(draft.updatedAt) : clockNow)))),
       ),
@@ -3973,6 +3973,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
           h('span', { style: styles.sectionTitle }, isAnalysisFlow ? '分析会话' : '关联会话'),
           boundId ? h(SessionBadge, { session: live }) : null,
+          boundId && externalEngine && externalState === 'blocked'
+            ? h(Tag, { tone: 'warn' }, '等待授权/选择')
+            : null,
           boundId && Number(live?.turns) > 0
             ? h('span', { style: styles.sectionHint }, `第 ${live.turns} 轮`)
             : null,
@@ -4095,7 +4098,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
             h('span', { style: styles.pageTitle }, draft.title || draft.id),
             h(StatusPill, { status: statusForUi }),
-            running
+            draft.externalState?.status === 'blocked'
+              ? h(Tag, { tone: 'warn' }, '等待授权/选择')
+              : running
               ? h(Tag, {
                 tone: 'accent',
                 title: '开发会话正在工作',

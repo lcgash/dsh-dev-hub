@@ -1461,7 +1461,8 @@
     "流程耗时：": "Flow time:",
     "最近活动：": "Last activity:",
     "分析会话：": "Analysis session:",
-    "开发会话：": "Development session:"
+    "开发会话：": "Development session:",
+    "等待授权/选择": "Waiting for approval/choice"
   },
   "templates": {
     "成员 {name}": "Member {name}",
