@@ -570,7 +570,7 @@ test('回归：需求澄清要有进度反馈、已提交卡片锁死、聊天�
   const { readFile } = await import('node:fs/promises')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   // 进度：消息流里的打字气泡（动作名 + 已用秒数 + 三个点）
-  assert.match(chat, /正在结合仓库证据整理问题/)
+  assert.match(chat, /正在进行需求澄清（第 \$\{round\} 轮）/)
   assert.match(chat, /devhub-typing-dot/)
   assert.match(chat, /\$\{progress\.seconds\}s/)
   // 已提交：resolved 锁 + 防重复提交
@@ -994,7 +994,7 @@ test('聊天恢复：确认/计划阶段没有可操作卡片时解锁输入，�
   assert.doesNotMatch(chat, /onStateLoaded/)
   // 旧组件请求还在飞时，新组件轮询 chat store，收尾后自动载入结果而不是永远空白
   assert.match(chat, /isConversationRunning\(state\.repo\.path, scope, activeChatIdRef\.current, resumeKind\)\) \{/)
-  assert.match(chat, /当前扫描\/澄清还在处理，结束后会自动继续…/)
+  assert.match(chat, /仍在分析上一轮请求/)
   assert.match(chat, /const stillRunning = isConversationRunning\(repoPath, scope, activeChatIdRef\.current, resumeKind\)/)
 })
 
@@ -2082,7 +2082,7 @@ test('聊天任务恢复：切页/刷新回来 job 与进度可见，不会静�
   const { readFile } = await import('node:fs/promises')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   assert.match(chat, /setJob\(conversation\?\.job \?\? null\)/)
-  assert.match(chat, /已恢复任务，正在等待工作站继续/)
+  assert.match(chat, /正在等待 \$\{engineName\(devEngine\)\} 返回/)
   assert.match(chat, /setJob\(conversation\?\.job \?\? null\)/)
   assert.match(chat, /resumeTriedRef\.current = false/)
 })
@@ -2389,4 +2389,14 @@ test('Claude 授权/选择：blocked 会话提示打开终端，权限模式可�
   assert.match(index, /Claude Code 正在等待授权或选择/)
   assert.match(settings, /claudePermissionMode/)
   assert.match(automation, /bypassPermissions/)
+})
+
+test('长任务进度：计时从 job.at 恢复，文案显示实际 AI 引擎', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
+  assert.match(chat, /startedAt: Number\(job\.at\)/)
+  assert.match(chat, /正在等待 \$\{engineName\(devEngine\)\} 返回/)
+  assert.match(chat, /仍在分析上一轮请求/)
+  assert.match(chat, /正在扫描仓库、定位可能要改的文件/)
+  assert.match(chat, /props|flex: '0 0 auto', whiteSpace: 'nowrap'/)
 })

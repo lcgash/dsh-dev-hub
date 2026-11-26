@@ -1913,7 +1913,11 @@
     "已用 {value1} 打开开发终端；提示词已写入 {value2}，请在终端继续。": "已用 {value1} 打开开发终端；提示词已写入 {value2}，请在终端继续。",
     "你是由 DevHub 开发工作站启动的 {value1} 开发会话。开发流程：{value2}{value3}。": "你是由 DevHub 开发工作站启动的 {value1} 开发会话。开发流程：{value2}{value3}。",
     "{value1} 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。": "{value1} 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。",
-    "已切换 AI 引擎：{value1}（开发、澄清、评审都会使用它）": "已切换 AI 引擎：{value1}（开发、澄清、评审都会使用它）"
+    "已切换 AI 引擎：{value1}（开发、澄清、评审都会使用它）": "已切换 AI 引擎：{value1}（开发、澄清、评审都会使用它）",
+    "{value1}：正在等待 {value2} 返回…": "{value1}：正在等待 {value2} 返回…",
+    "{value1}：{value2} 仍在分析上一轮请求，返回后自动继续…": "{value1}：{value2} 仍在分析上一轮请求，返回后自动继续…",
+    "{value1} 正在扫描仓库、定位可能要改的文件…": "{value1} 正在扫描仓库、定位可能要改的文件…",
+    "{value1} 正在进行需求澄清（第 {value2} 轮）…": "{value1} 正在进行需求澄清（第 {value2} 轮）…"
   },
   "templateValues": {
     "通过": "通过",

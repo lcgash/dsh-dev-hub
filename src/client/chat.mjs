@@ -94,6 +94,10 @@ function scanEngineLabel(engine) {
   return SCAN_ENGINE_LABEL[engine] ?? '本地关键词兜底'
 }
 
+function engineName(engine) {
+  return { dsh: 'DSH', 'dsh-llm': 'DSH', claude: 'Claude Code', codex: 'Codex', pi: 'Pi' }[engine] ?? 'AI'
+}
+
 function clarifyElapsed(ms) {
   const value = Number(ms)
   if (!Number.isFinite(value) || value <= 0) return null
@@ -1204,6 +1208,8 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   const [attachBusy, setAttachBusy] = useState(false)
   const [attachError, setAttachError] = useState('')
   const [capabilities, setCapabilities] = useState(null)
+  // 当前项目的 AI 引擎：用于进度文案，避免所有阶段都写「dsh」
+  const [devEngine, setDevEngine] = useState('dsh')
   const attachInputRef = useRef(null)
   // 任务归属：发起任务时所在的对话 id + 运行令牌；切到别的对话后，旧任务的结果不能再写进当前界面
   const activeChatIdRef = useRef(null)
@@ -1291,6 +1297,14 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     return () => { alive = false }
   }, [])
 
+
+  useEffect(() => {
+    let alive = true
+    api(API.settings)
+      .then((body) => { if (alive) setDevEngine(body?.automation?.engine ?? 'dsh') })
+      .catch(() => { if (alive) setDevEngine('dsh') })
+    return () => { alive = false }
+  }, [])
 
   function applyConversation(conversation) {
     const restored = Array.isArray(conversation?.messages) ? conversation.messages : []
@@ -1402,7 +1416,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         ? '生成开发计划'
         : '扫描仓库'
     setProgress({
-      label: `${kindLabel}：已恢复任务，正在等待工作站继续…`,
+      label: `${kindLabel}：正在等待 ${engineName(devEngine)} 返回…`,
       startedAt,
       seconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
     })
@@ -1474,7 +1488,12 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     if (job.kind !== 'plan' && isConversationRunning(state.repo.path, scope, activeChatIdRef.current, resumeKind)) {
       // 旧组件可能已卸载，但它收尾时会把结果写回 chat store；这里轮询等它落盘后再载入，
       // 否则切走再回来会一直停在旧消息上，看起来"agent 不响应"。
-      setProgress({ label: '当前扫描/澄清还在处理，结束后会自动继续…', startedAt: Date.now() })
+      const kindLabel = job.kind === 'clarify' ? `需求澄清（第 ${Number(job.round) || 1} 轮）` : '扫描仓库'
+      setProgress({
+        label: `${kindLabel}：${engineName(devEngine)} 仍在分析上一轮请求，返回后自动继续…`,
+        startedAt: Number(job.at) || Date.now(),
+        seconds: 0,
+      })
       const repoPath = state.repo.path
       let ticks = 0
       const timer = setInterval(() => {
@@ -1794,7 +1813,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     setPhase(PHASE.analyzing)
     if (echo) push(userMessage(text, usedAttachments))
     setJob({ kind: 'recon', description: text, attachments: usedAttachments, at: Date.now() })
-    setProgress({ label: '扫描仓库：让 dsh 找可能要改的文件', startedAt: Date.now(), seconds: 0 })
+    setProgress({ label: `${engineName(devEngine)} 正在扫描仓库、定位可能要改的文件…`, startedAt: Date.now(), seconds: 0 })
     try {
       const probed = await probeCode(makeDeps(ctx), text, { attachments: usedAttachments, repoPath: state?.repo?.path })
       // 用户已经切到别的对话/开了新流程：结果写回原对话，不能写进当前界面
@@ -1856,7 +1875,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     const run = startRun(conversationId)
     setClarifyBusy(true)
     setJob({ kind: 'clarify', description, round, history, recon, spec, attachments: usedAttachments, at: Date.now() })
-    setProgress({ label: `需求澄清（第 ${round} 轮）：dsh 正在结合仓库证据整理问题`, startedAt: Date.now(), seconds: 0 })
+    setProgress({ label: `${engineName(devEngine)} 正在进行需求澄清（第 ${round} 轮）…`, startedAt: Date.now(), seconds: 0 })
     try {
       const body = await api(API.clarify, {
         method: 'POST',
@@ -2372,8 +2391,8 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
                   h('span', { className: 'devhub-typing-dot' }),
                   h('span', { className: 'devhub-typing-dot' }),
                   h('span', { className: 'devhub-typing-dot' })),
-                h('span', { style: { color: T.text2, fontSize: T.font.sm } }, progress.label),
-                h('span', { style: { ...styles.mono, color: T.text4, fontSize: T.font.xs } }, `${progress.seconds}s`),
+                h('span', { style: { color: T.text2, fontSize: T.font.sm, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, progress.label),
+                h('span', { style: { ...styles.mono, color: T.text4, fontSize: T.font.xs, flex: '0 0 auto', whiteSpace: 'nowrap', marginLeft: 'auto' } }, `${progress.seconds}s`),
               ),
             ),
           )
