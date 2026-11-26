@@ -263,6 +263,12 @@ async function runPiJson({ cwd, prompt, schema = null, label = 'devhub-pi', time
   return { value, sessionId, provider: 'pi', elapsedMs: Date.now() - startedAt }
 }
 
+/** 统一 Agent JSON 调用：DSH 原生 / Claude / Codex / Pi。 */
+async function runAgentByEngine(ctx, engine, options) {
+  if (engine === 'dsh' || !engine) return runAgentJson(ctx, options)
+  return runExternalJson(engine, options)
+}
+
 async function scanWithExternalEngine(engine, { ctx, repo, repoName, description, limit = 24, extraPrompt = '' } = {}) {
   const startedAt = Date.now()
   const prompt = [scanPrompt({ description, repoName, limit }), String(extraPrompt ?? '').trim()]
@@ -543,8 +549,10 @@ function itemViews(ctx, items) {
 async function normalizeRequirementForCreate(ctx, repo, { description, spec, answers, title, attachments = [] }) {
   const derived = deriveRequirement({ description, spec, answers, title })
   if (!derived.needsReview) return { requirement: derived, engine: 'clarify', elapsedMs: 0 }
+  const profile = await loadProfile()
+  const engine = projectAutomation(profile, repo).engine
   try {
-    const result = await runAgentJson(ctx, {
+    const result = await runAgentByEngine(ctx, engine, {
       cwd: repo,
       prompt: [buildRequirementPrompt({ description, spec, answers, title }), attachmentPrompt(attachments)]
         .filter(Boolean)
@@ -557,7 +565,7 @@ async function normalizeRequirementForCreate(ctx, repo, { description, spec, ans
       { ...result.value, raw: description, source: 'agent' },
       { description, title },
     )
-    return { requirement, engine: 'dsh', elapsedMs: result.elapsedMs }
+    return { requirement, engine, elapsedMs: result.elapsedMs }
   } catch (error) {
     return {
       // 降级不假装成功：记录原因，界面要提示"这还是草稿"
@@ -605,6 +613,8 @@ function applyRequirementToItem(item, requirement, { regenerateTitle = false } =
  * 用于详情页「自动生成标题」和旧流程整理（用户输入是代码/注解时尤其需要）。
  */
 async function regenerateItemTitle(ctx, repo, item) {
+  const profile = await loadProfile()
+  const engine = projectAutomation(profile, repo).engine
   const requirement = item.requirement && typeof item.requirement === 'object' ? item.requirement : {}
   const spec = {
     problem: requirement.rootProblem || item.workflow?.rootProblem || '',
@@ -616,7 +626,7 @@ async function regenerateItemTitle(ctx, repo, item) {
     scope: item.scope ?? [],
   }
   try {
-    const result = await runAgentJson(ctx, {
+    const result = await runAgentByEngine(ctx, engine, {
       cwd: repo,
       prompt: [
         buildRequirementPrompt({
@@ -634,7 +644,7 @@ async function regenerateItemTitle(ctx, repo, item) {
       { ...result.value, raw: item.description || item.goal, source: 'agent' },
       { description: item.description },
     )
-    if (record.title) return { title: record.title, engine: 'dsh', elapsedMs: result.elapsedMs }
+    if (record.title) return { title: record.title, engine, elapsedMs: result.elapsedMs }
   } catch {
     // 降级到确定性标题：不伪造成功，engine 会告诉界面是本地生成
   }
@@ -1593,10 +1603,19 @@ async function resolveRebaseConflicts(root, { ctx, targetBranch }) {
         '',
         '只输出 JSON：{"content":"解决后的完整文件内容","notes":"一句话说明取舍"}',
       ].join('\n')
-      const result = await runLlmJson(ctx, {
+      const profile = await loadProfile()
+      const repoForEngine = await activeRepo(profile).catch(() => null)
+      const engine = repoForEngine ? projectAutomation(profile, repoForEngine).engine : 'dsh'
+      const result = await runAgentByEngine(ctx, engine, {
+        cwd: root,
         prompt,
-        system: '你是代码合并冲突解决器。只输出 JSON，不要解释。',
-        maxTokens: 12000,
+        schema: {
+          type: 'object',
+          properties: { content: { type: 'string' }, notes: { type: 'string' } },
+          required: ['content'],
+          additionalProperties: true,
+        },
+        label: 'devhub-conflict-resolve',
         timeoutMs: 120000,
       })
       const content = String(result.value?.content ?? '')
@@ -4097,7 +4116,7 @@ export function apply(ctx) {
             if (!description) throw new Error('先用一句话描述你本机怎么做（例如：本机用 kpipe-dev 把服务部署到本机环境）')
             const entry = ledgerEntry(profile, repo)
             const defaults = await defaultCommands(repo)
-            const result = await runAgentJson(ctx, {
+            const result = await runAgentByEngine(ctx, projectAutomation(profile, repo).engine, {
               cwd: repo,
               prompt: buildLocalCommandPrompt({
                 description,
@@ -4121,6 +4140,7 @@ export function apply(ctx) {
               caveats: (Array.isArray(result.value?.caveats) ? result.value.caveats : []).map(String).filter(Boolean).slice(0, 6),
               alternatives: (Array.isArray(result.value?.alternatives) ? result.value.alternatives : []).map(String).filter(Boolean).slice(0, 4),
               probe,
+              engine: projectAutomation(profile, repo).engine,
               elapsedMs: result.elapsedMs,
             })
           }
@@ -5758,9 +5778,10 @@ export function apply(ctx) {
           const hasSession = Boolean(sessionId)
 
           let decision
-          let engine = 'dsh'
+          const agentEngine = projectAutomation(profile, repo).engine
+          let engine = agentEngine
           try {
-            const result = await runAgentJson(ctx, {
+            const result = await runAgentByEngine(ctx, agentEngine, {
               cwd: repo,
               prompt: buildDispatchPrompt({
                 item,
@@ -5772,7 +5793,6 @@ export function apply(ctx) {
               timeoutMs: 90000,
             })
             decision = normalizeDispatch(result.value, { hasSession })
-            engine = 'dsh'
           } catch (error) {
             decision = normalizeDispatch(fallbackDispatch(message, { hasSession }), { hasSession })
             engine = 'local'
@@ -6067,8 +6087,9 @@ export function apply(ctx) {
           }
 
           let result
+          const agentEngine = projectAutomation(profile, repo).engine
           try {
-            result = await runAgentJson(ctx, {
+            result = await runAgentByEngine(ctx, agentEngine, {
               cwd: repo,
               prompt: buildFileNotePrompt({ item, files: targets, excerpts }),
               schema: FILE_NOTE_SCHEMA,
@@ -6080,14 +6101,14 @@ export function apply(ctx) {
               ok: false,
               generated: [],
               skipped: summary.files.length,
-              engine: 'dsh',
+              engine: projectAutomation(profile, repo).engine,
               error: `自动补说明暂不可用：${String(error?.message ?? error)}`,
             })
           }
 
           const applied = applyAgentNotes(item, targets, result.value?.notes)
           const saved = applied.length ? await saveItem(repo, item) : item
-          sendJson(res, 200, { ok: true, generated: applied, skipped: summary.files.length, engine: 'dsh', elapsedMs: result.elapsedMs, item: saved })
+          sendJson(res, 200, { ok: true, generated: applied, skipped: summary.files.length, engine: agentEngine, elapsedMs: result.elapsedMs, item: saved })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }
@@ -6384,7 +6405,7 @@ export function apply(ctx) {
 
           let result
           try {
-            result = await runAgentJson(ctx, {
+            result = await runAgentByEngine(ctx, projectAutomation(profile, repo).engine, {
               cwd: repo,
               prompt: buildAssistPrompt({
                 item,
@@ -6408,7 +6429,7 @@ export function apply(ctx) {
           const saved = await saveItem(repo, appendHistory(next, 'assist-reply', reply))
           sendJson(res, 200, {
             ok: true,
-            engine: 'dsh',
+            engine: projectAutomation(profile, repo).engine,
             elapsedMs: result.elapsedMs,
             reply,
             ask: String(value.ask ?? '').trim() || null,

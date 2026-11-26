@@ -2411,3 +2411,13 @@ test('聊天式建流程也按项目 AI 引擎启动开发会话', async () => {
   assert.match(chat, /API\.claude/)
   assert.match(chat, /API\.external/)
 })
+
+test('所有 Agent 流程都通过当前 AI 引擎：扫描/澄清/评审/需求/补充/冲突', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /async function runAgentByEngine/)
+  assert.match(host, /runAgentByEngine\(ctx, engine, {/)
+  assert.match(host, /projectAutomation\(profile, repo\)\.engine/)
+  assert.match(host, /label: 'devhub-conflict-resolve'/)
+  assert.match(host, /engine: projectAutomation\(profile, repo\)\.engine/)
+})
