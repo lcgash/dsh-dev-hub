@@ -81,6 +81,19 @@ function clarifyEngineLabel(engine) {
   return CLARIFY_ENGINE_LABEL[engine] ?? '本地规则'
 }
 
+const SCAN_ENGINE_LABEL = {
+  dsh: 'DSH 扫描',
+  'dsh-llm': 'DSH 模型筛选',
+  claude: 'Claude Code 扫描',
+  codex: 'Codex 扫描',
+  pi: 'Pi 扫描',
+  local: '本地关键词兜底',
+}
+
+function scanEngineLabel(engine) {
+  return SCAN_ENGINE_LABEL[engine] ?? '本地关键词兜底'
+}
+
 function clarifyEngineTone(engine) {
   return engine === 'local' ? 'warn' : engine === 'dsh' || engine === 'dsh-llm' || ['claude', 'codex', 'pi'].includes(engine) ? 'accent' : 'neutral'
 }
@@ -628,7 +641,7 @@ function ReconCard({
       h('strong', { style: styles.sectionTitle }, '探测结果'),
       h(Pill, { tone: live ? 'accent' : 'ok' }, live ? '待确认' : '已确认'),
       recon?.engine
-        ? h(Pill, { tone: recon.engine === 'dsh' || recon.engine === 'dsh-llm' ? 'accent' : 'warn' }, recon.engineLabel || (recon.engine === 'dsh' || recon.engine === 'dsh-llm' ? 'DSH 扫描' : '本地关键词兜底'))
+        ? h(Pill, { tone: recon.engine === 'local' ? 'warn' : 'accent' }, recon.engineLabel || scanEngineLabel(recon.engine))
         : null,
       recon?.elapsedMs ? h('span', { style: styles.smallMuted }, `${(recon.elapsedMs / 1000).toFixed(1)}s`) : null,
       h(Pill, { tone: selectedCount === files.length ? 'ok' : 'warn' }, `已选 ${selectedCount}/${files.length} 个文件`),
@@ -656,10 +669,10 @@ function ReconCard({
         )),
       )
       : null,
-    recon?.scanNotes && recon?.engine !== 'dsh'
+    recon?.scanNotes && recon?.engine === 'local'
       ? h('div', { style: { ...styles.warnCard, marginTop: 8 } }, recon.scanNotes)
       : null,
-    recon?.scanNotes && (recon?.engine === 'dsh' || recon?.engine === 'dsh-llm') && recon?.scanNotes
+    recon?.scanNotes && recon?.engine !== 'local'
       ? h('div', { style: { ...styles.smallMuted, marginTop: 4 } }, `扫描说明：${recon.scanNotes}`)
       : null,
     recon?.truncated ? h('div', { style: styles.smallMuted }, '结果可能不全：扫描达到上限，可把要做什么写得更具体。') : null,

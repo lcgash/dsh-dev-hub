@@ -47,7 +47,7 @@ import {
 import { normalizeScope, suggestModules } from './core/modules.mjs'
 import { extractTokens, reconRepo } from './core/recon.mjs'
 import { ensureRepoIndex, queryRepoIndex } from './core/repo-index.mjs'
-import { candidateHintPrompt, scanWithDshAgent, scanWithLlm } from './host/agent-scan.mjs'
+import { SCAN_SCHEMA, candidateHintPrompt, normalizeScan, scanPrompt, scanWithDshAgent, scanWithLlm } from './host/agent-scan.mjs'
 import { extractJson, runAgentJson, runLlmJson } from './host/agent-run.mjs'
 import { answerPendingQuestion, readPendingApprovals, readPendingQuestions } from './host/pending-questions.mjs'
 import { ASSIST_SCHEMA, applyAssistUpdates, buildAssistPrompt } from './core/assist.mjs'
@@ -261,6 +261,35 @@ async function runPiJson({ cwd, prompt, schema = null, label = 'devhub-pi', time
   const value = extractJson(text) ?? extractJson(String(stdout ?? ''))
   if (!value) throw new Error(`Pi 没有返回可解析的 JSON：${(text || stderr || '').slice(0, 800)}`)
   return { value, sessionId, provider: 'pi', elapsedMs: Date.now() - startedAt }
+}
+
+async function scanWithExternalEngine(engine, { ctx, repo, repoName, description, limit = 24, extraPrompt = '' } = {}) {
+  const startedAt = Date.now()
+  const prompt = [scanPrompt({ description, repoName, limit }), String(extraPrompt ?? '').trim()]
+    .filter(Boolean)
+    .join('\n')
+  const result = await runExternalJson(engine, {
+    cwd: repo,
+    prompt,
+    schema: SCAN_SCHEMA,
+    label: 'devhub-scan',
+    timeoutMs: 180000,
+  })
+  const normalized = normalizeScan(result.value, { limit })
+  const files = []
+  for (const file of normalized.files) {
+    if (!(await exists(join(repo, file.path)))) continue
+    files.push({ ...file, exists: true })
+  }
+  return {
+    engine,
+    sessionId: result.sessionId ?? null,
+    elapsedMs: result.elapsedMs ?? (Date.now() - startedAt),
+    provider: result.provider,
+    files,
+    scope: normalized.scope,
+    notes: normalized.notes,
+  }
 }
 
 async function runExternalJson(engine, options) {
@@ -5039,15 +5068,23 @@ export function apply(ctx) {
           let scanSessionId = null
           if (body.engine !== 'local') {
             try {
-              const scan = await scanWithDshAgent(ctx, {
+              const scanEngine = projectAutomation(profile, scanRepo).engine
+              const scan = scanEngine === 'dsh' ? await scanWithDshAgent(ctx, {
                 repo: scanRepo,
                 repoName: loaded?.project?.name || repoName(scanRepo),
                 description,
                 limit: 24,
                 // 先给候选：子代理验证/收敛比从零全仓探索快得多
                 extraPrompt: [candidateHintPrompt(lexical), attachmentPrompt(attachments)].filter(Boolean).join('\n\n'),
+              }) : await scanWithExternalEngine(scanEngine, {
+                ctx,
+                repo: scanRepo,
+                repoName: loaded?.project?.name || repoName(scanRepo),
+                description,
+                limit: 24,
+                extraPrompt: [candidateHintPrompt(lexical), attachmentPrompt(attachments)].filter(Boolean).join('\n\n'),
               })
-              engine = 'dsh'
+              engine = scanEngine
               scanNotes = scan.notes || ''
               elapsedMs = scan.elapsedMs
               scanSessionId = scan.sessionId ?? null

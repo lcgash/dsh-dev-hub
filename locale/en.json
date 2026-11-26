@@ -1423,7 +1423,11 @@
     "用本机 Codex CLI 执行澄清和评审；开发阶段在终端中进行，可用 bridge CLI 回写台账。": "Use local Codex CLI for clarification and review; development runs in a terminal and the bridge CLI writes back the ledger.",
     "未检测到 codex 命令：请先安装 Codex CLI 并登录。": "No codex command found: install the Codex CLI and sign in first.",
     "用本机 Pi CLI 执行澄清和评审；开发阶段在终端中进行，可用 bridge CLI 回写台账。": "Use local Pi CLI for clarification and review; development runs in a terminal and the bridge CLI writes back the ledger.",
-    "未检测到 pi 命令：请先安装 Pi CLI 并登录。": "No pi command found: install the Pi CLI and sign in first."
+    "未检测到 pi 命令：请先安装 Pi CLI 并登录。": "No pi command found: install the Pi CLI and sign in first.",
+    "DSH 模型筛选": "DSH model filter",
+    "Claude Code 扫描": "Claude Code scan",
+    "Codex 扫描": "Codex scan",
+    "Pi 扫描": "Pi scan"
   },
   "templates": {
     "成员 {name}": "Member {name}",

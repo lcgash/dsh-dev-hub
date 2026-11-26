@@ -2355,3 +2355,15 @@ test('Codex / Pi 引擎：澄清评审走结构化 CLI，开发走终端', async
   assert.match(host, /runExternalJson\(clarifyEngine/)
   assert.match(host, /path: API.external/)
 })
+
+test('扫描也跟随 AI 引擎：Claude/Codex/Pi 不走 DSH 扫描', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
+  assert.match(host, /scanWithExternalEngine/)
+  assert.match(host, /scanEngine === 'dsh'/)
+  assert.match(host, /engine = scanEngine/)
+  assert.match(chat, /Claude Code 扫描/)
+  assert.match(chat, /Codex 扫描/)
+  assert.match(chat, /Pi 扫描/)
+})

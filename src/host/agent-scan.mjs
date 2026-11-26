@@ -35,7 +35,7 @@ export const SCAN_SCHEMA = {
   additionalProperties: true,
 }
 
-function scanPrompt({ description, repoName, limit }) {
+export function scanPrompt({ description, repoName, limit }) {
   return [
     `你是「DevHub 开发工作站」的扫描器，仓库：${repoName}。`,
     '任务：根据下面这句话，找出这次开发最可能要改的文件。',
