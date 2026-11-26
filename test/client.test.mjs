@@ -2367,3 +2367,12 @@ test('扫描也跟随 AI 引擎：Claude/Codex/Pi 不走 DSH 扫描', async () =
   assert.match(chat, /Codex 扫描/)
   assert.match(chat, /Pi 扫描/)
 })
+
+test('需求澄清卡片显示本轮耗时和实际引擎', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
+  const flow = await readFile(new URL('../src/client/chat-flow.mjs', import.meta.url), 'utf8')
+  assert.match(chat, /clarifyElapsed\(card\?\.elapsedMs\)/)
+  assert.match(chat, /elapsedMs: body\.elapsedMs/)
+  assert.match(flow, /elapsedMs: Number\.isFinite/)
+})

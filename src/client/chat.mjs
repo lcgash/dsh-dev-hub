@@ -94,6 +94,12 @@ function scanEngineLabel(engine) {
   return SCAN_ENGINE_LABEL[engine] ?? '本地关键词兜底'
 }
 
+function clarifyElapsed(ms) {
+  const value = Number(ms)
+  if (!Number.isFinite(value) || value <= 0) return null
+  return value < 1000 ? `${Math.round(value)}ms` : `${(value / 1000).toFixed(1)}s`
+}
+
 function clarifyEngineTone(engine) {
   return engine === 'local' ? 'warn' : engine === 'dsh' || engine === 'dsh-llm' || ['claude', 'codex', 'pi'].includes(engine) ? 'accent' : 'neutral'
 }
@@ -792,6 +798,7 @@ function ClarifyCard({ card, answers, busy, title, onTitleChange, onPick, onSubm
         h('strong', null, `需求澄清 · 第 ${card?.round ?? 1} 轮`),
         h(Pill, { tone: 'ok' }, '已提交'),
         h(Pill, { tone: clarifyEngineTone(card?.engine) }, clarifyEngineLabel(card?.engine)),
+        clarifyElapsed(card?.elapsedMs) ? h('span', { style: styles.smallMuted }, clarifyElapsed(card?.elapsedMs)) : null,
       ),
       title
         ? h('div', { style: { display: 'flex', gap: 8, alignItems: 'baseline', marginTop: 8 } },
@@ -834,6 +841,7 @@ function ClarifyCard({ card, answers, busy, title, onTitleChange, onPick, onSubm
       h(IconSeat, { size: 28 }, '◈'),
       h('strong', null, `需求澄清 · 第 ${card?.round ?? 1} 轮`),
       h(Pill, { tone: clarifyEngineTone(card?.engine) }, clarifyEngineLabel(card?.engine)),
+      clarifyElapsed(card?.elapsedMs) ? h('span', { style: styles.smallMuted }, clarifyElapsed(card?.elapsedMs)) : null,
       card?.degraded ? h(Pill, { tone: 'warn' }, '已降级') : null,
     ),
     card?.reply ? h('div', { style: { marginTop: 6, color: T.text2, fontSize: T.font.base, whiteSpace: 'pre-wrap', lineHeight: 1.7 } }, card.reply) : null,
@@ -1864,6 +1872,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         ready: Boolean(body.ready),
         missing: body.missing ?? [],
         engine: body.engine ?? 'dsh',
+        elapsedMs: body.elapsedMs ?? null,
         degraded: Boolean(body.degraded),
         // 需求关联：评审/开发之外，澄清子代理也要能回到这条需求下
         sessionId: body.sessionId ?? null,

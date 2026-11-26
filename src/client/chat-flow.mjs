@@ -71,6 +71,7 @@ export function clarifyMessage(payload) {
     ready: Boolean(payload.ready),
     missing: Array.isArray(payload.missing) ? payload.missing : [],
     engine: payload.engine ?? 'dsh',
+    elapsedMs: Number.isFinite(Number(payload.elapsedMs)) ? Number(payload.elapsedMs) : null,
     degraded: Boolean(payload.degraded),
   })
 }
