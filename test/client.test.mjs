@@ -2449,3 +2449,13 @@ test('外部 Claude 会话按 CLI 状态显示运行中，不误报会话已结�
   assert.match(index, /running: Boolean\(draft\.running\) \|\| externalState === 'working'/)
   assert.match(index, /!externalEngine && live\?\.alive === false/)
 })
+
+test('详情耗时条：流程耗时、会话耗时、最近活动可见并按运行状态刷新', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(index, /function formatDuration/)
+  assert.match(index, /流程耗时：/)
+  assert.match(index, /最近活动：/)
+  assert.match(index, /开发会话.*分析会话|分析会话.*开发会话/s)
+  assert.match(index, /const interval = \(draft\?\.running \|\| session\?\.running\) \? 1000 : 30000/)
+})

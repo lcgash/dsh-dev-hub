@@ -188,6 +188,18 @@ function DevHubGlyph({ size = 18, active = false }) {
   )
 }
 
+function formatDuration(ms) {
+  const value = Number(ms)
+  if (!Number.isFinite(value) || value < 0) return '—'
+  const total = Math.floor(value / 1000)
+  if (total < 60) return `${total}s`
+  const minutes = Math.floor(total / 60)
+  if (minutes < 60) return `${minutes}m`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ${minutes % 60}m`
+  return `${Math.floor(hours / 24)}d ${hours % 24}h`
+}
+
 function BrandMark({ size = 20, tone = T.brand, accent = T.brand }) {
   return h('svg', {
     width: size,
@@ -704,9 +716,16 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const [branchName, setBranchName] = useState('')
   // 详情页局部状态：当前页签 + 当前唯一展开的编辑区（一次只编辑一处）+ 编辑前快照（取消时回滚）
   const [tab, setTab] = useState('overview')
+  const [clockNow, setClockNow] = useState(() => Date.now())
   useEffect(() => {
     if (draft?.workflow?.intent === 'analysis' && ['review', 'test'].includes(tab)) setTab('overview')
   }, [draft?.workflow?.intent, tab])
+  useEffect(() => {
+    // 运行中每秒刷新，空闲 30 秒刷新；耗时展示不拖慢界面
+    const interval = (draft?.running || session?.running) ? 1000 : 30000
+    const timer = setInterval(() => setClockNow(Date.now()), interval)
+    return () => clearInterval(timer)
+  }, [draft?.id, draft?.running, session?.running])
   // 报告随时可预览：顶栏按钮打开弹窗，保存到本机的能力在弹窗内的报告工具栏里
   const [reportPreviewOpen, setReportPreviewOpen] = useState(false)
   // 会话动态默认收起：它是过程证据，不应把"开发到哪一步"挤出首屏
@@ -3892,6 +3911,20 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         totals
           ? h('span', { style: styles.sectionHint }, `变更 ${totals.files ?? 0} 文件 · +${totals.added ?? 0} / -${totals.removed ?? 0}`)
           : h('span', { style: styles.sectionHint }, '正在读取变更…'),
+      ),
+      h('div', {
+        style: {
+          display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap',
+          padding: '6px 9px', background: T.surface2, borderRadius: T.rBase,
+          fontSize: T.font.xs, color: T.text3,
+        },
+      },
+        h('span', { style: { fontWeight: 600, color: T.text2 } }, '⏱'),
+        h('span', null, '流程耗时：', h('strong', { style: { color: T.text2 } }, formatDuration(clockNow - Number(draft.baseline?.startedAt || draft.createdAt || clockNow)))),
+        draft.session?.id
+          ? h('span', null, `${isAnalysisFlow ? '分析会话' : '开发会话'}：`, h('strong', { style: { color: T.text2 } }, formatDuration(clockNow - Number(draft.session?.boundAt || clockNow))))
+          : null,
+        h('span', null, '最近活动：', h('strong', { style: { color: T.text2 } }, formatDuration(clockNow - Number(draft.updatedAt ? Date.parse(draft.updatedAt) : clockNow)))),
       ),
       h('div', { style: { ...styles.progressOuter, height: 8 } },
         h('div', { style: { ...styles.progressInner, height: 8, width: `${taskPct}%`, background: progressColor } }),
