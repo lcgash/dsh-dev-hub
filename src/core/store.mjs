@@ -355,6 +355,8 @@ function normalizeWorkflow(raw, status, { keepLocalWorkspace = true } = {}) {
     intent: normalizeIntent(value.intent) ?? 'feature',
     // 全局设置落到每条流程上：关闭后跳过独立评审；缺省不改旧行为
     reviewEnabled: value.reviewEnabled === false ? false : true,
+    // 当前流程使用的 AI 引擎：开发/澄清/评审都按它执行
+    ...(['dsh', 'claude', 'codex', 'pi'].includes(value.engine) ? { engine: value.engine } : {}),
     // 虚拟库流程：归属与成员库（前后端联动）；普通流程为空
     ...(Array.isArray(value.repos) && value.repos.length
       ? { repos: value.repos.map(String).filter(Boolean).slice(0, 8) }
@@ -562,11 +564,19 @@ export function sanitizeItem(raw, fallbackId, { keepLocalWorkspace = true } = {}
       : [],
     // 关联的 DSH 开发会话：工作站据此追踪运行状态、跳回会话、把会话活动映射回流程
     session: value.session && typeof value.session === 'object' && String(value.session.id ?? '').trim()
-      ? {
-          id: String(value.session.id).trim(),
+      ? ((id) => ({
+          id,
           boundAt: value.session.boundAt || now(),
           updatedAt: value.session.updatedAt || null,
-        }
+          // 外部引擎会话不是 DSH session：必须保留 engine，否则 UI 会把它交给 sessions.retain
+          engine: ['dsh', 'claude', 'codex', 'pi'].includes(value.session.engine)
+            ? value.session.engine
+            : id.startsWith('session-') ? 'dsh' : id.startsWith('codex-terminal') ? 'codex' : id.startsWith('pi-terminal') ? 'pi' : 'claude',
+          external: value.session.external === true || (['claude', 'codex', 'pi'].includes(value.session.engine)
+            || !id.startsWith('session-')),
+          ...(typeof value.session.cwd === 'string' && value.session.cwd ? { cwd: value.session.cwd } : {}),
+          ...(typeof value.session.promptPath === 'string' && value.session.promptPath ? { promptPath: value.session.promptPath } : {}),
+        }))(String(value.session.id).trim())
       : null,
     // 之前用过的开发会话：换绑时不丢，界面可「继续之前的沟通」
     sessionHistory: Array.isArray(value.sessionHistory)

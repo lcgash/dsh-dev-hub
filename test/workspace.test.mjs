@@ -524,3 +524,13 @@ test('workspace: buildPlan 按成员库分组，不让同名模块塌成一个',
 })
 
 
+
+test('sanitizeItem 保留外部 AI 引擎会话，不能把 Claude 会话当 DSH', () => {
+  const claude = sanitizeItem({ id: 'x', title: 'x', workflow: { engine: 'claude' }, session: { id: 'b5580b3b' } }, 'x')
+  assert.equal(claude.workflow.engine, 'claude')
+  assert.equal(claude.session.engine, 'claude')
+  assert.equal(claude.session.external, true)
+  const dsh = sanitizeItem({ id: 'y', title: 'y', session: { id: 'session-deadbeef' } }, 'y')
+  assert.equal(dsh.session.engine, 'dsh')
+  assert.equal(dsh.session.external, false)
+})
