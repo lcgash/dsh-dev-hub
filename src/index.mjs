@@ -3290,18 +3290,33 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
       constraints: evidence.constraints,
       total: started.reviewers.length,
     })
-    const runOnce = (attempt = 1) => (reviewEngine !== 'dsh'
-      ? runExternalJson(reviewEngine, {
-        cwd: evidence.cwd,
-        prompt,
-        schema: REVIEW_SCHEMA,
-        label: `devhub-${reviewer.id}${attempt > 1 ? '-retry' : ''}`,
-        timeoutMs: (() => {
-          const value = Number(process.env.DEVHUB_CLAUDE_REVIEW_TIMEOUT_MS)
-          return Number.isFinite(value) && value > 0 ? value : 0
-        })(),
-      })
-      : runAgentJson(ctx, {
+    const runOnce = async (attempt = 1) => {
+      if (reviewEngine !== 'dsh') {
+        try {
+          return await runExternalJson(reviewEngine, {
+            cwd: evidence.cwd,
+            prompt,
+            schema: REVIEW_SCHEMA,
+            label: `devhub-${reviewer.id}${attempt > 1 ? '-retry' : ''}`,
+            // 外部一次性评审必须有硬上限；超时/异常后自动降级 DSH，不能让评审永久 pending
+            timeoutMs: (() => {
+              const value = Number(process.env.DEVHUB_EXTERNAL_REVIEW_TIMEOUT_MS)
+              return Number.isFinite(value) && value > 0 ? value : 300000
+            })(),
+          })
+        } catch (externalError) {
+          const fallback = await runAgentJson(ctx, {
+            cwd: evidence.cwd,
+            prompt,
+            schema: REVIEW_SCHEMA,
+            label: `devhub-${reviewer.id}${attempt > 1 ? '-retry' : ''}-dsh-fallback`,
+            timeoutMs: 300000,
+          })
+          fallback.fallbackReason = String(externalError?.message ?? externalError)
+          return fallback
+        }
+      }
+      return runAgentJson(ctx, {
       cwd: evidence.cwd,
       prompt,
       schema: REVIEW_SCHEMA,
@@ -3330,7 +3345,8 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
         saved = latest
         await saveItem(repo, saved)
       },
-    }))
+    })
+    }
     let result
     try {
       result = await runOnce()
