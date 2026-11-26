@@ -2441,3 +2441,11 @@ test('Claude resume fork：新会话 id 必须重新绑定到台账', async () =
   assert.match(host, /Claude Code 会话已切换/)
   assert.match(index, /if \(body\?\.item\) \{ setDraft\(body\.item\)/)
 })
+
+test('外部 Claude 会话按 CLI 状态显示运行中，不误报会话已结束', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  assert.match(index, /const externalEngine = \['claude', 'codex', 'pi'\]/)
+  assert.match(index, /running: Boolean\(draft\.running\) \|\| externalState === 'working'/)
+  assert.match(index, /!externalEngine && live\?\.alive === false/)
+})

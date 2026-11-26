@@ -3910,7 +3910,21 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
 
   function renderSession() {
     const boundId = draft.session?.id ?? null
-    const live = session ?? (boundId ? { sessionId: boundId, boundAt: draft.session?.boundAt ?? null, alive: null, pending: true } : null)
+    const externalEngine = ['claude', 'codex', 'pi'].includes(draft.session?.engine)
+    const externalState = String(draft.externalState?.status ?? '').toLowerCase()
+    const live = externalEngine
+      ? {
+          sessionId: boundId,
+          boundAt: draft.session?.boundAt ?? null,
+          alive: true,
+          running: Boolean(draft.running) || externalState === 'working' || externalState === 'running',
+          reason: externalState === 'blocked'
+            ? '等待授权/选择，请打开终端处理'
+            : `${draft.session.engine} 外部会话（状态由 CLI 提供）`,
+          lastStage: null,
+          turns: null,
+        }
+      : (session ?? (boundId ? { sessionId: boundId, boundAt: draft.session?.boundAt ?? null, alive: null, pending: true } : null))
     const stageText = live?.lastStage ? sessionStageText(live.lastStage) : ''
     // 没绑定会话但有进展证据：说明台账是被 Agent 直接写入推进的，要明确解释，避免被当成 UI 状态错乱
     const workEvidence = Boolean(
@@ -3971,7 +3985,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           ),
           h('div', { style: { ...styles.smallMuted, marginTop: 4, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } }, live.error))
         : null,
-      boundId && live?.alive === false && live?.reason
+      boundId && !externalEngine && live?.alive === false && live?.reason
         ? h('div', { style: styles.sectionHint }, `说明：${live.reason}`)
         : null,
       boundId && draft.externalState?.status === 'blocked'
