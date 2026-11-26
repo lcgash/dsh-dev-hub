@@ -5066,9 +5066,9 @@ export function apply(ctx) {
           let scanNotes = body.engine === 'local' ? '按本地关键词匹配（未调用 dsh）' : ''
           let elapsedMs = 0
           let scanSessionId = null
+          const scanEngine = projectAutomation(profile, scanRepo).engine
           if (body.engine !== 'local') {
             try {
-              const scanEngine = projectAutomation(profile, scanRepo).engine
               const scan = scanEngine === 'dsh' ? await scanWithDshAgent(ctx, {
                 repo: scanRepo,
                 repoName: loaded?.project?.name || repoName(scanRepo),
@@ -5090,7 +5090,7 @@ export function apply(ctx) {
               scanSessionId = scan.sessionId ?? null
               result = mergeScan(scan)
             } catch (error) {
-              const dshError = String(error?.message ?? error)
+              const scanError = String(error?.message ?? error)
               // 主路径不可用：先用默认模型基于本地候选做语义筛选（不依赖子代理 provider）
               try {
                 const startedAt = Date.now()
@@ -5103,12 +5103,12 @@ export function apply(ctx) {
                 })
                 engine = 'dsh-llm'
                 elapsedMs = Date.now() - startedAt
-                scanNotes = `子代理不可用，已用默认模型基于本地候选筛选：${dshError}`
+                scanNotes = `${scanEngine} 扫描不可用，已用默认模型基于本地候选筛选：${scanError}`
                 result = scan.files.length ? mergeScan(scan) : lexical
               } catch (llmError) {
                 // 最后才退回纯本地关键词：明确说明两层降级原因，不假装成功
                 engine = 'local'
-                scanNotes = `dsh 扫描不可用，已回退本地关键词匹配：${dshError}；模型筛选也不可用：${String(llmError?.message ?? llmError)}`
+                scanNotes = `${scanEngine} 扫描不可用，已回退本地关键词匹配：${scanError}；模型筛选也不可用：${String(llmError?.message ?? llmError)}`
               }
             }
           }
