@@ -1427,7 +1427,15 @@
     "DSH 模型筛选": "DSH model filter",
     "Claude Code 扫描": "Claude Code scan",
     "Codex 扫描": "Codex scan",
-    "Pi 扫描": "Pi scan"
+    "Pi 扫描": "Pi scan",
+    "Claude Code 正在等待授权或选择": "Claude Code is waiting for approval or a choice",
+    "打开终端处理": "Open terminal to handle",
+    "后台会话已暂停，需要你在终端确认权限或回答问题；处理完回到工作站继续推进。": "The background session is paused. Confirm the permission or answer the question in the terminal, then return to continue.",
+    "已保存 Claude Code 开发权限模式": "Saved Claude Code development permission mode",
+    "Claude Code 开发权限": "Claude Code development permission",
+    "acceptEdits 会在需要命令行权限时停下；请在终端处理。bypassPermissions 会自动放行所有工具，需先在终端接受免责声明，风险更高。": "acceptEdits pauses when command permissions are needed; handle them in the terminal. bypassPermissions auto-approves all tools, requires accepting the disclaimer in the terminal first, and is riskier.",
+    "acceptEdits（推荐）": "acceptEdits (recommended)",
+    "bypassPermissions（高风险）": "bypassPermissions (high risk)"
   },
   "templates": {
     "成员 {name}": "Member {name}",

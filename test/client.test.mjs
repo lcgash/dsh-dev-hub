@@ -2377,3 +2377,16 @@ test('需求澄清卡片显示本轮耗时和实际引擎', async () => {
   assert.match(chat, /elapsedMs: body\.elapsedMs/)
   assert.match(flow, /elapsedMs: Number\.isFinite/)
 })
+
+test('Claude 授权/选择：blocked 会话提示打开终端，权限模式可配置', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const settings = await readFile(new URL('../src/client/settings.mjs', import.meta.url), 'utf8')
+  const automation = await readFile(new URL('../src/shared/automation.mjs', import.meta.url), 'utf8')
+  assert.match(host, /externalState/)
+  assert.match(host, /permissionMode: projectAutomation\(profile, repo\)\.claudePermissionMode/)
+  assert.match(index, /Claude Code 正在等待授权或选择/)
+  assert.match(settings, /claudePermissionMode/)
+  assert.match(automation, /bypassPermissions/)
+})

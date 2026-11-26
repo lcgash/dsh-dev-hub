@@ -1427,7 +1427,15 @@
     "DSH 模型筛选": "DSH 模型筛选",
     "Claude Code 扫描": "Claude Code 扫描",
     "Codex 扫描": "Codex 扫描",
-    "Pi 扫描": "Pi 扫描"
+    "Pi 扫描": "Pi 扫描",
+    "Claude Code 正在等待授权或选择": "Claude Code 正在等待授权或选择",
+    "打开终端处理": "打开终端处理",
+    "后台会话已暂停，需要你在终端确认权限或回答问题；处理完回到工作站继续推进。": "后台会话已暂停，需要你在终端确认权限或回答问题；处理完回到工作站继续推进。",
+    "已保存 Claude Code 开发权限模式": "已保存 Claude Code 开发权限模式",
+    "Claude Code 开发权限": "Claude Code 开发权限",
+    "acceptEdits 会在需要命令行权限时停下；请在终端处理。bypassPermissions 会自动放行所有工具，需先在终端接受免责声明，风险更高。": "acceptEdits 会在需要命令行权限时停下；请在终端处理。bypassPermissions 会自动放行所有工具，需先在终端接受免责声明，风险更高。",
+    "acceptEdits（推荐）": "acceptEdits（推荐）",
+    "bypassPermissions（高风险）": "bypassPermissions（高风险）"
   },
   "templates": {
     "成员 {name}": "成员 {name}",

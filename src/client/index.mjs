@@ -3912,6 +3912,18 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       boundId && live?.alive === false && live?.reason
         ? h('div', { style: styles.sectionHint }, `说明：${live.reason}`)
         : null,
+      boundId && draft.externalState?.status === 'blocked'
+        ? h('div', { style: styles.warnCard },
+          h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+            h('span', { style: { fontWeight: 600 } }, 'Claude Code 正在等待授权或选择'),
+            h('div', { style: styles.spacer }),
+            onOpenSession
+              ? h(Button, { style: { height: 26, padding: '0 9px', fontSize: T.font.xs }, onClick: () => onOpenSession(boundId), children: '打开终端处理' })
+              : null,
+          ),
+          h('div', { style: { ...styles.smallMuted, marginTop: 4 } },
+            '后台会话已暂停，需要你在终端确认权限或回答问题；处理完回到工作站继续推进。'))
+        : null,
       !boundId
         ? (draft.status === 'done' || stage === 'done'
           ? h('div', { style: styles.sectionHint }, '流程已完成；无需再绑定开发会话，需要回看时展开上方「开发会话动态」。')

@@ -763,11 +763,11 @@ function claudeSessionId(output) {
   return match?.[1] ?? null
 }
 
-async function runClaudeBackground(root, prompt, { resumeId = null } = {}) {
+async function runClaudeBackground(root, prompt, { resumeId = null, permissionMode = 'acceptEdits' } = {}) {
   const bin = await claudeBinary()
   const text = String(prompt ?? '').trim()
   if (!text) throw new Error('Claude Code 启动内容为空')
-  const args = ['--bg', '--permission-mode', 'acceptEdits']
+  const args = ['--bg', '--permission-mode', String(permissionMode || 'acceptEdits')]
   if (resumeId) args.push('--resume', String(resumeId))
   args.push(text)
   const { stdout, stderr } = await runExecutable(bin, args, {
@@ -814,6 +814,11 @@ async function applyClaudeRunning(views, items) {
     if (running) {
       row.running = true
       row.attention = attentionOf(views.ctx, item, true)
+    }
+    row.externalState = {
+      engine: 'claude',
+      status: String(agent.state ?? ''),
+      name: agent.name ?? '',
     }
   }
 }
@@ -5469,7 +5474,10 @@ export function apply(ctx) {
           if (action === 'send') {
             const id = String(body.sessionId ?? item.session?.id ?? '').trim()
             if (!id) throw new Error('没有 Claude Code 会话 id')
-            const result = await runClaudeBackground(root, body.prompt, { resumeId: id })
+            const result = await runClaudeBackground(root, body.prompt, {
+              resumeId: id,
+              permissionMode: projectAutomation(profile, repo).claudePermissionMode,
+            })
             return sendJson(res, 200, { ok: true, sessionId: result.id || id, output: result.output })
           }
           if (action !== 'launch') throw new Error(`未知 Claude Code 动作：${action}`)
@@ -5492,7 +5500,9 @@ export function apply(ctx) {
             `node ${JSON.stringify(CLAUDE_CLI)} update --bridge ${JSON.stringify(bridgePath)} --risk "风险"`,
             '用它回写任务/变更点/风险；阶段仍由工作站按事实推导，不要手工传 stage。',
           ].join('\n')
-          const result = await runClaudeBackground(root, `${body.prompt}${cliHint}`)
+          const result = await runClaudeBackground(root, `${body.prompt}${cliHint}`, {
+            permissionMode: projectAutomation(profile, repo).claudePermissionMode,
+          })
           if (!result.id) throw new Error(`Claude Code 已启动但没拿到会话 id：${result.output.slice(-600)}`)
           item.session = { id: result.id, engine: 'claude', external: true, cwd: root, at: new Date().toISOString() }
           item.workflow = { ...(item.workflow ?? {}), engine: 'claude' }

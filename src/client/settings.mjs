@@ -122,9 +122,12 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
       setAutomation(nextValue)
       const engineChanged = nextValue.engine !== previous.engine
       const modeChanged = nextValue.mode !== previous.mode || nextValue.reviewEnabled !== previous.reviewEnabled
+      const permissionChanged = nextValue.claudePermissionMode !== previous.claudePermissionMode
       const engineLabel = { dsh: 'DSH 原生会话', claude: 'Claude Code', codex: 'Codex', pi: 'Pi' }[nextValue.engine] ?? nextValue.engine
-      const baseNotice = engineChanged && !modeChanged
-        ? `已切换 AI 引擎：${engineLabel}（开发、澄清、评审都会使用它）`
+      const baseNotice = permissionChanged && !modeChanged && !engineChanged
+        ? '已保存 Claude Code 开发权限模式'
+        : engineChanged && !modeChanged
+          ? `已切换 AI 引擎：${engineLabel}（开发、澄清、评审都会使用它）`
         : nextValue.mode === 'full'
           ? (nextValue.reviewEnabled === false
             ? '已保存：完全自动化 + 已关闭独立评审，流程直接进入测试验证'
@@ -236,6 +239,21 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
                 onSelect: () => { if (piAvailable) save({ ...automation, engine: 'pi' }) },
               }),
             ),
+            automation.engine === 'claude'
+              ? h('div', { style: { ...styles.card, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 6 } },
+                h('span', { style: { fontSize: T.font.base, fontWeight: 600, color: T.text } }, 'Claude Code 开发权限'),
+                h('span', { style: styles.sectionHint },
+                  'acceptEdits 会在需要命令行权限时停下；请在终端处理。bypassPermissions 会自动放行所有工具，需先在终端接受免责声明，风险更高。'),
+                h('div', { style: { display: 'flex', gap: 8, flexWrap: 'wrap' } },
+                  ...['acceptEdits', 'bypassPermissions'].map((mode) => h(Button, {
+                    key: mode,
+                    style: automation.claudePermissionMode === mode ? { borderColor: T.brand, background: T.brandSoft, color: T.brand } : {},
+                    onClick: () => save({ ...automation, claudePermissionMode: mode }),
+                    children: mode === 'acceptEdits' ? 'acceptEdits（推荐）' : 'bypassPermissions（高风险）',
+                  })),
+                ),
+              )
+              : null,
             !claudeAvailable
               ? h('div', { style: styles.sectionHint }, '安装参考：macOS/Linux 用 curl -fsSL https://claude.ai/install.sh | bash；Windows 用 irm https://claude.ai/install.ps1 | iex；安装后确认 claude --version 可用')
               : null,
