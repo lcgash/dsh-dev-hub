@@ -1443,7 +1443,17 @@
     "正在分析…": "Analyzing…",
     "继续分析中…": "Continuing analysis…",
     "继续分析": "Continue analysis",
-    "分析流程：结论与任务已产出，不进入评审/测试/提交": "Analysis flow: conclusions and tasks are complete; it does not enter review/testing/submission"
+    "分析流程：结论与任务已产出，不进入评审/测试/提交": "Analysis flow: conclusions and tasks are complete; it does not enter review/testing/submission",
+    "分析中": "Analyzing",
+    "分析任务": "Analysis tasks",
+    "勾选代表分析任务完成；结论产出后流程即结束，不进入评审/测试/提交": "Checked means the analysis task is done; the flow ends once conclusions are produced, with no review/testing/submission.",
+    "分析任务与流程都已完成": "Analysis tasks and the flow are complete",
+    "分析任务已完成": "Analysis tasks complete",
+    "分析任务进度": "Analysis task progress",
+    "进度条只统计分析任务": "The progress bar counts analysis tasks only",
+    "分析会话": "Analysis session",
+    "分析会话动态（默认收起，避免挤占进度）": "Analysis session activity (collapsed by default)",
+    "只读分析，不进入评审/测试/提交": "Read-only analysis; no review/testing/submission"
   },
   "templates": {
     "成员 {name}": "Member {name}",
@@ -1925,7 +1935,9 @@
     "{value1}：正在等待 {value2} 返回…": "{value1}: waiting for {value2} to return…",
     "{value1}：{value2} 仍在分析上一轮请求，返回后自动继续…": "{value1}: {value2} is still analyzing the previous request; it will continue when it returns…",
     "{value1} 正在扫描仓库、定位可能要改的文件…": "{value1} is scanning the repository and locating likely files…",
-    "{value1} 正在进行需求澄清（第 {value2} 轮）…": "{value1} is clarifying the requirement (round {value2})…"
+    "{value1} 正在进行需求澄清（第 {value2} 轮）…": "{value1} is clarifying the requirement (round {value2})…",
+    "{value1}{value2}，流程未结束：{value3}": "{value1}{value2}; flow is not complete: {value3}",
+    "{value1}{value2}，流程未结束：{value3}{value4}": "{value1}{value2}; flow is not complete: {value3}{value4}"
   },
   "templateValues": {
     "通过": "passed",

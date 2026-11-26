@@ -1371,7 +1371,8 @@ test('开发中 loading：详情/阶段条/启动按钮/抽屉的源码级回归
   // 阶段条：当前节点用 Spinner 替代圆点 + 「正在开发…」
   assert.match(index, /function ArrowSteps\(\{[^}]*activeLoading/)
   assert.match(index, /active && activeLoading[\s\S]{0,160}Spinner/)
-  assert.match(index, /activeDetail: \(\(\) => \{[\s\S]{0,120}stage === 'develop' && running\) return '正在开发…'/)
+  assert.match(index, /正在分析…/)
+  assert.match(index, /正在开发…/)
 
   // 详情标题行 + 「流程」卡 loading 提示
   assert.match(index, /正在开发…/)

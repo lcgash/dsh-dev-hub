@@ -824,7 +824,15 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const techDoc = workflow.techDoc ?? {}
   const plan = workflow.plan ?? {}
   const estimate = plan.estimate ?? {}
-  const stage = workflow.stage ?? 'discovery'
+  const isAnalysisFlow = workflow.intent === 'analysis'
+  const analysisTasksDone = isAnalysisFlow
+    && (draft.tasks ?? []).length > 0
+    && (draft.tasks ?? []).every((task) => Boolean(task?.done))
+  const stage = analysisTasksDone ? 'done' : (workflow.stage ?? 'discovery')
+  const statusForUi = analysisTasksDone ? 'done' : draft.status
+  const stageTextForUi = isAnalysisFlow
+    ? ({ ...STAGE_LABELS, develop: '分析中' }[stage] ?? stage)
+    : (STAGE_LABELS[stage] ?? stage)
   const reviewView = describeReview(draft)
   const reviewStartedAt = reviewView.dispatchedAt ? new Date(reviewView.dispatchedAt).getTime() : NaN
   const reviewElapsed = reviewView.status === 'pending' && Number.isFinite(reviewStartedAt)
@@ -846,7 +854,6 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 会话正在跑时当前这步还没完：主按钮不应再给「继续推进」（否则会重复排队一次推进）
   const sessionRunning = Boolean(draft.session?.id) && Boolean(session?.running ?? draft.running)
   const reviewAction = advance.action === 'dispatch' || advance.action === 'retry'
-  const isAnalysisFlow = workflow.intent === 'analysis'
   const questions = workflow.questions ?? []
   const answered = questions.filter((question) => String(question.answer ?? '').trim()).length
   const tasks = draft.tasks ?? []
@@ -2154,8 +2161,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       h('div', { style: sectionBox },
         h('div', { style: styles.spread },
           h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2 } },
-            h('div', { style: styles.sectionTitle }, '开发任务'),
-            h('div', { style: styles.sectionHint }, '勾选只代表开发任务完成；流程是否结束还要看测试与提交'),
+            h('div', { style: styles.sectionTitle }, isAnalysisFlow ? '分析任务' : '开发任务'),
+            h('div', { style: styles.sectionHint }, isAnalysisFlow ? '勾选代表分析任务完成；结论产出后流程即结束，不进入评审/测试/提交' : '勾选只代表开发任务完成；流程是否结束还要看测试与提交'),
           ),
           h('div', { style: { display: 'flex', alignItems: 'center', gap: T.gap.xs } },
             h('span', { style: { ...styles.num, fontSize: T.font.sm, color: T.text4 } }, `${doneCount}/${tasks.length}`),
@@ -2171,10 +2178,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             marginTop: 2,
             color: draft.status === 'done' ? T.ok : (tasks.length && doneCount >= tasks.length ? T.warnText : T.text4),
           },
-        }, draft.status === 'done'
-          ? '开发任务与流程都已完成'
-          : `开发任务${tasks.length && doneCount >= tasks.length ? '已完成' : '进行中'}，流程未结束：${pendingFlowStep({
-            status: draft.status,
+        }, statusForUi === 'done'
+          ? (isAnalysisFlow ? '分析任务与流程都已完成' : '开发任务与流程都已完成')
+          : `${isAnalysisFlow ? '分析任务' : '开发任务'}${tasks.length && doneCount >= tasks.length ? '已完成' : '进行中'}，流程未结束：${pendingFlowStep({
+            status: statusForUi,
             stage,
             testState: tests.local?.status,
             environmentTestState: tests.environment?.status,
@@ -3377,7 +3384,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             : h('div', { style: { ...styles.row, marginTop: T.gap.xs } },
               h('span', { style: { fontWeight: 600, color: T.text } }, draft.title || draft.id),
               isWeakTitle(draft.title, draft.description) ? h(Tag, { tone: 'warn' }, '标题待整理') : null,
-              h(StatusPill, { status: draft.status }),
+              h(StatusPill, { status: statusForUi }),
               showStageTag ? h(Tag, { tone: 'neutral' }, stageLabelText) : null,
               h('span', { style: styles.sectionHint },
                 draft.workflow?.stageReason ? `· ${draft.workflow.stageReason}` : ''),
@@ -3742,9 +3749,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       ),
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
         h(Tag, { tone: 'accent' }, summary.stageLabel),
-        h(Tag, { tone: 'neutral' }, `开发任务 ${summary.tasks.done}/${summary.tasks.total}`),
+        h(Tag, { tone: 'neutral' }, `${isAnalysisFlow ? '分析任务' : '开发任务'} ${summary.tasks.done}/${summary.tasks.total}`),
         tasksAllDone && pendingStep
-          ? h(Tag, { tone: 'warn', title: '开发任务完成不等于流程完成：还要过测试与提交' }, `流程未结束 · ${pendingStep}`)
+          ? h(Tag, { tone: 'warn', title: isAnalysisFlow ? '分析任务已完成' : '开发任务完成不等于流程完成：还要过测试与提交' }, `流程未结束 · ${pendingStep}`)
           : null,
         h(Tag, {
           tone: summary.localTestStale ? 'warn' : summary.localTest === 'passed' ? 'ok' : summary.localTest === 'failed' ? 'danger' : 'neutral',
@@ -3842,16 +3849,16 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     const testTone = (test) => (test?.status === 'passed' ? 'ok' : test?.status === 'failed' ? 'danger' : test?.status === 'running' ? 'info' : test?.status === 'skipped' ? 'warn' : 'neutral')
     const testLabel = (test) => TEST_TEXT[test?.status] ?? '未运行'
     const totals = filesInfo?.totals ?? null
-    const progressColor = draft.status === 'done' ? T.ok : T.brand
+    const progressColor = statusForUi === 'done' ? T.ok : T.brand
     return h('div', {
       style: { borderTop: `1px solid ${T.borderSoft}`, paddingTop: T.gap.xs, display: 'flex', flexDirection: 'column', gap: 6 },
     },
       h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-        h('span', { style: styles.sectionTitle }, '开发任务进度'),
-        h(Tag, { tone: draft.status === 'done' ? 'ok' : draft.status === 'blocked' ? 'danger' : 'accent' }, STAGE_LABELS[stage] ?? stage),
+        h('span', { style: styles.sectionTitle }, isAnalysisFlow ? '分析任务进度' : '开发任务进度'),
+        h(Tag, { tone: statusForUi === 'done' ? 'ok' : statusForUi === 'blocked' ? 'danger' : 'accent' }, stageTextForUi),
         h('span', { style: { ...styles.num, fontSize: T.font.sm, color: T.text2, fontWeight: 600 } },
-          tasks.length ? `开发任务 ${doneCount}/${tasks.length}` : '任务清单为空'),
-        h('span', { style: styles.sectionHint }, '进度条只统计开发任务，不代表流程完成'),
+          tasks.length ? `${isAnalysisFlow ? '分析任务' : '开发任务'} ${doneCount}/${tasks.length}` : '任务清单为空'),
+        h('span', { style: styles.sectionHint }, isAnalysisFlow ? '进度条只统计分析任务' : '进度条只统计开发任务，不代表流程完成'),
         isAnalysisFlow ? null : h(Tag, { tone: tests.local?.stale ? 'warn' : testTone(tests.local) }, `本机自测 ${tests.local?.stale ? '已过期' : testLabel(tests.local)}`),
         isAnalysisFlow ? null : h(Tag, { tone: tests.environment?.stale ? 'warn' : testTone(tests.environment) }, `环境测试 ${tests.environment?.stale ? '已过期' : testLabel(tests.environment)}`),
         checks.length ? h(Tag, { tone: checksPassed === checks.length ? 'ok' : 'warn' }, `验收 ${checksPassed}/${checks.length}`) : null,
@@ -3865,11 +3872,11 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       h('div', {
         style: {
           fontSize: T.font.sm,
-          color: pendingStep ? (draft.status === 'blocked' ? T.danger : T.warnText) : T.ok,
+          color: pendingStep ? (statusForUi === 'blocked' ? T.danger : T.warnText) : T.ok,
           lineHeight: 1.7,
         },
       }, pendingStep
-        ? `开发任务${tasks.length && doneCount >= tasks.length ? '已完成' : '进行中'}，流程未结束：${pendingStep}${pendingTasks.length ? `；${pendingTasks.length} 个任务未完成（${pendingTasks.slice(0, 2).map((task) => task.text).join('、')}${pendingTasks.length > 2 ? ' 等' : ''}）` : ''}`
+        ? `${isAnalysisFlow ? '分析任务' : '开发任务'}${tasks.length && doneCount >= tasks.length ? '已完成' : '进行中'}，流程未结束：${pendingStep}${pendingTasks.length ? `；${pendingTasks.length} 个任务未完成（${pendingTasks.slice(0, 2).map((task) => task.text).join('、')}${pendingTasks.length > 2 ? ' 等' : ''}）` : ''}`
         : isAnalysisFlow ? '流程已完成：只读分析结论与任务已归档（不进入评审/测试/提交）' : '流程已完成：开发任务、评审、测试与提交都已完成'),
     )
   }
@@ -3890,7 +3897,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     },
       h('div', { style: styles.spread },
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
-          h('span', { style: styles.sectionTitle }, '关联会话'),
+          h('span', { style: styles.sectionTitle }, isAnalysisFlow ? '分析会话' : '关联会话'),
           boundId ? h(SessionBadge, { session: live }) : null,
           boundId && Number(live?.turns) > 0
             ? h('span', { style: styles.sectionHint }, `第 ${live.turns} 轮`)
@@ -3966,7 +3973,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       // 会话动态默认收起：过程信息放在需要时展开，首屏优先给开发进度
       h('div', { style: { marginTop: 2 } },
         h('div', { style: styles.spread },
-          h('span', { style: styles.sectionHint }, '开发会话动态（默认收起，避免挤占进度）'),
+          h('span', { style: styles.sectionHint }, isAnalysisFlow ? '分析会话动态（默认收起，避免挤占进度）' : '开发会话动态（默认收起，避免挤占进度）'),
           h('span', {
             role: 'button',
             style: { ...styles.smallMuted, color: T.brand, cursor: 'pointer' },
@@ -4013,7 +4020,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0, flex: '1 1 280px' } },
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
             h('span', { style: styles.pageTitle }, draft.title || draft.id),
-            h(StatusPill, { status: draft.status }),
+            h(StatusPill, { status: statusForUi }),
             running
               ? h(Tag, {
                 tone: 'accent',
@@ -4021,7 +4028,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                 style: { gap: 6, paddingLeft: 6 },
               },
                 h(Spinner, { key: 'spin', size: 10, tone: 'accent' }),
-                '正在开发…',
+                isAnalysisFlow ? '正在分析…' : '正在开发…',
               )
               : null,
             showStageTag ? h(Tag, { tone: 'neutral' }, stageLabelText) : null,
@@ -4164,13 +4171,15 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           : '阶段随工作自动推进：开发任务完成后点「继续推进」开始独立评审；评审通过 → 测试验证（本机/环境测试由工作站执行）→ 待提交 → 完成'),
       ),
       h(ArrowSteps, {
-        stages: stageSteps,
+        stages: isAnalysisFlow
+          ? stageSteps.map((entry) => entry.id === 'develop' ? { ...entry, label: '分析中', hint: '只读分析，不进入评审/测试/提交' } : entry)
+          : stageSteps,
         stageIndex,
         activePartial: stage === 'verify' && tests.local?.status === 'passed' && !tests.local?.stale && tests.environment?.status !== 'passed',
         // 当前阶段正在干活：用转圈替代静态圆点，阶段条本身也在“动”。
         activeLoading: (stage === 'develop' && running) || (stage === 'review' && (reviewBusy || reviewView.status === 'pending')),
         activeDetail: (() => {
-          if (stage === 'develop' && running) return '正在开发…'
+          if (stage === 'develop' && running) return isAnalysisFlow ? '正在分析…' : '正在开发…'
           if (stage === 'review') {
             if (reviewBusy) return '评审中…'
             if (reviewView.status === 'pending') return `评审中 ${reviewView.passed}/${reviewView.total}`
