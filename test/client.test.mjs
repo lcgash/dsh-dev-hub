@@ -887,7 +887,7 @@ test('回归：会话动作只保留一个（开启/继续推进），重发上�
 test('回归：会话运行中主按钮变成禁用的「正在开发…」，不再提供继续推进；评审可确认覆盖', async () => {
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
-  assert.match(index, /const sessionRunning = Boolean\(draft\.session\?\.id\) && Boolean\(session\?\.running \?\? draft\.running\)/)
+  assert.match(index, /const sessionRunning = Boolean\(draft\.session\?\.id\)[\s\S]{0,160}Boolean\(session\?\.running\) \|\| Boolean\(draft\.running\)/)
   assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| reviewBusy \|\| \(isAnalysisFlow \? false : advance\.disabled\)/)
   assert.match(index, /开发会话还在运行。现在开始评审可能读到半成品代码/)
   assert.match(index, /sessionRunning && reviewAction/)

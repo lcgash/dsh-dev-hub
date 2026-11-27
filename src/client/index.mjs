@@ -892,7 +892,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   const statusLabelText = STATUS_LABELS[draft.status] ?? draft.status
   const showStageTag = stageLabelText !== statusLabelText
   // 会话正在跑时当前这步还没完：主按钮不应再给「继续推进」（否则会重复排队一次推进）
-  const sessionRunning = Boolean(draft.session?.id) && Boolean(session?.running ?? draft.running)
+  const sessionRunning = Boolean(draft.session?.id)
+    && draft.externalState?.status !== 'blocked'
+    && (Boolean(session?.running) || Boolean(draft.running))
   const reviewAction = advance.action === 'dispatch' || advance.action === 'retry'
   const questions = workflow.questions ?? []
   const answered = questions.filter((question) => String(question.answer ?? '').trim()).length
@@ -4088,7 +4090,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   /* --------------------------------------------------------------- 组装 */
 
   // 是否正在开发：优先会话实时状态；Host 的 /state items 也补了 running，取不到会话状态时兜底。
-  const running = Boolean(session?.running ?? draft.running)
+  const running = Boolean(session?.running) || Boolean(draft.running)
 
   const tabOptions = [
     { value: 'overview', label: '概览' },
