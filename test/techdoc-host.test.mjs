@@ -293,3 +293,44 @@ test('测试跳过：原因入库、报告显式标注；环境测试跳过受�
     await rm(repo, { recursive: true, force: true })
   }
 })
+
+test('Claude bridge：DevHub 重启后从本机 bridge 文件恢复 token，不必重开会话', async () => {
+  const { repo, routes } = await setup()
+  const bridgeDir = join(home, 'claude-bridges')
+  const token = 'persisted-claude-bridge-token'
+  try {
+    await mkdir(bridgeDir, { recursive: true })
+    await writeFile(join(bridgeDir, 'persisted.json'), JSON.stringify({
+      url: 'http://127.0.0.1',
+      token,
+      itemId: 'techdoc-flow',
+      repo,
+      createdAt: new Date().toISOString(),
+    }), 'utf8')
+    // /state 会把当前端口写进 runtime.json，供换端口后的 bridge CLI 重试
+    const state = await call(routes, API.state, { queryParams: {} })
+    assert.equal(state.status, 200)
+    const runtime = JSON.parse(await readFile(join(home, 'runtime.json'), 'utf8'))
+    assert.match(runtime.url, /^http:\/\/127\.0\.0\.1/) 
+
+    // 不走 CLAUDE_BRIDGES 内存映射，模拟 DevHub 重启后的第一个请求
+    const got = await call(routes, API.cli, { method: 'POST', body: { token, action: 'get' } })
+    assert.equal(got.status, 200, JSON.stringify(got.body))
+    assert.equal(got.body.item.id, 'techdoc-flow')
+
+    const updated = await call(routes, API.cli, {
+      method: 'POST',
+      body: { token, action: 'update', args: { taskText: '桥恢复后回写任务', taskDone: false } },
+    })
+    assert.equal(updated.status, 200, JSON.stringify(updated.body))
+    assert.ok(updated.body.item.tasks.some((task) => task.text === '桥恢复后回写任务'))
+
+    // 内存里已缓存的 token 继续有效；真正没有 bridge 文件的 token 才失效，
+    // 错误里明确说明不需要为了刷新 token 重开会话
+    const gone = await call(routes, API.cli, { method: 'POST', body: { token: 'missing-bridge-token', action: 'get' } })
+    assert.equal(gone.status, 400)
+    assert.match(gone.body.error, /不需要为了刷新 token 重开会话/)
+  } finally {
+    await rm(repo, { recursive: true, force: true })
+  }
+})

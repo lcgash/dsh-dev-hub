@@ -1856,6 +1856,22 @@ async function applyReworkFacts(ctx, profile, repoPath, items) {
 const MEMORY_DIR = join(PROFILE_DIR, 'memory')
 // Claude Code CLI 桥：token → 台账目标（只在本进程有效；重启后重新开启会话会刷新）
 const CLAUDE_BRIDGES = new Map()
+const RUNTIME_PATH = join(PROFILE_DIR, 'runtime.json')
+let runtimeUrlCache = ''
+
+/**
+ * 记录当前 DevHub 的 loopback 地址。DevHub 重启后端口会变，外部 Claude Code
+ * 会话里的 bridge 文件可能还指向旧端口；bridge CLI 会用这个文件做一次重试。
+ */
+async function rememberRuntimeUrl(req) {
+  const host = String(req.headers?.host ?? '127.0.0.1').replace(/[\r\n]/g, '')
+  const url = `http://${host}`
+  if (url === runtimeUrlCache) return
+  runtimeUrlCache = url
+  try {
+    await writeFile(RUNTIME_PATH, JSON.stringify({ url, updatedAt: new Date().toISOString() }, null, 2), 'utf8')
+  } catch { /* 运行时文件写不了不影响主流程 */ }
+}
 
 /**
  * DevHub 重启后内存里的 bridge 映射会丢，但 bridge 文件还在本机 profile 里。
@@ -2486,13 +2502,19 @@ async function collectClaudeDevSessions(entries, existing = []) {
   for (const entry of entries) {
     const item = entry.item
     if (item?.session?.engine !== 'claude') continue
-    const cwd = item.session.cwd ? resolve(String(item.session.cwd)) : null
-    if (!cwd) continue
     const currentId = String(item.session.id ?? '')
+    // 旧台账不一定存了 session.cwd：先从 Claude job 的 state.json 找，再从 worktree 兜底。
+    const jobForCurrent = jobs.find((job) => job.id === currentId
+      || job.sessionId === currentId
+      || String(job.sessionId ?? '').startsWith(currentId))
+    let cwd = jobForCurrent?.cwd
+      ?? (item.session.cwd ? resolve(String(item.session.cwd)) : null)
+    if (!cwd) {
+      try { cwd = await workRootOf(entry.repoPath, item) } catch { cwd = entry.repoPath }
+    }
+    if (!cwd) continue
     const sameCwd = jobs.filter((job) => job.cwd === cwd)
-    const current = sameCwd.find((job) => job.id === currentId || job.sessionId === currentId || job.sessionId.startsWith(currentId))
-      ?? sameCwd.find((job) => job.sessionId.startsWith(currentId))
-    const currentJob = current ?? {
+    const currentJob = jobForCurrent ?? {
       sessionId: currentId,
       cwd,
       createdAt: item.session.boundAt ? Date.parse(item.session.boundAt) : null,
@@ -3984,6 +4006,7 @@ export function apply(ctx) {
       handler: async (req, res) => {
         if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
         try {
+          await rememberRuntimeUrl(req)
           const profile = await loadProfile()
           const repo = await activeRepo(profile)
           const sessionId = query(req.url, 'sessionId')
@@ -5851,8 +5874,10 @@ export function apply(ctx) {
           await mkdir(bridgeDir, { recursive: true })
           const token = randomUUID()
           const safeId = String(item.id).replace(/[^\p{L}\p{N}._-]+/gu, '-').slice(0, 80)
-          const bridgePath = join(bridgeDir, `${safeId}.json`)
-          const host = String(req.headers.host ?? '127.0.0.1').replace(/[\r\n]/g, '')
+          // 每次启动用独立文件：重开/并发会话不会覆盖旧 token，
+          // 旧会话在 DevHub 重启后仍能凭自己的 bridge 文件回写。
+          const bridgePath = join(bridgeDir, `${safeId}-${String(token).slice(0, 8)}.json`)
+          const host = String(req.headers?.host ?? '127.0.0.1').replace(/[\r\n]/g, '')
           const bridge = { url: `http://${host}`, token, itemId: item.id, repo, bridgePath }
           await writeFile(bridgePath, JSON.stringify({ url: bridge.url, token, itemId: item.id, repo, createdAt: new Date().toISOString() }, null, 2))
           CLAUDE_BRIDGES.set(token, { itemId: item.id, repo, bridgePath, at: Date.now() })
@@ -5889,6 +5914,7 @@ export function apply(ctx) {
         try {
           const body = await readBody(req)
           const token = String(body.token ?? req.headers['x-devhub-token'] ?? '').trim()
+          await rememberRuntimeUrl(req)
           let entry = CLAUDE_BRIDGES.get(token)
           if (!entry) {
             entry = await bridgeEntryFromDisk(token)
@@ -5939,8 +5965,8 @@ export function apply(ctx) {
           await mkdir(bridgeDir, { recursive: true })
           const token = randomUUID()
           const safeId = String(item.id).replace(/[^\p{L}\p{N}._-]+/gu, '-').slice(0, 80)
-          const bridgePath = join(bridgeDir, `${safeId}-${engine}.json`)
-          const promptPath = join(bridgeDir, `${safeId}-${engine}.prompt.txt`)
+          const bridgePath = join(bridgeDir, `${safeId}-${engine}-${String(token).slice(0, 8)}.json`)
+          const promptPath = join(bridgeDir, `${safeId}-${engine}-${String(token).slice(0, 8)}.prompt.txt`)
           await writeFile(bridgePath, JSON.stringify({ url: `http://${String(req.headers.host ?? '127.0.0.1').replace(/[\r\n]/g, '')}`, token, itemId: item.id, repo, createdAt: new Date().toISOString() }, null, 2))
           CLAUDE_BRIDGES.set(token, { itemId: item.id, repo, bridgePath, at: Date.now() })
           const cliHint = [
