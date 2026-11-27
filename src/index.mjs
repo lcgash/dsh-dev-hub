@@ -715,6 +715,10 @@ async function attachmentCapabilities(ctx) {
         codex: Boolean(codex),
         pi: Boolean(pi),
       },
+      runtime: {
+        node: process.version,
+        git: (await which('git')) ? true : false,
+      },
       permissions: ['auto', 'acceptEdits', 'bypassPermissions'],
       // Claude Code 能读图片；没有 Claude 时不要假装支持。
       images: claude
@@ -2517,6 +2521,45 @@ async function claudeTranscript(id, { limit = 80 } = {}) {
     truncated: rows.length > limit,
     reason: rows.length ? null : '这条 Claude Code 会话还没有可读的对话内容',
   }
+}
+
+/**
+ * 正在执行的 Claude `-p` 会话同样会落 JSONL。按项目 cwd + 起始时间找最新的那份，
+ * 让工作站能在“等待澄清”时直接渲染真实会话，而不是只转圈。
+ */
+async function findActiveClaudeTranscript(cwd, since) {
+  const sinceAt = Number(since) || 0
+  const target = await canonical(String(cwd ?? '')).catch(() => String(cwd ?? ''))
+  let dirs = []
+  try { dirs = await readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true }) } catch { return null }
+  const candidates = []
+  for (const dir of dirs) {
+    if (!dir.isDirectory()) continue
+    const folder = join(CLAUDE_PROJECTS_DIR, dir.name)
+    let files = []
+    try { files = await readdir(folder) } catch { continue }
+    for (const file of files) {
+      if (!file.endsWith('.jsonl')) continue
+      const path = join(folder, file)
+      try {
+        const info = await stat(path)
+        if (info.mtimeMs < sinceAt - 1500) continue
+        candidates.push({ path, mtimeMs: info.mtimeMs })
+      } catch { /* ignore */ }
+    }
+  }
+  candidates.sort((left, right) => right.mtimeMs - left.mtimeMs)
+  for (const candidate of candidates.slice(0, 6)) {
+    try {
+      const text = await readFile(candidate.path, 'utf8')
+      const head = text.split(/\r?\n/).slice(0, 30).join('\n')
+      const matched = head.includes(JSON.stringify(target).slice(1, -1))
+        || head.includes(`"cwd":${JSON.stringify(target)}`)
+        || text.includes(`"cwd":${JSON.stringify(target)}`)
+      if (matched) return { path: candidate.path, text }
+    } catch { /* ignore */ }
+  }
+  return null
 }
 
 async function claudeJobStates() {
@@ -6990,6 +7033,31 @@ export function createRoutes(ctx) {
             }
           }
           sendJson(res, 200, { ok: true, sessionId, matches })
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
+    // 澄清/扫描进行中：返回正在跑的 Claude 会话真实记录，前端直接渲染，不要只转圈
+    {
+      kind: 'exact',
+      path: API.liveTranscript,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        try {
+          const profile = await loadProfile()
+          const repo = await activeRepo(profile)
+          if (!repo) throw new Error('尚未选择项目')
+          const since = Number(query(req.url, 'since')) || 0
+          const found = await findActiveClaudeTranscript(repo, since)
+          if (!found) return sendJson(res, 200, { ok: true, found: false, messages: [] })
+          const rows = claudeTranscriptFromJsonl(found.text, { limit: 120 })
+          sendJson(res, 200, {
+            ok: true,
+            found: true,
+            sessionId: found.path.split(/[/\\]/).pop()?.replace(/\.jsonl$/, '') ?? null,
+            messages: rows.slice(-80),
+          })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }

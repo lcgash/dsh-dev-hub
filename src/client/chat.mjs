@@ -1221,6 +1221,8 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   const [syncBeforeStart, setSyncBeforeStart] = useState(true)
   // 长操作的进度反馈：动作名 + 已用秒数（否则只能看着"澄清中…"猜是不是死了）
   const [progress, setProgress] = useState(null)
+  // 正在跑的 Claude 会话真实记录（澄清/扫描等待时直接渲染，不只是一个转圈）
+  const [liveSession, setLiveSession] = useState(null)
   // 进行中的任务：{ kind:'recon'|'clarify'|'plan', ...入参, at }；落盘用于"切走再回来续跑"
   const [job, setJob] = useState(null)
   const resumeTriedRef = useRef(false)
@@ -1463,6 +1465,23 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     }, 1000)
     return () => clearInterval(timer)
   }, [progress?.startedAt])
+
+  // 等待 Claude 返回期间，轮询它正在写的会话 JSONL，直接渲染真实对话/工具调用
+  useEffect(() => {
+    if (!progress || devEngine !== 'claude' || !state?.repo?.path) { setLiveSession(null); return }
+    const since = Number(job?.at ?? progress.startedAt ?? Date.now())
+    let stop = false
+    const tick = async () => {
+      if (stop) return
+      try {
+        const body = await api(`${API.liveTranscript}?since=${since}`)
+        if (!stop) setLiveSession(body)
+      } catch { /* 会话文件还没出现/轮询失败不打扰 */ }
+    }
+    tick()
+    const timer = setInterval(tick, 1200)
+    return () => { stop = true; clearInterval(timer) }
+  }, [progress?.startedAt, job?.at, devEngine, state?.repo?.path])
 
   // 从 chat store 恢复 job 后，先给用户一个可见进度（读秒从前端计时；
   // 真正的请求在 Host 执行，切页不会凭空变出一个新任务）。
@@ -1933,8 +1952,16 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     clarifyInFlightRef.current = true
     const run = startRun(conversationId)
     setClarifyBusy(true)
-    setJob({ kind: 'clarify', description, round, history, recon, spec, attachments: usedAttachments, at: Date.now() })
-    setProgress({ label: `${engineName(devEngine)} 正在进行需求澄清（第 ${round} 轮）…`, startedAt: Date.now(), seconds: 0 })
+    const clarifyJob = { kind: 'clarify', description, round, history, recon, spec, attachments: usedAttachments, at: Date.now() }
+    setJob(clarifyJob)
+    setProgress({ label: `${engineName(devEngine)} 正在进行需求澄清（第 ${round} 轮）…`, startedAt: clarifyJob.at, seconds: 0 })
+    // 同步落 job：切页签瞬间卸载时，下一次挂载能判断“原任务还在跑”，
+    // 不会又发一轮澄清（截图里“刚才的澄清被切走了，已自动接着问”就是这么来的）。
+    if (repoPath && conversationId) {
+      // 只补 job：saveChat 会与现有快照合并，不能拿闭包里的旧 messages
+      // 覆盖 submitClarify 刚刚同步落盘的“已提交卡片 + 回答”。
+      saveChat(repoPath, conversationId, { job: clarifyJob }, scope)
+    }
     try {
       const body = await api(API.clarify, {
         method: 'POST',
@@ -2455,6 +2482,25 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
                 h('span', { style: { color: T.text2, fontSize: T.font.sm, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, progress.label),
                 h('span', { style: { ...styles.mono, color: T.text4, fontSize: T.font.xs, flex: '0 0 auto', whiteSpace: 'nowrap', marginLeft: 'auto' } }, `${progress.seconds}s`),
               ),
+              liveSession?.found && (liveSession.messages ?? []).length
+                ? h('div', { style: { marginTop: 6, border: `1px solid ${T.borderSoft}`, borderRadius: T.rBase, background: T.surface2, padding: '6px 10px' } },
+                  h('div', { style: { ...styles.row, marginBottom: 4 } },
+                    h('span', { style: { fontSize: T.font.xs, fontWeight: 600, color: T.text3 } }, '会话记录（实时）'),
+                    h('span', { style: styles.sectionHint }, liveSession.messages.length > 6 ? `最近 ${Math.min(liveSession.messages.length, 6)} 条` : `${liveSession.messages.length} 条`),
+                  ),
+                  h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 260, overflow: 'auto' } },
+                    ...liveSession.messages.slice(-6).map((message, index) => h('div', {
+                      key: `${index}-${message.role}`,
+                      style: { display: 'flex', flexDirection: 'column', gap: 1, padding: '3px 0' },
+                    },
+                      h('span', { style: { fontSize: T.font.xs, color: message.role === 'user' ? T.brand : message.role === 'tool' ? T.warnText : T.text4 } },
+                        message.roleLabel ?? (message.role === 'user' ? '你' : message.role === 'tool' ? '工具' : '助手')),
+                      h('span', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: T.font.xs, lineHeight: 1.6, color: message.role === 'user' ? T.brand : T.text2 } },
+                        String(message.text ?? '').slice(0, 1200)),
+                    )),
+                  ),
+                )
+                : null,
             ),
           )
           : null,

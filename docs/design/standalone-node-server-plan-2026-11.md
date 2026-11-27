@@ -274,6 +274,14 @@ shim 只用于 P0 验证和 v0.1 过渡。v0.1 发布前必须把路由注册从
 - 真实会话已 `claude stop` 清理；未把“真实 Claude 全链路”写成已通过。剩余手工验收：在受信任 worktree 中接受权限后跑完开发/评审/测试/报告。
 - CI 已加入 Ubuntu/macOS/Windows × Node 22/24；本轮没有 GitHub Actions 运行结果，Windows 仍标待验证。
 
+## 5.8 首次进入引导（2026-11-27）
+
+- 新增独立版 macOS 风格首次引导：介绍范围/上下文/评审 → 检测 Claude Code/Node/Git → 选择项目并完成初始化。
+- 视觉：系统字体、半透明材质、克制阴影、一次性入场动画；支持亮/暗色、`prefers-reduced-motion`、`prefers-reduced-transparency`。
+- 引导只对独立版生效；DSH 插件首屏仍是原 SetupForm，不改变插件用户路径。
+- 引导完成写入浏览器 localStorage；跳过引导仍回到原来的初始化表单。
+- 已用 headless Chrome 验证三步切换、项目打开、引导消失与 localStorage 标记。
+
 ## 6. 数据与兼容契约
 
 - 仓库台账继续是 `.dev-hub/items/*.json`，不新增第二套存储。

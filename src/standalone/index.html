@@ -3,10 +3,117 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="light dark" />
   <title>DevHub · 开发工作站</title>
   <style>
+    :root {
+      color-scheme: light;
+      --devhub-brand: #0a84ff;
+      --devhub-brand-hover: #3395ff;
+      --devhub-brand-active: #0066cc;
+      --devhub-brand-soft: rgba(10, 132, 255, .10);
+      --devhub-brand-border: rgba(10, 132, 255, .30);
+      --devhub-bg: #f5f5f7;
+      --devhub-surface: #ffffff;
+      --devhub-surface-2: #f2f2f7;
+      --devhub-border: rgba(60, 60, 67, .12);
+      --devhub-border-soft: rgba(60, 60, 67, .08);
+      --devhub-text: #1d1d1f;
+      --devhub-text-2: #6e6e73;
+      --dsw-alias-bg-base: #f5f5f7;
+      --dsw-alias-bg-layer-1: #ffffff;
+      --dsw-alias-bg-layer-2: #f2f2f7;
+      --dsw-alias-label-primary: #1d1d1f;
+      --dsw-alias-label-secondary: #6e6e73;
+      --dsw-alias-label-tertiary: #8e8e93;
+      --dsw-alias-label-caption: #8e8e93;
+      --dsw-alias-border-l1: rgba(60, 60, 67, .12);
+      --dsw-alias-border-l2: rgba(60, 60, 67, .08);
+      --devhub-mac-accent: #0a84ff;
+      --devhub-mac-accent-hover: #3395ff;
+      --devhub-mac-accent-soft: rgba(10, 132, 255, .12);
+      --devhub-mac-text: #1d1d1f;
+      --devhub-mac-secondary: #6e6e73;
+      --devhub-mac-tertiary: #8e8e93;
+      --devhub-mac-card: rgba(255, 255, 255, .78);
+      --devhub-mac-card-solid: #ffffff;
+      --devhub-mac-border: rgba(60, 60, 67, .12);
+      --devhub-mac-soft: rgba(60, 60, 67, .06);
+      --devhub-mac-danger: #ff3b30;
+      --devhub-mac-ok: #248a3d;
+      --devhub-mac-shadow: 0 24px 70px rgba(0, 0, 0, .14), 0 2px 8px rgba(0, 0, 0, .06);
+      --devhub-onboarding-bg:
+        radial-gradient(circle at 18% 12%, rgba(10, 132, 255, .20), transparent 34%),
+        radial-gradient(circle at 84% 86%, rgba(94, 92, 230, .16), transparent 38%),
+        linear-gradient(180deg, #f7f7fa, #ececf1);
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        color-scheme: dark;
+        --devhub-bg: #1c1c1e;
+        --devhub-surface: #2c2c2e;
+        --devhub-surface-2: #242426;
+        --devhub-border: rgba(255, 255, 255, .16);
+        --devhub-border-soft: rgba(255, 255, 255, .10);
+        --devhub-text: #f5f5f7;
+        --devhub-text-2: #aeaeb2;
+        --dsw-alias-bg-base: #1c1c1e;
+        --dsw-alias-bg-layer-1: #2c2c2e;
+        --dsw-alias-bg-layer-2: #242426;
+        --dsw-alias-label-primary: #f5f5f7;
+        --dsw-alias-label-secondary: #aeaeb2;
+        --dsw-alias-label-tertiary: #8e8e93;
+        --dsw-alias-label-caption: #8e8e93;
+        --dsw-alias-border-l1: rgba(255, 255, 255, .16);
+        --dsw-alias-border-l2: rgba(255, 255, 255, .10);
+        --devhub-mac-text: #f5f5f7;
+        --devhub-mac-secondary: #aeaeb2;
+        --devhub-mac-tertiary: #8e8e93;
+        --devhub-mac-card: rgba(44, 44, 46, .72);
+        --devhub-mac-card-solid: #2c2c2e;
+        --devhub-mac-border: rgba(255, 255, 255, .16);
+        --devhub-mac-soft: rgba(255, 255, 255, .08);
+        --devhub-mac-shadow: 0 24px 70px rgba(0, 0, 0, .5), 0 2px 8px rgba(0, 0, 0, .3);
+        --devhub-onboarding-bg:
+          radial-gradient(circle at 18% 12%, rgba(10, 132, 255, .22), transparent 36%),
+          radial-gradient(circle at 84% 86%, rgba(94, 92, 230, .18), transparent 40%),
+          linear-gradient(180deg, #1c1c1e, #111113);
+      }
+    }
+
     html, body, #devhub-root { margin: 0; min-height: 100%; }
-    body { background: #f6f6f7; }
+    html { height: 100%; }
+    body {
+      min-height: 100%;
+      background: var(--devhub-bg);
+      color: var(--devhub-text);
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", sans-serif;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    #devhub-root { min-height: 100vh; }
+
+    @keyframes devhub-onboarding-rise {
+      from { opacity: 0; transform: translateY(14px) scale(.985); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes devhub-onboarding-fade {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .devhub-onboarding-card {
+      animation: devhub-onboarding-rise .55s cubic-bezier(.2, .8, .2, 1) both;
+    }
+    .devhub-onboarding-step {
+      animation: devhub-onboarding-fade .35s cubic-bezier(.2, .8, .2, 1) both;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .devhub-onboarding-card, .devhub-onboarding-step { animation: none !important; }
+    }
+    @media (prefers-reduced-transparency: reduce) {
+      .devhub-onboarding-card { background: var(--devhub-mac-card-solid) !important; backdrop-filter: none !important; }
+    }
   </style>
 </head>
 <body>

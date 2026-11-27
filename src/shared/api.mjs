@@ -32,6 +32,7 @@ export const API = {
   managedSessions: '/api/dev-hub/sessions/manage',
   skills: '/api/dev-hub/skills',
   sessionLog: '/api/dev-hub/session-log',
+  liveTranscript: '/api/dev-hub/live-transcript',
   sessionTranscript: '/api/dev-hub/session-transcript',
   lookup: '/api/dev-hub/lookup',
   assist: '/api/dev-hub/assist',

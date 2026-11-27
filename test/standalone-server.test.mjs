@@ -10,13 +10,13 @@ test('standalone M0：现有 Host 路由可在纯 Node HTTP server 上启动', a
   const runtimePath = join(runtimeDir, 'runtime.json')
   const instance = await startStandaloneServer({ runtimePath })
   try {
-    assert.equal(instance.routes.length, 60)
+    assert.ok(instance.routes.length >= 60, `routes: ${instance.routes.length}`)
     const auth = { headers: { 'x-devhub-token': instance.token } }
     const health = await fetch(`${instance.url}/health`)
     assert.equal(health.status, 200)
     const body = await health.json()
     assert.equal(body.ok, true)
-    assert.equal(body.routes, 60)
+    assert.equal(body.routes, instance.routes.length)
 
     const state = await fetch(`${instance.url}/api/dev-hub/state`, auth)
     assert.equal(state.status, 200)

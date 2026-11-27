@@ -112,4 +112,9 @@ test('切走页签：未返回的澄清/计划结果写回 chat store，不写�
   assert.match(chat, /function persistPlanToOrigin\(run, \{ plan, files, answers, scopeList, pending \}\)/)
   assert.match(chat, /persistPlanToOrigin\(run, \{ plan, files, answers, scopeList: scopes, pending \}\)/)
   assert.match(chat, /persistClarifyToOrigin\(run, payload/)
+  // 澄清等待时轮询真实 Claude 会话记录，不只显示转圈
+  assert.match(chat, /API\.liveTranscript/)
+  assert.match(chat, /const clarifyJob = \{ kind: 'clarify'/)
+  assert.match(chat, /job: clarifyJob/)
+  assert.match(chat, /会话记录（实时）/)
 })

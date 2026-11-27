@@ -8,6 +8,7 @@ User-visible changes to **dsh-dev-hub**. Dates are in the author's local time zo
 
 - **Standalone Node server**: `devhub` / `devhub serve` / `devhub doctor`, no DSH installation required.
 - Standalone browser UI reuses the same React page and workflow core; React is bundled separately.
+- A macOS-style first-run guide introduces scope/context/review, checks Claude Code/Node/Git, then lets the user choose a project. Light/dark and reduced-motion are respected.
 - Claude Code is the first standalone engine: background sessions, blocked/running state, bridge CLI, external review, local tests and reports.
 - Startup token, Host/Origin checks and attachment query token for the standalone server.
 - `DEVHUB_HOME` and legacy `~/.dsh/dev-hub` reuse; `devhub serve --home`.

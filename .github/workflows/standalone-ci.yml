@@ -23,4 +23,4 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run build
       - name: standalone server + fake Claude E2E
-        run: node --test test/standalone-server.test.mjs test/standalone-e2e.test.mjs
+        run: node --test test/onboarding.test.mjs test/standalone-server.test.mjs test/standalone-e2e.test.mjs

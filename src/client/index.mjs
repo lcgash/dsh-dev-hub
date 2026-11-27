@@ -16,6 +16,7 @@ import { API, STATUS_LABELS } from '../shared/api.mjs'
 import { REVIEWER_ROLES, REVIEW_STATUS_LABELS, REVIEW_STATUS_TONES, STAGE_LABELS, WORKFLOW_STAGES } from '../shared/workflow.mjs'
 import { describeReview, reviewAdvancePlan, reviewFailureHint } from '../core/review.mjs'
 import { normalizeAutomation } from '../shared/automation.mjs'
+import { StandaloneOnboarding, isOnboardingDone, markOnboardingDone } from './onboarding.mjs'
 import { isWeakTitle, requirementStatusLabel } from '../shared/requirement.mjs'
 import { attachmentLabel, isImageAttachment, normalizeAttachments } from '../shared/attachment.mjs'
 
@@ -4398,6 +4399,9 @@ export { launchDevSession, launchPrompt }
 
 function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openFlowNonce = 0, homeNonce = 0, onScopeChanged = null }) {
   const [state, setState] = useState(null)
+  // 独立版首次进入：先给一段 mac 风格的引导，再进入项目初始化。
+  // DSH 插件保持原有 SetupForm，不改变插件用户的首屏。
+  const [showOnboarding, setShowOnboarding] = useState(() => Boolean(globalThis.__DEVHUB_STANDALONE__) && !isOnboardingDone())
   // 多库项目：多库项目（前后端联动）
   const [wsOpen, setWsOpen] = useState(false)
   // null = 新建；否则是正在编辑的多库项目 id
@@ -5114,6 +5118,22 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
 
   if (state === null) return h('div', { style: styles.wrap }, busy ? '加载 DevHub…' : 'DevHub 尚未加载')
   if (state.needsSetup || !state.repo) {
+    // 独立版首次进入走 mac 风格引导；跳过或完成后仍然回到原来的初始化表单。
+    if (globalThis.__DEVHUB_STANDALONE__ && showOnboarding) {
+      return h(StandaloneOnboarding, {
+        state,
+        onDone: (next) => {
+          markOnboardingDone()
+          setShowOnboarding(false)
+          setState(next)
+          onScopeChanged?.()
+        },
+        onSkip: () => {
+          markOnboardingDone()
+          setShowOnboarding(false)
+        },
+      })
+    }
     // 首次初始化 / 新增项目也改变了“当前项目”，头部徽标要跟着刷新。
     return h('div', { style: styles.wrap }, h(SetupForm, {
       state,

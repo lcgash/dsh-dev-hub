@@ -28,11 +28,12 @@ const DS = {
 
 export const T = {
   // 品牌紫（家族标准值，唯一高饱和色）
-  brand: '#6049e7',
-  brandHover: '#7d68ea',
-  brandActive: '#4a35c4',
-  brandSoft: '#f0edff',
-  brandBorder: '#d8d0fb',
+  // 独立版通过 CSS 变量换成 macOS 系统蓝；DSH 插件没有这些变量，回退原品牌紫。
+  brand: 'var(--devhub-brand, #6049e7)',
+  brandHover: 'var(--devhub-brand-hover, #7d68ea)',
+  brandActive: 'var(--devhub-brand-active, #4a35c4)',
+  brandSoft: 'var(--devhub-brand-soft, #f0edff)',
+  brandBorder: 'var(--devhub-brand-border, #d8d0fb)',
   // 语义色：文字色 + 8% 淡底成对
   ok: '#00875a',
   okSoft: '#e2ffee',
@@ -46,16 +47,16 @@ export const T = {
   info: '#6049e7',
   infoSoft: '#f0edff',
   // 四级灰阶 + 表面
-  text: DS.label1,
-  text2: DS.label2,
+  text: 'var(--devhub-text, var(--dsw-alias-label-primary, #1e2a3d))',
+  text2: 'var(--devhub-text-2, var(--dsw-alias-label-secondary, #4d545e))',
   // 深色主题必须跟随外壳：硬编码深灰会在暗色卡片上看不清
   text3: 'var(--dsw-alias-label-tertiary, #5a5b70)',
   text4: 'var(--dsw-alias-label-caption, #848c9f)',
-  bg: DS.bgBase,
-  surface: DS.bgLayer1,
-  surface2: DS.bgLayer2,
-  border: DS.border1,
-  borderSoft: DS.border2,
+  bg: 'var(--devhub-bg, var(--dsw-alias-bg-base, #f9fafd))',
+  surface: 'var(--devhub-surface, var(--dsw-alias-bg-layer-1, #ffffff))',
+  surface2: 'var(--devhub-surface-2, var(--dsw-alias-bg-layer-2, #f5f6fa))',
+  border: 'var(--devhub-border, var(--dsw-alias-border-l1, #e9eaec))',
+  borderSoft: 'var(--devhub-border-soft, var(--dsw-alias-border-l2, #ecedf0))',
   // 圆角梯度
   rSm: 6,
   rBase: 8,
