@@ -892,6 +892,12 @@ test('回归：会话运行中主按钮变成禁用的「正在开发…」，�
   assert.match(index, /开发会话还在运行。现在开始评审可能读到半成品代码/)
   // blocked 不是禁用的死按钮：点它打开终端处理，避免“等待授权”和“重新评审”口径打架
   assert.match(index, /处理会话授权/)
+  // 打开会话：先确认会话存在，使用完整 sessionId 和会话真实 cwd（不是从 repo 推导的路径）
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  assert.match(host, /const fullId = String\(found\.sessionId/)
+  assert.match(host, /const sessionCwd = String\(item\.session\?\.cwd/)
+  assert.match(host, /await exists\(sessionCwd\)/)
+  assert.match(host, /Claude Code 会话不存在或已结束/)
   assert.match(index, /if \(!flowDone && draft\.externalState\?\.status === 'blocked' && draft\.session\?\.id\)/)
   assert.match(index, /sessionRunning && reviewAction/)
   assert.match(index, /advance\.label \|\| '评审'/)

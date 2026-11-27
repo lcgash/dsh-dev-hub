@@ -17,6 +17,13 @@ import { spawn, spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
+// 独立版有旧 DSH 配置就复用（worktree/profile 不丢）；全新用户用 ~/.devhub。
+// 必须在 import Host 模块之前设置，Host 的 PROFILE_DIR 是模块级常量。
+if (!process.env.DEVHUB_HOME) {
+  const legacy = join(homedir(), '.dsh', 'dev-hub')
+  process.env.DEVHUB_HOME = existsSync(legacy) ? legacy : join(homedir(), '.devhub')
+}
+
 function usage() {
   console.error(`DevHub CLI
 
@@ -96,6 +103,7 @@ async function runHostCommand(argv) {
   const command = argv[0] === 'serve' || argv[0] === 'open' ? 'serve' : (argv[0] ?? 'serve')
   if (command === 'doctor') {
     console.log(`node    ${process.version}`)
+    console.log(`home    ${process.env.DEVHUB_HOME}`)
     console.log(`git     ${which('git') ?? '未检测到'}`)
     console.log(`claude  ${which('claude') ?? '未检测到'}`)
     console.log(`codex   ${which('codex') ?? '未检测到'}`)
@@ -105,10 +113,13 @@ async function runHostCommand(argv) {
   if (command !== 'serve') throw new Error(`未知命令：${command}`)
   const options = parseHostArgs(argv.slice(1))
   const { startStandaloneServer } = await import('../src/standalone/server.mjs')
-  const instance = await startStandaloneServer(options)
-  console.log(`[devhub] ${instance.url}  (${instance.routes.length} routes)`)
-  console.log('[devhub] 关闭：Ctrl+C')
+  const instance = await startStandaloneServer({ ...options, singleInstance: true })
+  console.log(instance.existing
+    ? `[devhub] 已有实例在运行：${instance.url}`
+    : `[devhub] ${instance.url}  (${instance.routes.length} routes)`)
+  if (!instance.existing) console.log('[devhub] 关闭：Ctrl+C')
   if (options.open) openBrowser(instance.url)
+  if (instance.existing) return
   await new Promise((resolve) => {
     const stop = () => { instance.close().then(resolve, resolve) }
     process.once('SIGINT', stop)

@@ -238,6 +238,18 @@ shim 只用于 P0 验证和 v0.1 过渡。v0.1 发布前必须把路由注册从
 - `peerDependenciesMeta` 已把 DSH/React 标 optional；空环境安装不拉 DSH 包。
 - 仍需：独立 sessions/agents 的完整管理页、Claude 全链路真实回归、评审失败不依赖 DSH fallback、Windows 冒烟、官方 README/发布。
 
+## 5.4 M3 全链路结果（2026-11-27）
+
+- 新增 `test/standalone-e2e.test.mjs`：临时 git 仓库 + fake `claude` CLI，跑通
+  setup → bootstrap → 建流程 → start（worktree）→ Context Pack → Claude launch
+  → blocked/running 会话状态 → bridge CLI 回写 → 外部评审 pass → 本机自测 → 报告。
+- 独立宿主会话列表会把 Claude CLI 的 blocked/running 投影到流程 `sessionStates`；不再依赖 DSH session/agent。
+- 独立评审失败不再尝试 DSH fallback；直接标 error，允许重试。
+- `/capabilities` 在独立宿主返回引擎可用性与权限模式；没有 Claude 时图片能力显式不支持。
+- 单实例：启动时读 `runtime.json`，已有健康实例则复用它；退出清理 runtime。
+- `DEVHUB_HOME` 规则已接入：有历史 `~/.dsh/dev-hub` 就复用，否则独立版使用 `~/.devhub`。
+- `npm pack` + 临时 prefix 安装 + 空 HOME 启动仍通过。
+
 ## 6. 数据与兼容契约
 
 - 仓库台账继续是 `.dev-hub/items/*.json`，不新增第二套存储。

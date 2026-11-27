@@ -24,14 +24,14 @@
 
 ---
 
-`dsh-dev-hub` is a [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web GUI plugin. It sits between a rough product request and a coding session, and keeps the boring but important parts honest:
+`dsh-dev-hub` is a development workflow workstation with **two hosts: a [DSH plugin](README.md) and a [standalone Node server](docs/standalone-quickstart.md)**. It sits between a rough product request and a coding session, and keeps the boring but important parts honest:
 
 - what exactly are we changing, and what are we **not** changing?
 - which files are in scope, and which changes belong to someone else?
 - what evidence proves the work is done?
 - is a second pair of eyes required before tests and delivery?
 
-The plugin is repository-agnostic. It can target a single Git repository, or a **virtual workspace** composed of several repositories.
+Both hosts share the same workflow core and data format. The standalone server targets local Claude Code users and does not require DSH. It is repository-agnostic: a single Git repository or a **virtual workspace** composed of several repositories.
 
 > The UI is currently Chinese-first. All names, repositories and numbers in the screenshots are fictional sample data.
 

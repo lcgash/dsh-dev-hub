@@ -31,6 +31,18 @@ test('standalone M0：现有 Host 路由可在纯 Node HTTP server 上启动', a
     assert.match(js, /createRoot/)
     assert.doesNotMatch(js, /__ModuleLoader__/)
 
+    const settings = await fetch(`${instance.url}/api/dev-hub/settings`, auth)
+    assert.equal(settings.status, 200)
+    const settingsBody = await settings.json()
+    assert.equal(settingsBody.dshAvailable, false)
+    assert.equal(settingsBody.engine, 'claude')
+
+    const capabilities = await fetch(`${instance.url}/api/dev-hub/capabilities`, auth)
+    assert.equal(capabilities.status, 200)
+    const capabilitiesBody = await capabilities.json()
+    assert.equal(capabilitiesBody.standalone, true)
+    assert.equal(capabilitiesBody.engines.dsh, false)
+
     const denied = await fetch(`${instance.url}/api/dev-hub/state`)
     assert.equal(denied.status, 403)
 

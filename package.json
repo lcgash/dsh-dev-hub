@@ -1,7 +1,7 @@
 {
   "name": "dsh-dev-hub",
   "version": "0.1.0",
-  "description": "Chat-first development flow tracker for DeepSeek Harness: scan, clarify, plan, review, test and report repository-aware changes.",
+  "description": "Local-first development workflow workstation for Claude Code / Codex / Pi, with a DSH plugin host and a standalone Node server.",
   "type": "module",
   "main": "lib/index.js",
   "exports": {

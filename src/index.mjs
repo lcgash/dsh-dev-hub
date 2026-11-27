@@ -535,8 +535,37 @@ function attentionOf(ctx, item, running) {
  * 只调一次 sessionStates（扫会话事件不便宜），再按 itemId 建 Map；
  * attention 每项只算一次，attentionCount 直接复用同一份结果。
  */
-function itemViews(ctx, items) {
+async function hostSessionStates(ctx, items) {
   const live = sessionStates(ctx, items)
+  if (!STANDALONE_HOST) return live
+  // 独立宿主没有 DSH session/agent；Claude 后台会话的实时状态来自 claude CLI。
+  // 只覆盖 external Claude 流程，DSH 分支保持原有投影。
+  const rows = await Promise.all(live.sessions.map(async (row) => {
+    const item = items.find((entry) => entry.id === row.itemId)
+    if (!item?.session?.id || item.session.engine !== 'claude') return row
+    try {
+      const external = await claudeLiveState(item.session.id)
+      if (!external) return row
+      const status = String(external.status ?? '').toLowerCase()
+      const blocked = status === 'blocked'
+      return {
+        ...row,
+        alive: true,
+        external: true,
+        state: status,
+        blocked,
+        running: !blocked && ['running', 'working', 'in_progress'].includes(status),
+        reason: blocked ? '等待授权/选择，请打开终端处理' : `${item.session.engine} 外部会话（状态由 CLI 提供）`,
+      }
+    } catch (error) {
+      return { ...row, external: true, reason: String(error?.message ?? error) }
+    }
+  }))
+  return { ...live, sessions: rows }
+}
+
+async function itemViews(ctx, items) {
+  const live = await hostSessionStates(ctx, items)
   const byItem = new Map(live.sessions.map((row) => [row.itemId, row]))
   const rows = items.map((item) => {
     const running = byItem.get(item.id)?.running === true
@@ -675,6 +704,25 @@ async function regenerateItemTitle(ctx, repo, item) {
  * 优先问 llm 服务；拿不到能力信息按"不支持"处理，并给出可读原因。
  */
 async function attachmentCapabilities(ctx) {
+  if (STANDALONE_HOST) {
+    const [claude, codex, pi] = await Promise.all([which('claude'), which('codex'), which('pi')])
+    return {
+      model: null,
+      standalone: true,
+      engines: {
+        dsh: false,
+        claude: Boolean(claude),
+        codex: Boolean(codex),
+        pi: Boolean(pi),
+      },
+      permissions: ['auto', 'acceptEdits', 'bypassPermissions'],
+      // Claude Code 能读图片；没有 Claude 时不要假装支持。
+      images: claude
+        ? { supported: true, reason: null }
+        : { supported: false, reason: '未检测到 claude 命令：请先安装 Claude Code CLI 并登录' },
+      files: { supported: true },
+    }
+  }
   const selection = ctx.get('agentDefaultModel')?.currentSelection?.() ?? null
   const model = selection?.provider && selection?.model
     ? { provider: String(selection.provider), model: String(selection.model) }
@@ -2734,7 +2782,7 @@ async function stateFor(repo, profile, ctx) {
   // 启动/切库后后台预热：索引建好后，第一次描述扫描直接用候选，不再全仓 walk+read
   if (repo) warmRepoIndex(repo)
   for (const member of (active?.repos ?? []).slice(0, 4)) warmRepoIndex(member)
-  const views = itemViews(ctx, items)
+  const views = await itemViews(ctx, items)
   views.ctx = ctx
   await applyClaudeRunning(views, items)
   delete views.ctx
@@ -3658,6 +3706,9 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
             })(),
           })
         } catch (externalError) {
+          // 独立宿主没有 DSH 进程内 agent：外部评审失败必须显式落 error，
+          // 不能把用户卡在「等待审核员返回」上，也不能假装降级成功。
+          if (STANDALONE_HOST) throw externalError
           const fallback = await runAgentJson(ctx, {
             cwd: evidence.cwd,
             prompt,
@@ -4162,7 +4213,7 @@ export function createRoutes(ctx) {
           if (req.method === 'GET') {
             const items = await localItems(profile, repo)
             // 与 /state 同源：摘要带 running/attention，避免前端 loadItems 覆盖后信号丢失
-            return sendJson(res, 200, { ok: true, items: itemViews(ctx, items).items })
+            return sendJson(res, 200, { ok: true, items: (await itemViews(ctx, items)).items })
           }
           if (req.method === 'POST') {
             const body = await readBody(req)
@@ -5883,8 +5934,25 @@ export function createRoutes(ctx) {
           if (action === 'open') {
             const id = String(body.sessionId ?? item.session?.id ?? '').trim()
             if (!id) throw new Error('没有 Claude Code 会话 id')
-            openClaudeTerminal(root, id)
-            return sendJson(res, 200, { ok: true, sessionId: id })
+            // 台账里可能只存了 `--bg` 打印的短 id；attach 用完整 sessionId 更稳。
+            // 同时先确认会话真的还在，不能打开一个 Claude 的“Resume session”空选择器。
+            const agents = await claudeAgents().catch(() => [])
+            const found = agents.find((entry) => entry.id === id
+              || entry.sessionId === id
+              || String(entry.sessionId ?? '').startsWith(id))
+            if (!found) {
+              throw new Error(`Claude Code 会话不存在或已结束：${id}；请在工作站重新开启开发会话后再试`)
+            }
+            const fullId = String(found.sessionId ?? found.id ?? id)
+            // 会话实际 cwd 优先（虚拟库/独立工作区路径不一定能从 repo 推导出来）
+            const sessionCwd = String(item.session?.cwd ?? '').trim()
+            const openRoot = sessionCwd && await exists(sessionCwd) ? sessionCwd : root
+            openClaudeTerminal(openRoot, fullId)
+            if (item.session && item.session.id !== fullId) {
+              item.session = { ...item.session, id: fullId, updatedAt: new Date().toISOString() }
+              await saveItem(repo, item)
+            }
+            return sendJson(res, 200, { ok: true, sessionId: fullId })
           }
           if (action === 'send') {
             const id = String(body.sessionId ?? item.session?.id ?? '').trim()
@@ -7262,7 +7330,7 @@ export function createRoutes(ctx) {
           const repo = await activeRepo(profile)
           if (!repo) throw new Error('尚未选择代码库')
           const items = await listItems(repo)
-          sendJson(res, 200, { ok: true, ...sessionStates(ctx, items) })
+          sendJson(res, 200, { ok: true, ...(await hostSessionStates(ctx, items)) })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }
