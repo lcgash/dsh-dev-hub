@@ -67,9 +67,9 @@ function send(res, status, body, type = 'application/json; charset=utf-8') {
   res.end(typeof body === 'string' ? body : JSON.stringify(body))
 }
 
-async function readRunningRuntime() {
+async function readRunningRuntime(runtimePath) {
   try {
-    const runtime = JSON.parse(await readFile(RUNTIME_PATH, 'utf8'))
+    const runtime = JSON.parse(await readFile(runtimePath, 'utf8'))
     if (!runtime?.url) return null
     const response = await fetch(`${runtime.url}/health`, { signal: AbortSignal.timeout(1500) })
     if (!response.ok) return null
@@ -79,24 +79,24 @@ async function readRunningRuntime() {
   }
 }
 
-async function writeRuntime(url) {
+async function writeRuntime(runtimePath, url) {
   try {
-    await mkdir(dirname(RUNTIME_PATH), { recursive: true })
-    await writeFile(RUNTIME_PATH, JSON.stringify({ url, pid: process.pid, startedAt: new Date().toISOString() }, null, 2), 'utf8')
+    await mkdir(dirname(runtimePath), { recursive: true })
+    await writeFile(runtimePath, JSON.stringify({ url, pid: process.pid, startedAt: new Date().toISOString() }, null, 2), 'utf8')
   } catch { /* runtime 只是加速器；写失败不影响 server */ }
 }
 
-async function clearRuntime(url) {
+async function clearRuntime(runtimePath, url) {
   try {
-    const runtime = JSON.parse(await readFile(RUNTIME_PATH, 'utf8'))
-    if (runtime?.url === url) await unlink(RUNTIME_PATH)
+    const runtime = JSON.parse(await readFile(runtimePath, 'utf8'))
+    if (runtime?.url === url) await unlink(runtimePath)
   } catch { /* 没文件/坏文件都不用处理 */ }
 }
 
 /** Start the standalone server. Port 0 lets the OS choose a free loopback port. */
-export async function startStandaloneServer({ port = 0, host = '127.0.0.1', services = {}, singleInstance = false } = {}) {
+export async function startStandaloneServer({ port = 0, host = '127.0.0.1', services = {}, singleInstance = false, runtimePath = RUNTIME_PATH } = {}) {
   if (singleInstance) {
-    const running = await readRunningRuntime()
+    const running = await readRunningRuntime(runtimePath)
     if (running) {
       return {
         existing: true,
@@ -148,7 +148,7 @@ export async function startStandaloneServer({ port = 0, host = '127.0.0.1', serv
   const address = server.address()
   const actualPort = typeof address === 'object' && address ? address.port : port
   const url = `http://${host}:${actualPort}`
-  await writeRuntime(url)
+  await writeRuntime(runtimePath, url)
   return {
     server,
     port: actualPort,
@@ -157,7 +157,7 @@ export async function startStandaloneServer({ port = 0, host = '127.0.0.1', serv
     routes,
     async close() {
       hostContext.dispose()
-      await clearRuntime(url)
+      await clearRuntime(runtimePath, url)
       // fetch/undici 会复用 keep-alive 连接，close() 单靠等待会一直挂着。
       server.closeIdleConnections?.()
       server.closeAllConnections?.()

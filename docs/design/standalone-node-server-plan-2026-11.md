@@ -250,6 +250,14 @@ shim 只用于 P0 验证和 v0.1 过渡。v0.1 发布前必须把路由注册从
 - `DEVHUB_HOME` 规则已接入：有历史 `~/.dsh/dev-hub` 就复用，否则独立版使用 `~/.devhub`。
 - `npm pack` + 临时 prefix 安装 + 空 HOME 启动仍通过。
 
+## 5.5 M4 进度（2026-11-27）
+
+- `devhub serve --home DIR` 已支持；`DEVHUB_HOME` 在 import Host 前生效。
+- `runtime.json` 单实例已带测试：第二个进程复用健康实例，不再抢同一端口。
+- 独立 server 的 runtime 路径可注入，测试不会污染用户本机 `~/.dsh/dev-hub`。
+- `close()` 会关闭 keep-alive 连接，E2E 不会因为 undici 连接池挂住。
+- 仍缺：Windows 实机冒烟、单实例跨宿主（DSH 插件 + 独立版同时写台账）写锁、发布版本号与 npm dry-run。
+
 ## 6. 数据与兼容契约
 
 - 仓库台账继续是 `.dev-hub/items/*.json`，不新增第二套存储。

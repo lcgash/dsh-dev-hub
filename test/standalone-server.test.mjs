@@ -1,9 +1,14 @@
 import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import test from 'node:test'
 
 test('standalone M0：现有 Host 路由可在纯 Node HTTP server 上启动', async () => {
   const { startStandaloneServer } = await import('../src/standalone/server.mjs')
-  const instance = await startStandaloneServer()
+  const runtimeDir = await mkdtemp(join(tmpdir(), 'devhub-runtime-'))
+  const runtimePath = join(runtimeDir, 'runtime.json')
+  const instance = await startStandaloneServer({ runtimePath })
   try {
     assert.equal(instance.routes.length, 60)
     const auth = { headers: { 'x-devhub-token': instance.token } }
@@ -48,7 +53,13 @@ test('standalone M0：现有 Host 路由可在纯 Node HTTP server 上启动', a
 
     const missing = await fetch(`${instance.url}/api/dev-hub/not-a-route`, auth)
     assert.equal(missing.status, 404)
+    // 单实例：第二个进程不再开新 server，而是复用已有实例。
+    const second = await startStandaloneServer({ singleInstance: true, runtimePath })
+    assert.equal(second.existing, true)
+    assert.equal(second.url, instance.url)
+    await second.close()
   } finally {
     await instance.close()
+    await rm(runtimeDir, { recursive: true, force: true })
   }
 })

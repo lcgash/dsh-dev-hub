@@ -28,7 +28,7 @@ function usage() {
   console.error(`DevHub CLI
 
   devhub                        启动本机 Node Server 并打开浏览器
-  devhub serve [--port N] [--no-open] [--host H]
+  devhub serve [--port N] [--no-open] [--host H] [--home DIR]
   devhub doctor                 检查 node/git/claude 能力
   devhub get --bridge <bridge.json>
   devhub update --bridge <bridge.json> [options]
@@ -82,12 +82,13 @@ function openBrowser(url) {
 }
 
 function parseHostArgs(argv) {
-  const out = { port: 0, host: '127.0.0.1', open: true }
+  const out = { port: 0, host: '127.0.0.1', open: true, home: '' }
   for (let i = 0; i < argv.length; i += 1) {
     const value = argv[i]
     if (value === '--no-open') out.open = false
     else if (value === '--port') out.port = Number(argv[++i] ?? 0)
     else if (value === '--host') out.host = String(argv[++i] ?? '127.0.0.1')
+    else if (value === '--home') out.home = String(argv[++i] ?? '')
   }
   if (!Number.isInteger(out.port) || out.port < 0) throw new Error('--port 必须是 0 或正整数')
   return out
@@ -112,6 +113,8 @@ async function runHostCommand(argv) {
   }
   if (command !== 'serve') throw new Error(`未知命令：${command}`)
   const options = parseHostArgs(argv.slice(1))
+  // --home 必须在本进程 import Host 前生效（PROFILE_DIR 是模块级常量）。
+  if (options.home) process.env.DEVHUB_HOME = options.home
   const { startStandaloneServer } = await import('../src/standalone/server.mjs')
   const instance = await startStandaloneServer({ ...options, singleInstance: true })
   console.log(instance.existing
