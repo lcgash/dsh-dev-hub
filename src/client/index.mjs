@@ -3960,6 +3960,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           boundAt: draft.session?.boundAt ?? null,
           alive: true,
           external: true,
+          completed: draft.status === 'done' || stage === 'done',
           blocked: externalState === 'blocked',
           state: externalState,
           running: Boolean(draft.running) || externalState === 'working' || externalState === 'running',

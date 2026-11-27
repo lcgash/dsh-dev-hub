@@ -131,6 +131,8 @@ export function openReportHtml(itemId) {
  */
 export function sessionBadgeState(session) {
   if (!session || session.alive === null || session.alive === undefined) return { tone: 'neutral', label: '状态读取中' }
+  // 流程已经交付后，旧的外部 CLI 会话失败/失联不该继续报成“异常”
+  if (session.completed) return { tone: 'neutral', label: '流程已完成' }
   // 外部 CLI 的 blocked 与 running 一样是「正在干活但需要人处理」，不能显示成空闲
   if (session.blocked) return { tone: 'warn', label: '等待授权/选择' }
   if (session.running) return { tone: 'ok', label: '会话运行中' }
@@ -156,6 +158,7 @@ export function SessionBadge({ session }) {
 /** 最近活动：优先用 Host 的 idleSeconds（秒），没有就按 lastEventAt 现算；只显示相对时间。 */
 export function sessionActivity(session) {
   if (!session) return '—'
+  if (session.completed) return '已结束'
   if (session.blocked) return '等待授权'
   let idle = Number(session.idleSeconds)
   if (!Number.isFinite(idle) && session.lastEventAt) {
