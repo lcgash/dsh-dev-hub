@@ -7,6 +7,8 @@
     "label": "English"
   },
   "messages": {
+    "评审未通过 · 待纠偏": "Review failed · rework pending",
+    "Claude Code 正在等待授权/选择：请先在会话卡片里打开终端处理": "Claude Code is waiting for approval/choice: open the terminal from the session card first",
     "开发中（任务清单为空，等待开发会话回写任务）": "In development (task list empty; waiting for the dev session to write tasks back)",
     "本次开发的事实来源已落成一个统一上下文目录，不要只凭这条消息开工。": "The source of truth for this task is a unified context folder; do not start from this message alone.",
     "开工第一步：先读入口与必读文件；读不到文件就明确说明，不要编造内容。": "First, read the index and the required files; if they cannot be read, say so instead of inventing content.",

@@ -541,7 +541,7 @@ export function ProjectCommands({ project, localCommands = {}, onSaved }) {
  * 阶段由事实推导（本机自测→验证、环境验证→待提交、提交→完成），不允许手工点选，
  * 否则会出现"人点一下、工具又改一下"的来回反复。
  */
-function ArrowSteps({ stages, stageIndex, activeDetail, activePartial = false, activeLoading = false }) {
+function ArrowSteps({ stages, stageIndex, activeDetail, activePartial = false, activeLoading = false, failedIds = [] }) {
   const clipFor = (first) => (first
     ? 'polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%)'
     : 'polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%, 10px 50%)')
@@ -551,12 +551,13 @@ function ArrowSteps({ stages, stageIndex, activeDetail, activePartial = false, a
     const first = index === 0
     const active = index === stageIndex
     const done = stageIndex >= 0 && index < stageIndex
-    const bg = active ? T.brand : done ? T.brandSoft : T.surface2
-    const color = active ? '#fff' : done ? T.brand : T.text4
+    const failed = !active && failedIds.includes(entry.id)
+    const bg = active ? T.brand : done ? T.brandSoft : failed ? T.dangerSoft : T.surface2
+    const color = active ? '#fff' : done ? T.brand : failed ? T.danger : T.text4
     const clip = clipFor(first)
     return h('span', {
       key: entry.id,
-      title: `${entry.hint}${active ? '（当前阶段）' : done ? '（已完成）' : ''}`,
+      title: `${entry.hint}${active ? '（当前阶段）' : done ? '（已完成）' : failed ? '（评审未通过，待纠偏）' : ''}`,
       style: {
         flex: '1 1 0',
         minWidth: 112,
@@ -594,10 +595,11 @@ function ArrowSteps({ stages, stageIndex, activeDetail, activePartial = false, a
               height: 6,
               flex: '0 0 6px',
               borderRadius: 999,
-              background: active ? '#fff' : done ? T.brand : T.text4,
+              background: active ? '#fff' : done ? T.brand : failed ? T.danger : T.text4,
             },
           }, ''),
         entry.label,        done ? h('span', { style: { fontSize: 11, opacity: 0.9 } }, '✓') : null,
+        failed ? h('span', { style: { fontSize: 11, opacity: 0.9 } }, '未通过') : null,
         active && activePartial ? h('span', { style: { fontSize: 11, opacity: 0.9 } }, '◐') : null,
         active && activeDetail ? h('span', { style: { fontSize: 10, opacity: 0.9, marginLeft: 4 } }, activeDetail) : null,
       ),
@@ -4115,6 +4117,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
             h('span', { style: styles.pageTitle }, draft.title || draft.id),
             h(StatusPill, { status: statusForUi }),
+            reviewView.status === 'failed' && stage === 'develop'
+              ? h(Tag, { tone: 'danger' }, '评审未通过 · 待纠偏')
+              : null,
             draft.externalState?.status === 'blocked'
               ? h(Tag, { tone: 'warn' }, '等待授权/选择')
               : running
@@ -4190,10 +4195,12 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               },
               // 评审 running（pending）时禁用并显示「评审中」；失败/异常时保持可点，再点即重试派发
               // 评审动作即使开发会话还在跑也允许点击：先确认是否接受“可能审到半成品”
-              disabled: busy || Boolean(launchBusy) || reviewBusy || (isAnalysisFlow ? false : advance.disabled) || (sessionRunning && !reviewAction),
-              title: sessionRunning
-                ? (reviewAction ? '开发会话还在运行：点击会先确认是否现在评审' : '开发会话正在工作：等当前这步结束再继续推进')
-                : (advanceHint || undefined),
+              disabled: busy || Boolean(launchBusy) || reviewBusy || draft.externalState?.status === 'blocked' || (isAnalysisFlow ? false : advance.disabled) || (sessionRunning && !reviewAction),
+              title: draft.externalState?.status === 'blocked'
+                ? 'Claude Code 正在等待授权/选择：请先在会话卡片里打开终端处理'
+                : sessionRunning
+                  ? (reviewAction ? '开发会话还在运行：点击会先确认是否现在评审' : '开发会话正在工作：等当前这步结束再继续推进')
+                  : (advanceHint || undefined),
               onClick: () => {
                 if (isAnalysisFlow) {
                   if (draft.session?.id) runLaunch('continue', continueAnalysis)
@@ -4226,7 +4233,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                     ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '正在继续开发会话…']
                     : launchBusy === 'open'
                       ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '正在开启开发会话…']
-                      : sessionRunning
+                      : draft.externalState?.status === 'blocked'
+                        ? '等待授权/选择'
+                        : sessionRunning
                         ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '正在开发…']
                         : advance.action === 'wait'
                       ? '评审中'
@@ -4279,6 +4288,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         activePartial: stage === 'verify' && tests.local?.status === 'passed' && !tests.local?.stale && tests.environment?.status !== 'passed',
         // 当前阶段正在干活：用转圈替代静态圆点，阶段条本身也在“动”。
         activeLoading: (stage === 'develop' && running) || (stage === 'review' && (reviewBusy || reviewView.status === 'pending')),
+        failedIds: reviewView.status === 'failed' ? ['review'] : [],
         activeDetail: (() => {
           if (stage === 'develop' && running) return isAnalysisFlow ? '正在分析…' : '正在开发…'
           if (stage === 'review') {
