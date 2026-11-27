@@ -913,11 +913,10 @@ let claudeAgentsCache = { at: 0, rows: [] }
 async function claudeAgents() {
   if (Date.now() - claudeAgentsCache.at < 3000) return claudeAgentsCache.rows
   const bin = await claudeBinary()
-  const { stdout } = await runExecutable(bin, ['agents', '--json', '--all'], {
+  const { stdout } = await runExecutableInput(bin, ['agents', '--json', '--all'], {
     timeout: 20000,
     maxBuffer: 8 * 1024 * 1024,
     env: process.env,
-    windowsHide: true,
   })
   const parsed = JSON.parse(String(stdout ?? '[]'))
   const rows = Array.isArray(parsed) ? parsed : []
@@ -982,17 +981,17 @@ function openTerminalWithCommand(root, command) {
 
 async function claudeLogs(id) {
   const bin = await claudeBinary()
-  const { stdout, stderr } = await runExecutable(bin, ['logs', String(id)], {
+  const { stdout, stderr } = await runExecutableInput(bin, ['logs', String(id)], {
     timeout: 20000,
     maxBuffer: 8 * 1024 * 1024,
     env: process.env,
-    windowsHide: true,
   })
   return sanitizeTerminalText(`${stdout ?? ''}${stderr ? '\n' + stderr : ''}`)
 }
 
-function openClaudeTerminal(root, id) {
+async function openClaudeTerminal(root, id) {
   const work = String(root ?? '')
+  await ensureClaudeWorkspaceTrust(work)
   const attach = `claude attach ${String(id ?? '')}`
   if (process.platform === 'darwin') {
     const script = `cd ${JSON.stringify(work)} && ${attach}`
