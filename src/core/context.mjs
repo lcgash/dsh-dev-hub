@@ -226,6 +226,96 @@ function workspaceLines(workspace) {
   return lines.join('\n')
 }
 
+const CONTEXT_FILE_GROUPS = [
+  { name: '10-CONTRACT.md', title: '硬约束与阶段边界', headings: ['阶段边界', '独立评审', '测试/门禁（工作站执行，开发会话不要运行）'] },
+  { name: '20-TASK.md', title: '本次任务', headings: ['目标', '客户原始需求', '非目标', '验收标准', '技术方案', '工作流', '任务进度'] },
+  { name: '30-SCOPE.md', title: '范围与证据', headings: ['关键文件', '用户提供的文件/图片', '目标文件与摘录', '验收检查', '参考实现'] },
+  { name: '40-FACTS.md', title: '仓库与本机事实', headings: ['仓库事实', '多库项目', '本机环境'] },
+  { name: '50-RULES.md', title: '项目规范与命令', headings: ['项目约束', '项目记忆', '可用命令', '下一步'] },
+]
+
+/** 把现有 Context Pack 按标题切成可复用的事实文件；不改动原 prompt。 */
+export function splitContextSections(prompt) {
+  const blocks = []
+  let current = null
+  for (const line of String(prompt ?? '').replace(/\r\n/g, '\n').split('\n')) {
+    const match = /^【(.+)】([^\n]*)$/.exec(line.trim())
+    if (match) {
+      current = { title: match[1].trim(), lines: match[2] ? [match[2]] : [] }
+      blocks.push(current)
+      continue
+    }
+    if (current) current.lines.push(line)
+    else if (line.trim()) blocks.unshift({ title: '概览', lines: [line] })
+  }
+  return blocks.map((block) => ({
+    title: block.title,
+    body: block.lines.join('\n').trim(),
+  })).filter((block) => block.body || block.title)
+}
+
+/**
+ * 生成上下文目录文件（纯数据，不写盘）。
+ * 稳定规则和本次任务分开，后续只改一个文件，不必重发整条长 prompt。
+ */
+export function buildContextArtifact({ context, item } = {}) {
+  const prompt = String(context?.prompt ?? '')
+  const sections = splitContextSections(prompt)
+  const groups = CONTEXT_FILE_GROUPS.map((group) => {
+    const matched = sections.filter((section) => group.headings.includes(section.title))
+    const content = matched.map((section) => `## 【${section.title}】\n\n${section.body}`).join('\n\n')
+    return { name: group.name, content: content.trim() }
+  }).filter((file) => file.content)
+  const unmatched = sections.filter((section) => !CONTEXT_FILE_GROUPS.some((group) => group.headings.includes(section.title)))
+  if (unmatched.length) {
+    const tail = groups.find((file) => file.name === '30-SCOPE.md') ?? { name: '30-SCOPE.md', content: '' }
+    tail.content = [tail.content, ...unmatched.map((section) => `## 【${section.title}】\n\n${section.body}`)].filter(Boolean).join('\n\n')
+    if (!groups.includes(tail)) groups.push(tail)
+  }
+  const files = groups.map((file) => ({
+    name: file.name,
+    content: `# ${file.name.replace(/^[0-9]+-/, '').replace('.md', '')}\n\n${file.content}\n`,
+  }))
+  const mustRead = ['10-CONTRACT.md', '20-TASK.md', '50-RULES.md']
+  const optional = files.map((file) => file.name).filter((name) => !mustRead.includes(name))
+  const index = [
+    `# DevHub Context Pack · ${item?.id ?? context?.summary?.itemId ?? ''}`,
+    '',
+    `- 流程：${item?.title ?? context?.summary?.title ?? '未命名'}`,
+    `- 当前状态：${item?.status ?? context?.summary?.status ?? '未知'}${item?.workflow?.stage ? ` · ${item.workflow.stage}` : ''}`,
+    `- contextHash：${context?.contextHash ?? '—'}`,
+    `- generatedAt：${context?.generatedAt ?? '—'}`,
+    '',
+    '## 先读',
+    '',
+    ...mustRead.map((name) => `- ✅ ${name}`),
+    '',
+    '## 按需',
+    '',
+    ...optional.map((name) => `- ${name}`),
+    '',
+    '## 目录说明',
+    '',
+    '- 10-CONTRACT：阶段边界、评审与测试门禁；即使没读其他文件也必须遵守。',
+    '- 20-TASK：目标、验收、计划、scope；开工前必读。',
+    '- 30-SCOPE：关键文件、候选命中、验收检查与参考实现。',
+    '- 40-FACTS：仓库 commit/变更、本机环境。',
+    '- 50-RULES：项目约束与命令；开工前必读。',
+    '',
+    '## 硬提醒',
+    '',
+    '- 这些文件是本次流程的事实来源；prompt 只是入口，不要只凭首条消息开工。',
+    '- 文件内容变化时以最新 contextHash 为准。',
+    '',
+  ].join('\n')
+  return {
+    index,
+    files: [...files, { name: '00-INDEX.md', content: index }],
+    mustRead,
+    optional,
+  }
+}
+
 /**
  * Build the Context Pack. All values are supplied by the host so this
  * function stays pure and testable; no filesystem or git access here.

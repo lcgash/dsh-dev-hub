@@ -17,7 +17,7 @@ import { API, STATUS_ORDER } from './shared/api.mjs'
 import { WIZARD_STEPS } from './shared/wizard.mjs'
 import { DEV_HANDOFF_STEP } from './shared/boundaries.mjs'
 import { deriveAttention } from './core/attention.mjs'
-import { buildContext } from './core/context.mjs'
+import { buildContext, buildContextArtifact } from './core/context.mjs'
 import { detectEnvironment } from './core/detect.mjs'
 import { changesSince, git, gitInfo, hasCommit, isGitRepo, startBaseline, syncRepo } from './core/git.mjs'
 import { canonical, exists, findRepoRoot, isUnder, repoRelative, safeId } from './core/paths.mjs'
@@ -1856,6 +1856,35 @@ async function applyReworkFacts(ctx, profile, repoPath, items) {
 const MEMORY_DIR = join(PROFILE_DIR, 'memory')
 // Claude Code CLI 桥：token → 台账目标（只在本进程有效；重启后重新开启会话会刷新）
 const CLAUDE_BRIDGES = new Map()
+
+/**
+ * DevHub 重启后内存里的 bridge 映射会丢，但 bridge 文件还在本机 profile 里。
+ * 按 token 从磁盘找回映射，避免让用户为了“刷新 token”重新开一次会话。
+ */
+async function bridgeEntryFromDisk(token) {
+  const wanted = String(token ?? '').trim()
+  if (!wanted) return null
+  for (const dirName of ['claude-bridges', 'agent-bridges']) {
+    const dir = join(PROFILE_DIR, dirName)
+    let names = []
+    try { names = await readdir(dir) } catch { continue }
+    for (const name of names) {
+      if (!name.endsWith('.json')) continue
+      const bridgePath = join(dir, name)
+      try {
+        const parsed = JSON.parse(await readFile(bridgePath, 'utf8'))
+        if (String(parsed?.token ?? '').trim() !== wanted) continue
+        return {
+          itemId: String(parsed.itemId ?? '').trim(),
+          repo: String(parsed.repo ?? '').trim(),
+          bridgePath,
+          at: Date.now(),
+        }
+      } catch { /* 坏文件跳过 */ }
+    }
+  }
+  return null
+}
 const PLUGIN_ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const CLAUDE_CLI = join(PLUGIN_ROOT, 'bin', 'devhub.mjs')
 const INDEX_DIR = join(PROFILE_DIR, 'index')
@@ -1866,6 +1895,25 @@ function warmRepoIndex(repo) {
   if (!path || warmedIndexes.has(path)) return
   warmedIndexes.add(path)
   ensureRepoIndex(path, { indexDir: INDEX_DIR }).catch(() => { /* 索引失败不打扰用户，扫描会回退全量 */ })
+}
+
+/** 把 Context Pack 落成统一上下文目录；失败时保留完整 prompt 作为兜底。 */
+async function writeContextArtifact(root, item, context) {
+  if (!root) return null
+  try {
+    const artifact = buildContextArtifact({ context, item })
+    const dir = join(root, '.dev-hub', 'context', safeId(String(item?.id ?? context?.summary?.itemId ?? 'flow')))
+    await mkdir(dir, { recursive: true })
+    for (const file of artifact.files) await writeFile(join(dir, file.name), file.content, 'utf8')
+    context.folder = dir
+    context.indexPath = join(dir, '00-INDEX.md')
+    context.files = artifact.files.map((file) => ({ name: file.name, path: join(dir, file.name) }))
+    context.mustRead = artifact.mustRead
+    return { dir, indexPath: context.indexPath, files: context.files }
+  } catch (error) {
+    context.artifactError = String(error?.message ?? error)
+    return null
+  }
 }
 
 async function buildFor(repo, item, profile, { workRoot = null } = {}) {
@@ -1932,6 +1980,7 @@ async function buildFor(repo, item, profile, { workRoot = null } = {}) {
     worktree: worktree ? { ...worktree, path: root } : null,
     memory: selectMemoryForContext(memoryEntries),
   })
+  await writeContextArtifact(target ? target.localRoot : root, item, context)
   // 虚拟库：上下文包与证据都留档到本机独立目录（单库保持原行为，不新增落盘）
   if (target) {
     try {
@@ -2943,14 +2992,26 @@ function registerTools(ctx) {
       name: 'devhub_context',
       description: '生成开发项的 Context Pack，用于开始开发或交接。',
       parameters: { id: { type: 'string', required: true, description: '开发项 id' } },
-      output: toolOutput({ prompt: { type: 'string' }, contextHash: { type: 'string' } }),
+      output: toolOutput({
+        prompt: { type: 'string' },
+        contextHash: { type: 'string' },
+        folder: { type: 'string' },
+        indexPath: { type: 'string' },
+        files: { type: 'array', items: { type: 'object', additionalProperties: true } },
+      }),
       async execute(args) {
         const repo = await repoForExec()
         const profile = await loadProfile()
         const item = await readItemLocal(profile, repo, args.id)
         if (!item) throw new Error(`开发项不存在：${args.id}`)
         const built = await buildFor(repo, item, profile)
-        return { prompt: built.context.prompt, contextHash: built.context.contextHash }
+        return {
+          prompt: built.context.prompt,
+          contextHash: built.context.contextHash,
+          folder: built.context.folder ?? '',
+          indexPath: built.context.indexPath ?? '',
+          files: built.context.files ?? [],
+        }
       },
     }))
 
@@ -4888,9 +4949,12 @@ export function apply(ctx) {
               const info = await gitInfo(root)
               const base = baselineForMember(target.baseline, member)
               const baseline = base?.commit ? await changesSince(root, base) : null
-              for (const change of baseline?.changes ?? []) suggested.add(`${member.name}/${change.path}`)
-              for (const change of info.changes ?? []) suggested.add(`${member.name}/${change.path}`)
-              for (const change of info.changes ?? []) {
+              const memberChanges = (info.changes ?? []).filter((change) => !String(change.path ?? '').startsWith('.dev-hub/'))
+              for (const change of baseline?.changes ?? []) {
+                if (!String(change.path ?? '').startsWith('.dev-hub/')) suggested.add(`${member.name}/${change.path}`)
+              }
+              for (const change of memberChanges) suggested.add(`${member.name}/${change.path}`)
+              for (const change of memberChanges) {
                 changes.push({ ...change, path: `${member.name}/${change.path}`, repoPath: change.path, repo: root, repoName: member.name })
               }
               repoRows.push({
@@ -4936,9 +5000,12 @@ export function apply(ctx) {
           const info = await gitInfo(workRoot)
           const baseline = item.baseline ? await changesSince(workRoot, item.baseline) : null
           const suggested = new Set(item.scope ?? [])
-          for (const change of baseline?.changes ?? []) suggested.add(change.path)
+          const visibleChanges = (info.changes ?? []).filter((change) => !String(change.path ?? '').startsWith('.dev-hub/'))
+          for (const change of baseline?.changes ?? []) {
+            if (!String(change.path ?? '').startsWith('.dev-hub/')) suggested.add(change.path)
+          }
           // 工作区里未提交/未跟踪的改动也要能被勾选提交（之前只列了 baseline 以来的提交）
-          for (const change of info.changes ?? []) suggested.add(change.path)
+          for (const change of visibleChanges) suggested.add(change.path)
           // 台账要跟代码一起提交（跨人交接）：先放这条流程，再尽量带上整个 .dev-hub
           // 独立工作区里 .dev-hub 是分支上的旧副本，台账仍写仓库主工作区，不在这个分支提交台账
           if (!worktree) {
@@ -4954,7 +5021,7 @@ export function apply(ctx) {
             ok: true,
             branch: info.branch,
             targetBranch: await targetBranchForRepo(repo, item.baseline?.branch),
-            changes: info.changes,
+            changes: visibleChanges,
             suggestedPaths: [...suggested].sort(),
             workRoot,
             ...(worktree ? { worktree } : {}),
@@ -5787,7 +5854,7 @@ export function apply(ctx) {
           const bridgePath = join(bridgeDir, `${safeId}.json`)
           const host = String(req.headers.host ?? '127.0.0.1').replace(/[\r\n]/g, '')
           const bridge = { url: `http://${host}`, token, itemId: item.id, repo, bridgePath }
-          await writeFile(bridgePath, JSON.stringify({ url: bridge.url, token, itemId: item.id }, null, 2))
+          await writeFile(bridgePath, JSON.stringify({ url: bridge.url, token, itemId: item.id, repo, createdAt: new Date().toISOString() }, null, 2))
           CLAUDE_BRIDGES.set(token, { itemId: item.id, repo, bridgePath, at: Date.now() })
           const cliHint = [
             '',
@@ -5797,6 +5864,7 @@ export function apply(ctx) {
             `node ${JSON.stringify(CLAUDE_CLI)} update --bridge ${JSON.stringify(bridgePath)} --change-point "变更点"`,
             `node ${JSON.stringify(CLAUDE_CLI)} update --bridge ${JSON.stringify(bridgePath)} --risk "风险"`,
             '用它回写任务/变更点/风险；阶段仍由工作站按事实推导，不要手工传 stage。',
+            'bridge 文件保存在本机 profile：DevHub 重启后仍然有效，不需要让用户重新开启会话来刷新 token；只有 bridge 文件或流程被删时才需要重开。',
           ].join('\n')
           const result = await runClaudeBackground(root, `${body.prompt}${cliHint}`, {
             permissionMode: projectAutomation(profile, repo).claudePermissionMode,
@@ -5821,9 +5889,15 @@ export function apply(ctx) {
         try {
           const body = await readBody(req)
           const token = String(body.token ?? req.headers['x-devhub-token'] ?? '').trim()
-          const entry = CLAUDE_BRIDGES.get(token)
-          if (!entry) throw new Error('DevHub bridge token 无效或已过期：请在流程里重新开启 Claude Code 会话')
+          let entry = CLAUDE_BRIDGES.get(token)
+          if (!entry) {
+            entry = await bridgeEntryFromDisk(token)
+            if (entry) CLAUDE_BRIDGES.set(token, entry)
+          }
+          if (!entry) throw new Error('DevHub bridge token 无效：bridge 文件可能已被删除，或流程已被删除；请确认流程仍在（不需要为了刷新 token 重开会话）')
           const profile = await loadProfile()
+          if (!entry.repo) entry.repo = await activeRepo(profile)
+          if (!entry.repo) throw new Error('这个 bridge 没有记录项目路径：请重新开启一次开发会话')
           const item = await readItemLocal(profile, entry.repo, entry.itemId)
           if (!item) throw new Error(`开发项不存在：${entry.itemId}`)
           const action = String(body.action ?? 'get')
@@ -5867,13 +5941,14 @@ export function apply(ctx) {
           const safeId = String(item.id).replace(/[^\p{L}\p{N}._-]+/gu, '-').slice(0, 80)
           const bridgePath = join(bridgeDir, `${safeId}-${engine}.json`)
           const promptPath = join(bridgeDir, `${safeId}-${engine}.prompt.txt`)
-          await writeFile(bridgePath, JSON.stringify({ url: `http://${String(req.headers.host ?? '127.0.0.1').replace(/[\r\n]/g, '')}`, token, itemId: item.id }, null, 2))
+          await writeFile(bridgePath, JSON.stringify({ url: `http://${String(req.headers.host ?? '127.0.0.1').replace(/[\r\n]/g, '')}`, token, itemId: item.id, repo, createdAt: new Date().toISOString() }, null, 2))
           CLAUDE_BRIDGES.set(token, { itemId: item.id, repo, bridgePath, at: Date.now() })
           const cliHint = [
             '===== DevHub 联动 CLI =====',
             `node ${JSON.stringify(CLAUDE_CLI)} get --bridge ${JSON.stringify(bridgePath)}`,
             `node ${JSON.stringify(CLAUDE_CLI)} update --bridge ${JSON.stringify(bridgePath)} --task "任务文本" --done`,
             '用它回写任务/变更点/风险；阶段仍由工作站推导。',
+            'bridge 文件保存在本机 profile：DevHub 重启后仍然有效，不需要重新开启会话来刷新 token。',
           ].join('\n')
           await writeFile(promptPath, `${String(body.prompt ?? '')}\n\n${cliHint}`)
           const command = process.platform === 'win32'

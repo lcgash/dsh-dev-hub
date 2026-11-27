@@ -4820,10 +4820,10 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
         : await api(API.start, { method: 'POST', body: JSON.stringify({ id }) })
       setState((current) => current ? { ...current, selectedItem: started.item } : current)
       const prompt = engine === 'claude'
-        ? launchClaudePrompt(started.context?.prompt, started.item ?? item)
+        ? launchClaudePrompt(started.context, started.item ?? item)
         : engine === 'codex' || engine === 'pi'
-          ? launchExternalPrompt(started.context?.prompt, started.item ?? item, engine === 'codex' ? 'Codex' : 'Pi')
-          : launchPrompt(started.context?.prompt, started.item ?? item)
+          ? launchExternalPrompt(started.context, started.item ?? item, engine === 'codex' ? 'Codex' : 'Pi')
+          : launchPrompt(started.context, started.item ?? item)
       if (engine === 'codex' || engine === 'pi') {
         const body = await api(API.external, {
           method: 'POST',

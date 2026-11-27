@@ -2468,3 +2468,38 @@ test('详情进度轮询：运行中 2 秒刷新，及时同步任务与阶段',
   assert.match(index, /const interval = \(state\?\.selectedItem\?\.running \|\| reviewPending\) \? 2000 : 5000/)
   assert.match(index, /\}, interval\)/)
 })
+
+test('统一上下文目录：有 index 时首条消息只发入口，不重发全文', async () => {
+  const { launchPrompt, launchClaudePrompt, launchExternalPrompt } = await import('../src/client/session.mjs')
+  const context = {
+    prompt: 'FULL-PACK-'.repeat(200),
+    contextHash: 'hash-x',
+    folder: '/repo/.dev-hub/context/demo',
+    indexPath: '/repo/.dev-hub/context/demo/00-INDEX.md',
+    mustRead: ['10-CONTRACT.md', '20-TASK.md', '50-RULES.md'],
+    files: [
+      { name: '10-CONTRACT.md', path: '/repo/.dev-hub/context/demo/10-CONTRACT.md' },
+      { name: '20-TASK.md', path: '/repo/.dev-hub/context/demo/20-TASK.md' },
+      { name: '30-SCOPE.md', path: '/repo/.dev-hub/context/demo/30-SCOPE.md' },
+      { name: '50-RULES.md', path: '/repo/.dev-hub/context/demo/50-RULES.md' },
+      { name: '00-INDEX.md', path: '/repo/.dev-hub/context/demo/00-INDEX.md' },
+    ],
+  }
+  const item = { id: 'demo', title: '示例' }
+  const dsh = launchPrompt(context, item)
+  const claude = launchClaudePrompt(context, item)
+  for (const prompt of [dsh, claude]) {
+    assert.match(prompt, /00-INDEX\.md/)
+    assert.match(prompt, /10-CONTRACT\.md/)
+    assert.match(prompt, /50-RULES\.md/)
+    assert.doesNotMatch(prompt, /FULL-PACK-/)
+  }
+  assert.match(dsh, /devhub_get/)
+  assert.match(claude, /DevHub 联动 CLI/)
+  // 外部引擎只负责开发与回写；评审/测试由工作站自动推进，不要让用户当调度员
+  for (const prompt of [claude, launchExternalPrompt(context, item, 'Codex')]) {
+    assert.doesNotMatch(prompt, /让用户决定评审与测试/)
+    assert.match(prompt, /评审与测试由工作站「继续推进」自动执行/)
+    assert.match(prompt, /不要要求用户手动触发/)
+  }
+})

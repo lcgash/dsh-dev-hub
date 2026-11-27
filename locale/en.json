@@ -7,6 +7,9 @@
     "label": "English"
   },
   "messages": {
+    "本次开发的事实来源已落成一个统一上下文目录，不要只凭这条消息开工。": "The source of truth for this task is a unified context folder; do not start from this message alone.",
+    "开工第一步：先读入口与必读文件；读不到文件就明确说明，不要编造内容。": "First, read the index and the required files; if they cannot be read, say so instead of inventing content.",
+    "【项目约束】在 50-RULES.md 中，是本次开发的硬规则；与仓库门禁冲突时以门禁为准。": "[Project rules] live in 50-RULES.md; they are hard rules for this task and the repository gates win on conflict.",
     "开发工作站": "Development Workstation",
     "开发流程台账 · 会话状态 · 并行开发 · 独立评审 · 测试与提交": "Flow ledger · session state · parallel work · review & delivery",
     "新建开发流程 · 说一句要做什么 · 工作站扫仓库、追问、自评计划": "New flow · describe intent · scan, clarify, plan",
@@ -1469,9 +1472,16 @@
     "最近活动：": "Last activity:",
     "分析会话：": "Analysis session:",
     "开发会话：": "Development session:",
-    "等待授权/选择": "Waiting for approval/choice"
+    "等待授权/选择": "Waiting for approval/choice",
+    "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。": "Claude Code cannot call devhub_get / devhub_update; use the DevHub bridge CLI in the launch message to write back tasks/change points/risks. Review and tests are advanced automatically by the workstation's \"Continue\" action: do not ask the user to trigger them manually, and do not run tests or submit yourself. Do not fabricate baseline diffs."
   },
   "templates": {
+    "你是由 DevHub 开发工作站启动的{value1}开发会话。开发流程：{value2}{value3}。": "You are a {value1}development session started by the DevHub workstation. Flow: {value2}{value3}.",
+    "- 目录：{value1}": "- Folder: {value1}",
+    "- 入口：{value1}": "- Index: {value1}",
+    "- 必读：{value1}": "- Must read: {value1}",
+    "- 按需：{value1}": "- As needed: {value1}",
+    "- contextHash：{value1}": "- contextHash: {value1}",
     "{value1}（未安装）": "{value1} (not installed)",
     "方案门禁 {value1}": "Design gate {value1}",
     "{value1} · {value2} 位审核员": "{value1} · {value2} reviewers",
@@ -1958,7 +1968,8 @@
     "{value1}{value2}，流程未结束：{value3}": "{value1}{value2}; flow is not complete: {value3}",
     "{value1}{value2}，流程未结束：{value3}{value4}": "{value1}{value2}; flow is not complete: {value3}{value4}",
     "当前 AI 引擎：{value1}（开发/澄清/评审）": "Current AI engine: {value1} (development/clarification/review)",
-    "{value1} 外部会话（状态由 CLI 提供）": "{value1} external session (status from the CLI)"
+    "{value1} 外部会话（状态由 CLI 提供）": "{value1} external session (status from the CLI)",
+    "{value1} 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。": "{value1} cannot call devhub_get / devhub_update; use the DevHub bridge CLI in the launch message to write back tasks/change points/risks. Review and tests are advanced automatically by the workstation's \"Continue\" action: do not ask the user to trigger them manually, and do not run tests or submit yourself. Do not fabricate baseline diffs."
   },
   "templateValues": {
     "通过": "passed",

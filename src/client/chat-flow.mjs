@@ -310,8 +310,9 @@ export async function confirmAndStart(deps, plan) {
     cwd: started?.workRoot ?? plan.cwd,
     itemId: item.id,
     contextPack: started?.context?.prompt ?? '',
+    context: started?.context ?? null,
     item: started?.item ?? item,
-    prompt: deps.prompt(started?.context?.prompt, started?.item ?? item),
+    prompt: deps.prompt(started?.context?.prompt ?? '', started?.item ?? item),
   })
   messages.push(stationMessage(launched?.sent
     ? `已开启开发会话 ${launched.sessionId}：约束、目标文件与命中行已发给它，开发在那个会话里继续。`

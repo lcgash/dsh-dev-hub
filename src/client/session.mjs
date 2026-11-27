@@ -106,50 +106,74 @@ export async function sendToSession(ctx, sessionId, text) {
   }
 }
 
-/** 给 Codex/Pi 等外部终端的启动消息：它们没有 DSH 工具，使用 bridge CLI。 */
-export function launchExternalPrompt(pack, item, engine = '外部 Agent') {
+function contextView(pack) {
+  if (pack && typeof pack === 'object') return pack
+  return { prompt: String(pack ?? '') }
+}
+
+/** 有上下文目录就发「薄 prompt + 索引」，没有就退回完整 Context Pack。 */
+function contextPromptLines(pack, item, engineName, extra = []) {
+  const view = contextView(pack)
   const title = item?.title ?? item?.id ?? '未命名流程'
   const id = item?.id ?? ''
+  const shared = [
+    `你是由 DevHub 开发工作站启动的${engineName ? ` ${engineName} ` : ''}开发会话。开发流程：${title}${id ? `（${id}）` : ''}。`,
+  ]
+  if (!view.indexPath) {
+    return [
+      ...shared,
+      '请严格按下方的 Context Pack 开发，其中【项目约束】是本次开发的硬规则；与仓库门禁冲突时以门禁为准。',
+      `【阶段边界】${DEV_STAGE_RULE}`,
+      ...extra,
+      '',
+      '===== Context Pack =====',
+      '',
+      String(view.prompt ?? ''),
+    ].join('\n')
+  }
+  const mustRead = Array.isArray(view.mustRead) && view.mustRead.length ? view.mustRead : ['10-CONTRACT.md', '20-TASK.md']
+  const optional = Array.isArray(view.files)
+    ? view.files.map((file) => file.name).filter((name) => !mustRead.includes(name) && name !== '00-INDEX.md')
+    : []
   return [
-    `你是由 DevHub 开发工作站启动的 ${engine} 开发会话。开发流程：${title}${id ? `（${id}）` : ''}。`,
-    '请严格按下方的 Context Pack 开发，其中【项目约束】是本次开发的硬规则；与仓库门禁冲突时以门禁为准。',
+    ...shared,
+    '本次开发的事实来源已落成一个统一上下文目录，不要只凭这条消息开工。',
+    `- 目录：${view.folder ?? ''}`,
+    `- 入口：${view.indexPath}`,
+    `- 必读：${mustRead.join('、')}`,
+    ...(optional.length ? [`- 按需：${optional.join('、')}`] : []),
+    `- contextHash：${view.contextHash ?? '—'}`,
+    '',
+    '开工第一步：先读入口与必读文件；读不到文件就明确说明，不要编造内容。',
     `【阶段边界】${DEV_STAGE_RULE}`,
-    `${engine} 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。`,
+    '【项目约束】在 50-RULES.md 中，是本次开发的硬规则；与仓库门禁冲突时以门禁为准。',
+    ...extra,
+  ].join('\n')
+}
+
+/** 给 Codex/Pi 等外部终端的启动消息：它们没有 DSH 工具，使用 bridge CLI。 */
+export function launchExternalPrompt(pack, item, engine = '外部 Agent') {
+  return [
+    contextPromptLines(pack, item, engine),
     '',
-    '===== Context Pack =====',
-    '',
-    String(pack ?? ''),
+    `${engine} 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。`,
   ].join('\n')
 }
 
 /** 给 Claude Code 的首条消息：它没有 DSH 的 devhub_* 工具，不要让它调用。 */
 export function launchClaudePrompt(pack, item) {
-  const title = item?.title ?? item?.id ?? '未命名流程'
-  const id = item?.id ?? ''
   return [
-    `你是由 DevHub 开发工作站启动的 Claude Code 开发会话。开发流程：${title}${id ? `（${id}）` : ''}。`,
-    '请严格按下方的 Context Pack 开发，其中【项目约束】是本次开发的硬规则；与仓库门禁冲突时以门禁为准。',
-    `【阶段边界】${DEV_STAGE_RULE}`,
-    'Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险，并让用户决定评审与测试。不要编造 baseline diff。',
+    contextPromptLines(pack, item, 'Claude Code'),
     '',
-    '===== Context Pack =====',
-    '',
-  String(pack ?? ''),
+    'Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。',
   ].join('\n')
 }
 
 /** 给开发会话的首条消息：说明来源，并把它钉在 Context Pack 的规范上。 */
 export function launchPrompt(pack, item) {
-  const title = item?.title ?? item?.id ?? '未命名流程'
-  const id = item?.id ?? ''
   return [
-    `你是由 DevHub 开发工作站启动的开发会话。开发流程：${title}${id ? `（${id}）` : ''}。`,
-    '请严格按下方的 Context Pack 开发，其中【项目约束】是本次开发的硬规则；与仓库门禁冲突时以门禁为准。',
-    `【阶段边界】${DEV_STAGE_RULE}`,
-    '开工前先调用 devhub_get 读取该流程的最新状态；开发中用 devhub_update 回写任务与变更点（阶段由工作站按事实推导）；不要编造 baseline diff。',
-    '',
-    '===== Context Pack =====',
-    '',
-    String(pack ?? ''),
+    contextPromptLines(pack, item, '', [
+      '开工前先调用 devhub_get 读取该流程的最新状态；开发中用 devhub_update 回写任务与变更点（阶段由工作站按事实推导）；不要编造 baseline diff。',
+    ]),
   ].join('\n')
 }

@@ -77,6 +77,7 @@ test('confirmAndStart：首次先落规范，再建流程、记 baseline、开�
     cwd: '/repo',
     itemId: 'gitlab-webhook',
     contextPack: 'PACK',
+    context: { prompt: 'PACK' },
     item: { id: 'gitlab-webhook', title: 'Gitlab webhook' },
     prompt: 'HEAD|gitlab-webhook|PACK',
   })
