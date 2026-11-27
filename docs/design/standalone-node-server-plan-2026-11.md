@@ -267,6 +267,13 @@ shim 只用于 P0 验证和 v0.1 过渡。v0.1 发布前必须把路由注册从
 - 真实 Claude CLI 的一次性 `-p` 调用可用；但 DevHub 全链路真实会话仍需手工跑一条（不能拿 fake 结果冒充）。
 - CI 尚未在 GitHub 上实际跑过；Windows 证据要等 CI 结果，不能先写成“已通过”。
 
+## 5.7 真实 Claude 验证（2026-11-27）
+
+- 使用临时 HOME/repo 启动独立版，真实 `claude --bg` 成功生成后台会话；Claude 状态投影为 `blocked`，需要用户在终端处理权限，符合设计。
+- 首次在新 worktree 启动会报 `Workspace not trusted`：这是 Claude 的安全门槛，DevHub 不能替用户接受。已把错误翻译成带 worktree 路径的下一步，并写入快速开始。
+- 真实会话已 `claude stop` 清理；未把“真实 Claude 全链路”写成已通过。剩余手工验收：在受信任 worktree 中接受权限后跑完开发/评审/测试/报告。
+- CI 已加入 Ubuntu/macOS/Windows × Node 22/24；本轮没有 GitHub Actions 运行结果，Windows 仍标待验证。
+
 ## 6. 数据与兼容契约
 
 - 仓库台账继续是 `.dev-hub/items/*.json`，不新增第二套存储。

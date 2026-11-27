@@ -103,6 +103,18 @@ where claude    # Windows
 
 安装并登录后重启 `devhub`。
 
+**首次打开独立工作区提示 `Workspace not trusted`**
+
+Claude Code 不会在未受信任的目录里启动后台会话。按提示进入该 worktree：
+
+```bash
+cd <提示里的 worktree 路径>
+claude
+# 接受信任提示后退出
+```
+
+再回到 DevHub 点「继续推进」/重新开启开发会话。DevHub 会把这个错误翻译成带 worktree 路径的提示，但不代替你接受 Claude 的安全设置。
+
 **端口被占用**
 
 ```bash

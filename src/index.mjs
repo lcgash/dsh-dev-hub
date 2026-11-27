@@ -848,6 +848,16 @@ async function runClaudeBackground(root, prompt, { resumeId = null, permissionMo
   return { id: claudeSessionId(output), output }
 }
 
+/** Claude 首次进入新 worktree 需要交互接受信任；把底层错误翻译成可操作的下一步。 */
+function claudeLaunchError(error, root) {
+  const message = String(error?.message ?? error)
+  if (!/Workspace not trusted|not trusted/i.test(message)) return error
+  const next = new Error(`Claude Code 工作区未受信任：先在终端进入 ${root} 运行 claude 并接受信任提示，然后重试。开发会话不会在未受信任目录里启动。`)
+  next.needsTrust = true
+  next.cwd = root
+  return next
+}
+
 let claudeAgentsCache = { at: 0, rows: [] }
 async function claudeAgents() {
   if (Date.now() - claudeAgentsCache.at < 3000) return claudeAgentsCache.rows
@@ -5965,7 +5975,7 @@ export function createRoutes(ctx) {
             const result = await runClaudeBackground(root, body.prompt, {
               resumeId: id,
               permissionMode: projectAutomation(profile, repo).claudePermissionMode,
-            })
+            }).catch((error) => { throw claudeLaunchError(error, root) })
             const nextId = result.id || id
             if (nextId !== id) {
               // Claude 在 blocked 状态下 --resume 可能 fork 出一个新会话；必须把台账重新绑定到实际工作的那个 id
@@ -6001,7 +6011,7 @@ export function createRoutes(ctx) {
           ].join('\n')
           const result = await runClaudeBackground(root, `${body.prompt}${cliHint}`, {
             permissionMode: projectAutomation(profile, repo).claudePermissionMode,
-          })
+          }).catch((error) => { throw claudeLaunchError(error, root) })
           if (!result.id) throw new Error(`Claude Code 已启动但没拿到会话 id：${result.output.slice(-600)}`)
           item.session = { id: result.id, engine: 'claude', external: true, cwd: root, at: new Date().toISOString() }
           item.workflow = { ...(item.workflow ?? {}), engine: 'claude' }
