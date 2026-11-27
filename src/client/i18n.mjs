@@ -162,7 +162,11 @@ function applyTemplate(value, depth = 0) {
   return value
 }
 
-function translateText(value) {
+/**
+ * 非 React 路径（自建弹层、日志/提示文本）的翻译入口。
+ * React 组件请优先使用 `h` 工厂：它会翻译子节点与常见可读属性。
+ */
+export function translateText(value) {
   if (typeof value !== 'string' || value.length === 0) return value
   if (activeLocale === 'zh') return value
   let translated = value
@@ -268,12 +272,6 @@ export function h(type, props, ...children) {
   // JSX 常把 `更新于 {${time}}` 拆成相邻的字符串/数字子节点；先合并再匹配模板，
   // 否则「更新于 」和「2026-…」各自翻译，动态文案永远命中不了 templates。
   return reactCreateElement(type, localizeProps(props), ...localizeChildren(children))
-}
-
-/** 非 h 路径（window.confirm 等）也走同一套词典与模板。 */
-export function confirmText(message) {
-  if (typeof window === "undefined" || typeof window.confirm !== "function") return false
-  return window.confirm(translateText(message))
 }
 
 /**

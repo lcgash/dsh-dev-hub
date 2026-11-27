@@ -6,7 +6,7 @@
  * The browser half only talks to the loopback /api/dev-hub/* routes.
  */
 import { exec, execFile, spawn } from 'node:child_process'
-import { access, mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -28,6 +28,7 @@ import { buildContext, buildContextArtifact } from './core/context.mjs'
 import { detectEnvironment } from './core/detect.mjs'
 import { changesSince, git, gitInfo, hasCommit, isGitRepo, startBaseline, syncRepo } from './core/git.mjs'
 import { canonical, exists, findRepoRoot, isUnder, repoRelative, safeId } from './core/paths.mjs'
+import { withClaudeWorkspaceTrust, withCodexWorkspaceTrust } from './core/trust.mjs'
 import { scanCandidates } from './core/scan.mjs'
 import { appendHistory, missingForChatStart, missingForStart } from './core/workflow.mjs'
 import {
@@ -60,7 +61,7 @@ import { extractJson, runAgentJson, runLlmJson } from './host/agent-run.mjs'
 import { answerPendingQuestion, readPendingApprovals, readPendingQuestions } from './host/pending-questions.mjs'
 import { ASSIST_SCHEMA, applyAssistUpdates, buildAssistPrompt } from './core/assist.mjs'
 import { sessionState, sessionStates } from './host/session-state.mjs'
-import { claudeTranscriptFromJsonl, sanitizeTerminalText, sessionLog, sessionTimeline, sessionTranscript } from './host/session-log.mjs'
+import { claudeTranscriptFromJsonl, sanitizeTerminalText, sessionLog, sessionTimeline, sessionTranscript, transcriptItemsFromRows } from './host/session-log.mjs'
 import { SESSION_CATEGORIES, buildSessionCatalog } from './host/session-catalog.mjs'
 import { loadLocaleBundle } from './host/locales.mjs'
 import { addCustomConstraint, installSkill, regenerateConventions, removeConstraint, uninstallSkill, updateConstraint } from './core/conventions.mjs'
@@ -267,16 +268,25 @@ async function runCodexJson({ cwd, prompt, schema = null, label = 'devhub-codex'
   const schemaFile = join(base, `${stamp}.schema.json`)
   const outFile = join(base, `${stamp}.out.json`)
   await writeFile(schemaFile, JSON.stringify(schema ?? { type: 'object', additionalProperties: true }))
+  const baseArgs = [
+    'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
+    '-C', cwd, '--output-schema', schemaFile, '-o', outFile, String(prompt ?? ''),
+  ]
+  const exec = (args) => runExecutable(bin, args, {
+    timeout: Number(timeoutMs) > 0 ? Number(timeoutMs) : 0,
+    maxBuffer: 16 * 1024 * 1024,
+    env: process.env,
+    windowsHide: true,
+  })
   try {
-    await runExecutable(bin, [
-      'exec', '--skip-git-repo-check', '--sandbox', 'read-only',
-      '-C', cwd, '--output-schema', schemaFile, '-o', outFile, String(prompt ?? ''),
-    ], {
-      timeout: Number(timeoutMs) > 0 ? Number(timeoutMs) : 0,
-      maxBuffer: 16 * 1024 * 1024,
-      env: process.env,
-      windowsHide: true,
-    })
+    // --trust 会持久化新项目信任，解决 codex 在新 workspace/终端里的 trust 提示；
+    // 旧版 Codex 不认识这个参数，遇到 unknown option 时降级为不带 trust 的旧调用。
+    try {
+      await exec(['exec', '--trust', ...baseArgs.slice(1)])
+    } catch (error) {
+      if (!/--trust.*(unknown|unexpected)|unexpected argument '--trust'|unknown option '--trust'/i.test(String(error?.message ?? error))) throw error
+      await exec(baseArgs)
+    }
     const raw = await readFile(outFile, 'utf8')
     const value = extractJson(raw)
     if (!value) throw new Error(`Codex 没有返回可解析的 JSON：${raw.slice(0, 800)}`)
@@ -292,15 +302,23 @@ async function runPiJson({ cwd, prompt, schema = null, label = 'devhub-pi', time
   const bin = await which('pi')
   if (!bin) throw new Error('未检测到 Pi CLI（请先安装 pi 命令并登录）')
   const schemaText = schema ? `\n\n只输出一个严格 JSON 对象，不要 Markdown/解释。JSON Schema：\n${JSON.stringify(schema)}` : ''
-  const { stdout, stderr } = await runExecutable(bin, [
-    '--print', '--mode', 'json', '--no-session', `${String(prompt ?? '')}${schemaText}`,
-  ], {
+  const baseArgs = ['--print', '--mode', 'json', '--no-session', `${String(prompt ?? '')}${schemaText}`]
+  const exec = (args) => runExecutable(bin, args, {
     cwd: cwd ?? process.cwd(),
     timeout: Number(timeoutMs) > 0 ? Number(timeoutMs) : 0,
     maxBuffer: 16 * 1024 * 1024,
     env: process.env,
     windowsHide: true,
   })
+  let result
+  try {
+    // --approve 信任本次运行的 project-local 文件（AGENTS.md / 本地配置）；旧版 Pi 不认识就降级
+    result = await exec(['--approve', ...baseArgs])
+  } catch (error) {
+    if (!/--approve.*(unknown|unexpected)|unknown option '--approve'|unexpected argument '--approve'/i.test(String(error?.message ?? error))) throw error
+    result = await exec(baseArgs)
+  }
+  const { stdout, stderr } = result
   let sessionId = null
   let text = ''
   for (const line of String(stdout ?? '').split(/\r?\n/)) {
@@ -868,6 +886,64 @@ async function activeRepo(profile) {
 }
 
 /** Claude Code 后台会话：启动/追加/日志/状态，全部走本机 `claude` CLI。 */
+function claudeGlobalConfigPath() {
+  const dir = String(process.env.CLAUDE_CONFIG_DIR ?? '').trim()
+  return dir ? join(dir, '.claude.json') : join(homedir(), '.claude.json')
+}
+
+function codexConfigPath() {
+  const dir = String(process.env.CODEX_HOME ?? '').trim()
+  return join(dir || join(homedir(), '.codex'), 'config.toml')
+}
+
+/**
+ * 把 DevHub 自己管理的仓库/工作区根写进 Claude 的持久信任里。
+ * 普通 `claude` 没有 --trust-workspace（那是 self-hosted-runner 的参数），
+ * 新 worktree 只能靠 hasTrustDialogAccepted 放行。
+ */
+async function ensureClaudeWorkspaceTrust(root) {
+  const path = claudeGlobalConfigPath()
+  try {
+    await mkdir(dirname(path), { recursive: true })
+    let config = {}
+    try {
+      const raw = await readFile(path, 'utf8')
+      if (raw.trim()) config = JSON.parse(raw)
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    const next = withClaudeWorkspaceTrust(config, [root, await canonical(root).catch(() => root)])
+    if (!next.changed) return true
+    await writeFile(path, JSON.stringify(next.config, null, 2), { mode: 0o600, encoding: 'utf8' })
+    await chmod(path, 0o600).catch(() => {})
+    return true
+  } catch (error) {
+    console.warn(`[dev-hub] 写入 Claude 工作区信任失败（${root}）：${String(error?.message ?? error)}`)
+    return false
+  }
+}
+
+/** Codex 交互终端从 config.toml 的 [projects] 读信任；exec 本身另有 --trust。 */
+async function ensureCodexWorkspaceTrust(root) {
+  const path = codexConfigPath()
+  try {
+    await mkdir(dirname(path), { recursive: true })
+    let text = ''
+    try {
+      text = await readFile(path, 'utf8')
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+    const next = withCodexWorkspaceTrust(text, [root, await canonical(root).catch(() => root)])
+    if (!next.changed) return true
+    await writeFile(path, next.text, 'utf8')
+    return true
+  } catch (error) {
+    console.warn(`[dev-hub] 写入 Codex 工作区信任失败（${root}）：${String(error?.message ?? error)}`)
+    return false
+  }
+}
+
 async function claudeBinary() {
   const found = await which('claude')
   if (!found) throw new Error('未检测到 Claude Code CLI（请先安装 claude 命令并登录）')
@@ -883,6 +959,8 @@ function claudeSessionId(output) {
 
 async function runClaudeBackground(root, prompt, { resumeId = null, permissionMode = 'auto' } = {}) {
   const bin = await claudeBinary()
+  // 先种信任再启动：新 worktree/新 workspace 不能停在 trust 对话上
+  await ensureClaudeWorkspaceTrust(root)
   const text = String(prompt ?? '').trim()
   if (!text) throw new Error('Claude Code 启动内容为空')
   const args = ['--bg', '--permission-mode', String(permissionMode || 'auto')]
@@ -903,7 +981,7 @@ async function runClaudeBackground(root, prompt, { resumeId = null, permissionMo
 function claudeLaunchError(error, root) {
   const message = String(error?.message ?? error)
   if (!/Workspace not trusted|not trusted/i.test(message)) return error
-  const next = new Error(`Claude Code 工作区未受信任：先在终端进入 ${root} 运行 claude 并接受信任提示，然后重试。开发会话不会在未受信任目录里启动。`)
+  const next = new Error(`Claude Code 工作区未受信任：DevHub 已尝试把你的工作区写入 Claude 的持久信任（~/.claude.json 的 hasTrustDialogAccepted）；若仍失败，请在终端进入 ${root} 运行 claude 接受信任提示后重试。开发会话不会在未受信任目录里启动。`)
   next.needsTrust = true
   next.cwd = root
   return next
@@ -1979,6 +2057,81 @@ async function applyReworkFacts(ctx, profile, repoPath, items) {
 const MEMORY_DIR = join(PROFILE_DIR, 'memory')
 // Claude Code CLI 桥：token → 台账目标（只在本进程有效；重启后重新开启会话会刷新）
 const CLAUDE_BRIDGES = new Map()
+// 站内 PTY 终端：每个 Claude 会话一个本机伪终端，浏览器通过 HTTP 轮询输出 + POST 输入。
+const CLAUDE_TTYS = new Map()
+const TTY_MAX_BYTES = 2 * 1024 * 1024
+
+function ttyShellQuote(value) {
+  return `'${String(value ?? '').replace(/'/g, `'\\''`)}'`
+}
+
+async function createClaudeTty({ repo, item, sessionId }) {
+  const bin = await claudeBinary()
+  const id = String(sessionId ?? '').trim()
+  if (!id) throw new Error('缺少 Claude Code 会话 id')
+  if (process.platform === 'win32') {
+    const winpty = await which('winpty')
+    if (!winpty) throw new Error('Windows 内嵌 PTY 需要 winpty：请安装 winpty，或改用会话记录查看')
+  }
+  const agents = await claudeAgents().catch(() => [])
+  const found = agents.find((entry) => entry.id === id || entry.sessionId === id || String(entry.sessionId ?? '').startsWith(id))
+  if (!found) throw new Error(`Claude Code 会话不存在或已结束：${id}`)
+  const fullId = String(found.sessionId ?? found.id ?? id)
+  const cwd = String(item?.session?.cwd ?? '').trim() || await workRootOf(repo, item)
+  if (!(await exists(cwd))) throw new Error(`会话目录不存在：${cwd}`)
+  const command = `stty cols 100 rows 32 2>/dev/null; exec ${ttyShellQuote(bin)} attach ${ttyShellQuote(fullId)}`
+  const script = await which('script')
+  let child
+  if (process.platform === 'darwin') {
+    if (!script) throw new Error('本机缺少 script 命令，无法创建 PTY')
+    child = spawn(script, ['-q', '/dev/null', '/bin/sh', '-c', `exec ${command}`], {
+      cwd, env: process.env, windowsHide: true,
+    })
+  } else if (process.platform === 'win32') {
+    child = spawn(await which('winpty'), ['-c', cwd, bin, 'attach', fullId], { cwd, env: process.env, windowsHide: true })
+  } else {
+    if (!script) throw new Error('本机缺少 script 命令，无法创建 PTY')
+    child = spawn(script, ['-q', '-c', `exec ${command}`, '/dev/null'], { cwd, env: process.env, windowsHide: true })
+  }
+  // 防止反复打开/不关弹窗留下太多 PTY
+  if (CLAUDE_TTYS.size >= 8) {
+    const [oldToken, oldSession] = CLAUDE_TTYS.entries().next().value ?? []
+    if (oldToken) {
+      try { oldSession.child.kill() } catch { /* ignore */ }
+      CLAUDE_TTYS.delete(oldToken)
+    }
+  }
+  const token = randomUUID()
+  const session = {
+    token,
+    child,
+    chunks: [],
+    next: 1,
+    bytes: 0,
+    alive: true,
+    createdAt: Date.now(),
+    itemId: item?.id ?? '',
+    sessionId: fullId,
+  }
+  const push = (data) => {
+    if (!data) return
+    const text = String(data)
+    if (!text) return
+    session.bytes += text.length
+    session.chunks.push({ seq: session.next++, data: text })
+    while (session.bytes > TTY_MAX_BYTES && session.chunks.length > 1) {
+      const removed = session.chunks.shift()
+      session.bytes -= removed.data.length
+    }
+  }
+  child.stdout?.on('data', push)
+  child.stderr?.on('data', push)
+  child.on('exit', () => { session.alive = false; push('\r\n[会话已结束]\r\n') })
+  child.on('error', (error) => { session.alive = false; push(`\r\n[PTY 启动失败：${String(error?.message ?? error)}]\r\n`) })
+  child.stdin?.on('error', () => { /* 已退出时忽略 */ })
+  CLAUDE_TTYS.set(token, session)
+  return { ttyId: token, sessionId: fullId, cwd }
+}
 const RUNTIME_PATH = join(PROFILE_DIR, 'runtime.json')
 let runtimeUrlCache = ''
 
@@ -6046,7 +6199,7 @@ export function createRoutes(ctx) {
             // 会话实际 cwd 优先（虚拟库/独立工作区路径不一定能从 repo 推导出来）
             const sessionCwd = String(item.session?.cwd ?? '').trim()
             const openRoot = sessionCwd && await exists(sessionCwd) ? sessionCwd : root
-            openClaudeTerminal(openRoot, fullId)
+            await openClaudeTerminal(openRoot, fullId)
             if (item.session && item.session.id !== fullId) {
               item.session = { ...item.session, id: fullId, updatedAt: new Date().toISOString() }
               await saveItem(repo, item)
@@ -6175,7 +6328,9 @@ export function createRoutes(ctx) {
           const bin = await which(engine)
           if (!bin) throw new Error(`未检测到 ${engine} CLI`)
           if (body.action === 'open') {
-            openTerminalWithCommand(root, engine)
+            if (engine === 'codex') await ensureCodexWorkspaceTrust(root)
+            // Pi 的 --approve 只对本次运行生效；终端重开也必须带上，否则项目本地配置会被忽略
+            openTerminalWithCommand(root, engine === 'pi' ? 'pi --approve' : 'codex')
             return sendJson(res, 200, { ok: true, sessionId: item.session?.id ?? null })
           }
           if (body.action !== 'launch') throw new Error(`未知外部引擎动作：${body.action}`)
@@ -6195,9 +6350,11 @@ export function createRoutes(ctx) {
             'bridge 文件保存在本机 profile：DevHub 重启后仍然有效，不需要重新开启会话来刷新 token。',
           ].join('\n')
           await writeFile(promptPath, `${String(body.prompt ?? '')}\n\n${cliHint}`)
+          if (engine === 'codex') await ensureCodexWorkspaceTrust(root)
+          const baseCommand = engine === 'pi' ? 'pi --approve' : 'codex'
           const command = process.platform === 'win32'
-            ? engine
-            : `${engine} "$(cat ${JSON.stringify(promptPath)})"`
+            ? baseCommand
+            : `${baseCommand} "$(cat ${JSON.stringify(promptPath)})"`
           openTerminalWithCommand(root, command)
           item.session = { id: `${engine}-terminal-${Date.now()}`, engine, external: true, cwd: root, promptPath, at: new Date().toISOString() }
           item.workflow = { ...(item.workflow ?? {}), engine }
@@ -7098,12 +7255,71 @@ export function createRoutes(ctx) {
           const found = await findActiveClaudeTranscript(repo, since)
           if (!found) return sendJson(res, 200, { ok: true, found: false, messages: [] })
           const rows = claudeTranscriptFromJsonl(found.text, { limit: 120 })
+          const sliced = rows.slice(-80)
           sendJson(res, 200, {
             ok: true,
             found: true,
             sessionId: found.path.split(/[/\\]/).pop()?.replace(/\.jsonl$/, '') ?? null,
-            messages: rows.slice(-80),
+            messages: sliced,
+            items: transcriptItemsFromRows(sliced),
           })
+        } catch (error) {
+          sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
+        }
+      },
+    },
+    // 站内 PTY：Claude Code 仍跑在伪终端里，浏览器读输出/写按键，不打开 Terminal.app
+    {
+      kind: 'exact',
+      path: API.tty,
+      handler: async (req, res) => {
+        if (!isLoopback(req)) return sendJson(res, 403, { ok: false, error: 'forbidden: loopback only' })
+        try {
+          if (req.method === 'GET') {
+            const token = String(query(req.url, 'id') ?? '').trim()
+            const after = Number(query(req.url, 'after')) || 0
+            const session = CLAUDE_TTYS.get(token)
+            if (!session) throw new Error('终端不存在或已关闭')
+            return sendJson(res, 200, {
+              ok: true,
+              ttyId: token,
+              sessionId: session.sessionId,
+              alive: session.alive,
+              next: session.next,
+              chunks: session.chunks.filter((chunk) => chunk.seq > after),
+            })
+          }
+          if (req.method !== 'POST') return sendJson(res, 405, { ok: false, error: 'GET/POST only' })
+          const body = await readBody(req)
+          const action = String(body.action ?? '')
+          if (action === 'create') {
+            const profile = await loadProfile()
+            const repo = await activeRepo(profile)
+            if (!repo) throw new Error('尚未选择项目')
+            const item = await readItemLocal(profile, repo, body.itemId)
+            if (!item) throw new Error(`开发项不存在：${body.itemId}`)
+            const created = await createClaudeTty({ repo, item, sessionId: body.sessionId })
+            return sendJson(res, 200, { ok: true, ...created })
+          }
+          const token = String(body.ttyId ?? '').trim()
+          const session = CLAUDE_TTYS.get(token)
+          if (!session) throw new Error('终端不存在或已关闭')
+          if (action === 'input') {
+            const data = String(body.data ?? '')
+            if (data && session.alive && session.child.stdin?.writable) session.child.stdin.write(data)
+            return sendJson(res, 200, { ok: true })
+          }
+          if (action === 'resize') {
+            // script 不在运行时改窗口；记录尺寸供诊断，不伪造 SIGWINCH。
+            return sendJson(res, 200, { ok: true })
+          }
+          if (action === 'close') {
+            session.alive = false
+            try { session.child.kill() } catch { /* ignore */ }
+            CLAUDE_TTYS.delete(token)
+            return sendJson(res, 200, { ok: true })
+          }
+          throw new Error(`未知终端动作：${action}`)
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }
@@ -7124,6 +7340,9 @@ export function createRoutes(ctx) {
           const payload = engine === 'claude'
             ? await claudeTranscript(sessionId, { limit })
             : await sessionTranscript(ctx, sessionId, { limit })
+          if (Array.isArray(payload.messages)) {
+            payload.items = transcriptItemsFromRows(payload.messages)
+          }
           sendJson(res, 200, { ok: true, ...payload })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
@@ -7179,11 +7398,7 @@ export function createRoutes(ctx) {
             } catch (error) {
               transcript = { messages: [], total: 0, persisted: false, reason: `读取 Claude Code 对话失败：${String(error?.message ?? error)}` }
             }
-            const items = (transcript.messages ?? []).map((entry) => ({
-              kind: entry.role === 'user' ? 'user' : 'assistant',
-              text: entry.role === 'tool' ? `【${entry.roleLabel ?? '工具'}】\n${entry.text}` : entry.text,
-              at: entry.at ?? null,
-            }))
+            const items = transcriptItemsFromRows(transcript.messages ?? [])
             // 状态查不到 ≠ 会话已结束：daemon 暂时不可达时显示「读取中」，不伪造已结束
             const alive = state ? true : (stateError ? null : false)
             return sendJson(res, 200, {
@@ -8016,6 +8231,14 @@ export function apply(ctx) {
     const disposers = routes.map((route) => ctx.webServer.register(route))
     return () => { for (const dispose of disposers.splice(0)) dispose() }
   }, 'dev-hub: routes')
+
+  // 插件卸载/宿主退出：不要留下孤儿 PTY（尤其 Claude 的 attach 进程）
+  ctx.effect(() => () => {
+    for (const session of CLAUDE_TTYS.values()) {
+      try { session.child.kill() } catch { /* ignore */ }
+    }
+    CLAUDE_TTYS.clear()
+  }, 'dev-hub: pty cleanup')
 
   registerSystemPrompt(ctx)
   registerTools(ctx)

@@ -9,6 +9,7 @@
 - **独立 Node Server 形态**：`devhub` / `devhub serve` / `devhub doctor`，不需要安装 DSH；
 - 独立浏览器 UI：复用同一套 React 页面与流程内核，React 打进独立 bundle；
 - 首次进入的 macOS 风格引导：介绍范围/上下文/评审，检测 Claude Code/Node/Git，再选择项目；支持亮/暗色与 reduced-motion；
+- 独立版主界面改为 macOS 侧栏导航（流程/会话/需求澄清/设置 + 项目列表），顶部页签与项目管理大卡在独立版收起；DSH 插件保持原结构。
 - 独立版面向本机 Claude Code：启动/恢复后台会话、blocked/running 状态、bridge CLI、外部评审、自测与报告；
 - 独立版启动 token、Host/Origin 校验、附件 query token；
 - `DEVHUB_HOME` 与旧 `~/.dsh/dev-hub` 复用规则；`devhub serve --home`；

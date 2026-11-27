@@ -19,6 +19,7 @@
  */
 import { useEffect, useRef, useState } from 'react'
 import { h } from './i18n.mjs'
+import { SessionTimeline } from './session-log.mjs'
 
 const MAX_CLARIFY_ROUNDS = 4
 import { API } from '../shared/api.mjs'
@@ -83,11 +84,11 @@ function clarifyEngineLabel(engine) {
 }
 
 const SCAN_ENGINE_LABEL = {
-  dsh: 'DSH 扫描',
+  dsh: 'DSH 分析',
   'dsh-llm': 'DSH 模型筛选',
-  claude: 'Claude Code 扫描',
-  codex: 'Codex 扫描',
-  pi: 'Pi 扫描',
+  claude: 'Claude Code 分析',
+  codex: 'Codex 分析',
+  pi: 'Pi 分析',
   local: '本地关键词兜底',
 }
 
@@ -604,8 +605,8 @@ function ReconCard({
   const activeScope = live ? scopeList : (Array.isArray(confirmedScope) ? confirmedScope : scopeList)
   const selectedCount = files.filter((file) => activeFiles.includes(String(file?.path ?? ''))).length
   const conclusion = [
-    recon?.repoName ? `扫描仓库 ${recon.repoName}` : '',
-    `扫描 ${Number(recon?.scanned ?? 0)} 个文件，命中 ${files.length} 个候选`,
+    recon?.repoName ? `分析仓库 ${recon.repoName}` : '',
+    `已分析 ${Number(recon?.scanned ?? 0)} 个文件，命中 ${files.length} 个候选`,
     modules.length ? `集中在 ${modules.join('、')}` : '',
     members.length ? `覆盖 ${members.length} 个成员库` : '',
   ].filter(Boolean).join('，') + '。'
@@ -667,7 +668,7 @@ function ReconCard({
         : null,
       recon?.elapsedMs ? h('span', { style: styles.smallMuted }, `${(recon.elapsedMs / 1000).toFixed(1)}s`) : null,
       h(Pill, { tone: selectedCount === files.length ? 'ok' : 'warn' }, `已选 ${selectedCount}/${files.length} 个文件`),
-      recon?.truncated ? h(Pill, { tone: 'warn' }, '已达扫描上限') : null,
+      recon?.truncated ? h(Pill, { tone: 'warn' }, '候选过多，已截断') : null,
       h('div', { style: styles.spacer }),
       h(Stat, { label: '候选文件', value: files.length }),
       h(Stat, { label: '命中模块', value: modules.length }),
@@ -675,7 +676,7 @@ function ReconCard({
     h('div', { style: { ...styles.smallMuted, marginTop: 4 } }, conclusion),
     members.length
       ? h('div', { style: { marginTop: 8 } },
-        h('div', { style: styles.label }, `成员库扫描（${members.length}）`),
+        h('div', { style: styles.label }, `成员库分析结果（${members.length}）`),
         members.map((member, index) => h('div', {
           key: member.repo ?? member.name ?? index,
           style: { display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '2px 0', fontSize: T.font.xs },
@@ -695,9 +696,9 @@ function ReconCard({
       ? h('div', { style: { ...styles.warnCard, marginTop: 8 } }, recon.scanNotes)
       : null,
     recon?.scanNotes && recon?.engine !== 'local'
-      ? h('div', { style: { ...styles.smallMuted, marginTop: 4 } }, `扫描说明：${recon.scanNotes}`)
+      ? h('div', { style: { ...styles.smallMuted, marginTop: 4 } }, `分析说明：${recon.scanNotes}`)
       : null,
-    recon?.truncated ? h('div', { style: styles.smallMuted }, '结果可能不全：扫描达到上限，可把要做什么写得更具体。') : null,
+    recon?.truncated ? h('div', { style: styles.smallMuted }, '候选文件较多，结果已截断；可以把要做什么写得更具体。') : null,
 
     files.length
       ? h('div', { style: { marginTop: 8 } },
@@ -716,7 +717,7 @@ function ReconCard({
       : h('div', { style: { ...styles.smallMuted, marginTop: 8 } }, '没有命中候选文件。可以直接按目录/模块建流程，或点「重新描述」补充关键词。'),
     files.length && Number(recon?.truncatedFiles) > 0
       ? h('div', { style: { ...styles.smallMuted, marginTop: 4 } },
-        `还有 ${Number(recon.truncatedFiles)} 个关键词命中未展示（达到展示上限）；可以缩小描述或按目录拆分扫描。`)
+        `还有 ${Number(recon.truncatedFiles)} 个关键词命中未展示（候选过多，已截断）；可以缩小描述或按目录拆分分析。`)
       : null,
 
     live
@@ -848,7 +849,7 @@ function ClarifyCard({ card, answers, busy, title, onTitleChange, onPick, onSubm
           : null,
         onGeneratePlan ? h(Button, { disabled: busy, onClick: onGeneratePlan, children: '直接生成计划' }) : null,
       ),
-      h('div', { style: { ...styles.smallMuted, marginTop: 8 } }, '这一轮已经提交，可以继续补充，或直接生成计划。'),
+      h('div', { style: { ...styles.smallMuted, marginTop: 8 } }, '这一轮回答已记录；可以继续补充，也可以直接生成计划。'),
     )
   }
 
@@ -932,7 +933,7 @@ function ClarifyCard({ card, answers, busy, title, onTitleChange, onPick, onSubm
       ready ? h(Button, { disabled: busy, onClick: onGeneratePlan, children: '需求清楚了，生成计划' }) : null,
     ),
     h('div', { style: { ...styles.smallMuted, marginTop: 8 } },
-      ready ? '已经能写出问题定义：点「生成计划」继续（或再问一轮补细节）。' : '问题会一轮轮收敛；也可以直接点「生成计划」，我会按当前信息开工。'),
+      ready ? '已经能写出问题定义：点「生成计划」继续（或再问一轮补细节）。' : '问题会一轮轮收敛；也可以直接点「生成计划」，我会按当前信息给出计划。'),
   )
 }
 
@@ -1492,9 +1493,9 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       ? `需求澄清（第 ${Number(job.round) || 1} 轮）`
       : job.kind === 'plan'
         ? '生成开发计划'
-        : '扫描仓库'
+        : '分析仓库'
     setProgress({
-      label: `${kindLabel}：正在等待 ${engineName(devEngine)} 返回…`,
+      label: `${kindLabel}：正在等待工作站返回…`,
       startedAt,
       seconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)),
     })
@@ -1566,9 +1567,9 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     if (job.kind !== 'plan' && isConversationRunning(state.repo.path, scope, activeChatIdRef.current, resumeKind)) {
       // 旧组件可能已卸载，但它收尾时会把结果写回 chat store；这里轮询等它落盘后再载入，
       // 否则切走再回来会一直停在旧消息上，看起来"agent 不响应"。
-      const kindLabel = job.kind === 'clarify' ? `需求澄清（第 ${Number(job.round) || 1} 轮）` : '扫描仓库'
+      const kindLabel = job.kind === 'clarify' ? `需求澄清（第 ${Number(job.round) || 1} 轮）` : '分析仓库'
       setProgress({
-        label: `${kindLabel}：${engineName(devEngine)} 仍在分析上一轮请求，返回后自动继续…`,
+        label: `${kindLabel}：上一轮请求还在收尾，完成后会自动继续…`,
         startedAt: Number(job.at) || Date.now(),
         seconds: 0,
       })
@@ -1611,7 +1612,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         return
       }
       if (Number(job.resumeCount ?? 0) >= 1) {
-        push(stationMessage('上次的澄清可能已经完成；如需继续，点最新一轮的「继续补充（再问一轮）」。'))
+        push(stationMessage('上一轮澄清可能已经完成；如需补充，点最新一轮的「继续补充（再问一轮）」。'))
         setJob(null)
         setProgress(null)
         return
@@ -1619,19 +1620,19 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       setJob({ ...job, resumeCount: Number(job.resumeCount ?? 0) + 1 })
     }
     if (age > 15 * 60 * 1000) {
-      push(stationMessage('上次的扫描/澄清已中断超过 15 分钟，直接重新发一句即可。', { tone: 'danger' }))
+      push(stationMessage('上一次分析/澄清已中断超过 15 分钟，请重新描述需求。', { tone: 'danger' }))
       setJob(null)
       setProgress(null)
       return
     }
     if (job.kind === 'recon') {
-      push(stationMessage('刚才的扫描被切走了，已自动重新扫描…'))
+      push(stationMessage('刚才的仓库分析被中断，正在自动重新开始…'))
       analyze(job.description, { echo: false, extraAttachments: job.attachments })
     } else if (job.kind === 'clarify') {
-      push(stationMessage('刚才的澄清被切走了，已自动接着问…'))
+      push(stationMessage('刚才的澄清被中断，正在自动继续…'))
       runClarify(job)
     } else if (job.kind === 'plan') {
-      push(stationMessage('刚才生成计划时你切走了：确认范围后点「继续，生成计划」重试。'))
+      push(stationMessage('上一次生成计划被中断：确认范围后点「继续，生成计划」重试。'))
       setPhase(PHASE.confirm)
       setJob(null)
       setProgress(null)
@@ -1884,14 +1885,14 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     const key = runKey(repoPath, scope, conversationId, 'recon')
     // 同一段对话不允许并行两次扫描：否则两次结果会交错写进同一段对话
     if (!beginRun(key)) {
-      push(stationMessage('上一次扫描还没结束：等它回来再发，或点「新对话」另开一段。', { tone: 'warn' }))
+      push(stationMessage('上一次仓库分析还在进行：请等它完成，或点「新对话」另开一段。', { tone: 'warn' }))
       return
     }
     const run = startRun(conversationId)
     setPhase(PHASE.analyzing)
     if (echo) push(userMessage(text, usedAttachments))
     setJob({ kind: 'recon', description: text, attachments: usedAttachments, at: Date.now() })
-    setProgress({ label: `${engineName(devEngine)} 正在扫描仓库、定位可能要改的文件…`, startedAt: Date.now(), seconds: 0 })
+    setProgress({ label: '正在分析仓库、定位可能要改的文件…', startedAt: Date.now(), seconds: 0 })
     try {
       const probed = await probeCode(makeDeps(ctx), text, { attachments: usedAttachments, repoPath: state?.repo?.path })
       // 用户已经切到别的对话/开了新流程：结果写回原对话，不能写进当前界面
@@ -1954,7 +1955,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     setClarifyBusy(true)
     const clarifyJob = { kind: 'clarify', description, round, history, recon, spec, attachments: usedAttachments, at: Date.now() }
     setJob(clarifyJob)
-    setProgress({ label: `${engineName(devEngine)} 正在进行需求澄清（第 ${round} 轮）…`, startedAt: clarifyJob.at, seconds: 0 })
+    setProgress({ label: `正在澄清需求（第 ${round} 轮）…`, startedAt: clarifyJob.at, seconds: 0 })
     // 同步落 job：切页签瞬间卸载时，下一次挂载能判断“原任务还在跑”，
     // 不会又发一轮澄清（截图里“刚才的澄清被切走了，已自动接着问”就是这么来的）。
     if (repoPath && conversationId) {
@@ -2015,7 +2016,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     if (!beginRun(runKeyRescan)) return
     const run = startRun(conversationId)
     const base = String(clarify?.description || clarifyOrigin || pending?.description || '').trim()
-    if (base.length < 2) { setRescanNote('原始描述丢了，先重新说一句需求'); return }
+    if (base.length < 2) { setRescanNote('没有找到最初的需求描述，请重新描述一次'); return }
     const extra = (clarify?.history ?? [])
       .filter((turn) => turn.role === 'user')
       .map((turn) => turn.text)
@@ -2024,7 +2025,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       .join('\n')
     const enriched = extra ? `${base}\n\n补充说明：\n${extra}` : base
     setRescanBusy(true)
-    setRescanNote('正在按最新讨论重新扫描…')
+    setRescanNote('正在按最新讨论重新分析仓库…')
     try {
       const probed = await probeCode(makeDeps(ctx), enriched, { repoPath: state?.repo?.path })
       if (!runIsCurrent(run)) return
@@ -2058,7 +2059,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       clarify?.description || clarifyOrigin || pending?.description || originDescription(),
     ).trim()
     if (description.length < 2) {
-      push(stationMessage('原始描述丢了（可能刷新过页面）。请在下面重新说一句「要做什么」。', { tone: 'danger' }))
+      push(stationMessage('没有找到最初的需求描述（可能刷新过页面）。请在下方重新描述一次要做什么。', { tone: 'danger' }))
       return
     }
     const history = clarify?.history?.length
@@ -2093,7 +2094,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       || originDescription(),
     ).trim()
     if (description.length < 2) {
-      push(stationMessage('这次对话的原始描述丢了（可能刷新过页面）。请在下面重新说一句「要做什么」，我接着问。', { tone: 'danger' }))
+      push(stationMessage('这段对话没有保留最初的需求描述（可能刷新过页面）。请在下方重新描述一次，我会接着澄清。', { tone: 'danger' }))
       setPhase(PHASE.idle)
       return
     }
@@ -2188,7 +2189,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
     // 不能再拿旧 pending 去生成计划/建流程。
     const activeId = repoPath ? getActiveConversationId(repoPath, scope) : null
     if (activeId && conversationId && activeId !== conversationId) {
-      push(stationMessage('这段对话已经切走了：请回到最新对话再继续，或点「重新描述」开一段新的。', { tone: 'warn' }))
+      push(stationMessage('这段对话已不在当前页面：请回到最新对话继续，或点「重新描述」新开一段。', { tone: 'warn' }))
       return
     }
     // 恢复旧对话时 pending 可能字段不全：从 clarify/首条用户消息/扫描结果兜底，
@@ -2197,7 +2198,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       pending.description || clarify?.description || clarifyOrigin || originDescription(),
     ).trim()
     if (!description) {
-      push(stationMessage('原始描述丢了：请在下面重新说一句「要做什么」。', { tone: 'danger' }))
+      push(stationMessage('没有找到最初的需求描述。请在下方重新描述一次要做什么。', { tone: 'danger' }))
       return
     }
     const scopes = scopeList.length
@@ -2365,7 +2366,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   const hint = clarifyBusy
     ? '工作站正在结合仓库证据整理澄清问题…'
     : phase === PHASE.analyzing
-      ? '工作站正在调用 dsh 扫仓库（通常 30~90 秒，会真的读代码）…'
+      ? '工作站正在分析仓库（通常 30~90 秒，会读取实际代码）…'
       : phase === PHASE.planning
       ? '工作站正在出计划：步骤、验收、风险与工程量自评…'
       : phase === PHASE.creating
@@ -2378,7 +2379,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   const sendLabel = clarifyBusy
     ? '澄清中…'
     : phase === PHASE.analyzing
-      ? '正在扫描…'
+      ? '正在分析…'
       : phase === PHASE.planning
         ? '正在生成计划…'
         : phase === PHASE.creating ? '正在创建…' : '发送'
@@ -2459,12 +2460,12 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
             h(EmptyState, {
               icon: '◈',
               title: '说说你要做什么',
-              hint: '我会自己扫一遍仓库，列出可能要改的文件与命中行；不懂的地方会问你几个问题（可以跳过）。',
+              hint: '我会先分析仓库，列出可能要改的文件与命中行；不确定的地方会问你几个问题（可以跳过）。',
             }),
             h('div', { style: { ...styles.card, marginTop: 12 } },
               h('div', { style: styles.sectionTitle }, '我会怎么推进'),
               h('div', { style: { marginTop: 8, color: T.text3, fontSize: T.font.sm, lineHeight: T.line } },
-                '1. 扫描仓库，给出候选文件与命中行；2. 不懂的地方向你追问；3. 自己出计划（规模/人天/步骤/验收，附依据）；4. 你确认后建流程并开启开发会话。'),
+                '1. 分析仓库，给出候选文件与命中行；2. 不确定的地方向你追问；3. 给出计划（规模/人天/步骤/验收，附依据）；4. 你确认后建流程并开启开发会话。'),
               h('div', { style: { marginTop: 8, color: T.text4, fontSize: T.font.sm } },
                 '例如：把关卡状态回传从同步改成异步，解决连接池被远端 IO 占满的问题。'),
             ),
@@ -2482,23 +2483,13 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
                 h('span', { style: { color: T.text2, fontSize: T.font.sm, flex: '1 1 auto', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, progress.label),
                 h('span', { style: { ...styles.mono, color: T.text4, fontSize: T.font.xs, flex: '0 0 auto', whiteSpace: 'nowrap', marginLeft: 'auto' } }, `${progress.seconds}s`),
               ),
-              liveSession?.found && (liveSession.messages ?? []).length
+              liveSession?.found && (liveSession.items ?? []).length
                 ? h('div', { style: { marginTop: 6, border: `1px solid ${T.borderSoft}`, borderRadius: T.rBase, background: T.surface2, padding: '6px 10px' } },
                   h('div', { style: { ...styles.row, marginBottom: 4 } },
-                    h('span', { style: { fontSize: T.font.xs, fontWeight: 600, color: T.text3 } }, '会话记录（实时）'),
-                    h('span', { style: styles.sectionHint }, liveSession.messages.length > 6 ? `最近 ${Math.min(liveSession.messages.length, 6)} 条` : `${liveSession.messages.length} 条`),
+                    h('span', { style: { fontSize: T.font.xs, fontWeight: 600, color: T.text3 } }, '会话记录'),
+                    h('span', { style: styles.sectionHint }, liveSession.items.length > 6 ? `最近 ${Math.min(liveSession.items.length, 6)} 条` : `${liveSession.items.length} 条`),
                   ),
-                  h('div', { style: { display: 'flex', flexDirection: 'column', gap: 4, maxHeight: 260, overflow: 'auto' } },
-                    ...liveSession.messages.slice(-6).map((message, index) => h('div', {
-                      key: `${index}-${message.role}`,
-                      style: { display: 'flex', flexDirection: 'column', gap: 1, padding: '3px 0' },
-                    },
-                      h('span', { style: { fontSize: T.font.xs, color: message.role === 'user' ? T.brand : message.role === 'tool' ? T.warnText : T.text4 } },
-                        message.roleLabel ?? (message.role === 'user' ? '你' : message.role === 'tool' ? '工具' : '助手')),
-                      h('span', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: T.font.xs, lineHeight: 1.6, color: message.role === 'user' ? T.brand : T.text2 } },
-                        String(message.text ?? '').slice(0, 1200)),
-                    )),
-                  ),
+                  h(SessionTimeline, { items: liveSession.items, maxHeight: 260, collapseOlder: false }),
                 )
                 : null,
             ),
@@ -2542,7 +2533,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         h('div', { style: styles.row },
           h('span', { style: styles.sectionTitle }, `候选文件 ${files.length ? `(${files.length})` : ''}`),
           h('div', { style: styles.spacer }),
-          h(Button, { style: { height: 24, padding: '0 8px' }, disabled: rescanBusy, onClick: rescan, children: rescanBusy ? '扫描中…' : '重新扫描' }),
+          h(Button, { style: { height: 24, padding: '0 8px' }, disabled: rescanBusy, onClick: rescan, children: rescanBusy ? '分析中…' : '重新分析' }),
         ),
         files.length
           ? shownGroups.map(([repo, list]) => h('div', {
@@ -2558,7 +2549,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
               file.why ? h('span', { style: { fontSize: 11, color: T.text4 } }, file.why) : null,
             )),
           ))
-          : h('div', { style: styles.sectionHint }, '还没有候选文件：先发一句需求，或点「重新扫描」'),
+          : h('div', { style: styles.sectionHint }, '还没有候选文件：先发一句需求，或点「重新分析」'),
       ),
       plan
         ? h('div', { style: box },
@@ -2607,7 +2598,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
           ),
           engineSaving ? h(Spinner, { size: 12, tone: 'accent', title: '正在保存开发引擎' }) : null,
           engineError ? h('span', { style: styles.smallDanger }, engineError) : null,
-          h('span', { style: styles.smallMuted, fontSize: T.font.xs }, '用于本项目的扫描、澄清、评审与开发会话'),
+          h('span', { style: styles.smallMuted, fontSize: T.font.xs }, '用于本项目的分析、澄清、评审与开发会话'),
         ),
         // 输入框在 confirm/plan 阶段按设计是锁住的；把唯一能推进的按钮放到输入区上方，
         // 避免切走再回来后只看到“灰输入框”，误以为 agent 不响应。
@@ -2636,7 +2627,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
               : null,
             attachments.length
               ? h('div', { style: styles.sectionHint },
-                '发送后工作站会把路径交给 dsh：图片用 read_image 读取；模型不支持图片时会明确提示。')
+                '发送后工作站会把文件路径交给会话；模型不支持图片时会明确提示，不会静默丢弃。')
               : null,
             attachBusy ? h('span', { style: styles.sectionHint }, '附件上传中…') : null,
             attachError ? h('div', { style: styles.smallDanger }, attachError) : null,
@@ -2665,7 +2656,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
             resize: 'none',
           },
           placeholder: clarifyBusy
-            ? '澄清进行中…（完成后会直接出下一轮问题或规格）'
+            ? '澄清进行中…（完成后会给出下一轮问题或规格）'
             : phase === PHASE.confirm
             ? '请先确认上面的文件/范围与追问，再点「继续，生成计划」'
             : phase === PHASE.plan

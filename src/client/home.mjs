@@ -1108,6 +1108,7 @@ function ParallelSection({ parallel, error }) {
 export function HomeView(props) {
   const {
     state,
+    hideProjectBar = false,
     items,
     selectedId,
     parallel,
@@ -1227,7 +1228,7 @@ export function HomeView(props) {
     onEditWorkspace,
     onRemoveWorkspace,
   })
-  const projectBar = h(ProjectBar, {
+  const projectBar = hideProjectBar ? null : h(ProjectBar, {
     repo,
     // 优先用带 exists 的卡片数据；旧数据回退到路径数组
     repos: state?.profile?.repoCards ?? state?.profile?.repos,

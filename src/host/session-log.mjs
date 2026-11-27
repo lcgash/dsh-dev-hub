@@ -171,6 +171,56 @@ export function transcriptRowsFromEvents(events, { limit = 80, resultMax = 1200 
 const ROLE_TEXT = { user: '你', assistant: '助手', tool: '工具', developer: '开发', system: '系统' }
 
 /**
+ * Claude / 会话历史行 → DSH 风格的时间线：工具调用单独成项并可折叠成组，
+ * 不再把 `[调用工具] xxx` 当成一条“助手消息”平铺。
+ */
+export function transcriptItemsFromRows(rows = []) {
+  const items = []
+  let lastTool = null
+  const pushTool = (name, brief) => {
+    const item = { kind: 'tool', name: String(name ?? 'tool').trim() || 'tool', brief: String(brief ?? '').trim(), status: 'running' }
+    items.push(item)
+    lastTool = item
+  }
+  for (const row of rows) {
+    const role = String(row?.role ?? '')
+    const text = String(row?.text ?? '').trim()
+    if (!text) continue
+    if (role === 'user') { items.push({ kind: 'user', text, at: row.at ?? null }); lastTool = null; continue }
+    if (role === 'tool') {
+      const name = String(row.roleLabel ?? '').replace(/^工具\s*/, '').trim() || 'tool'
+      const failed = /^(error|failed|失败|错误)/i.test(text)
+      if (lastTool && lastTool.status === 'running') {
+        lastTool.status = failed ? 'error' : 'ok'
+        lastTool.detail = text.slice(0, 1200)
+        lastTool.name = name || lastTool.name
+        lastTool = null
+      } else {
+        items.push({ kind: 'tool', name, brief: text.split(/\r?\n/)[0].slice(0, 200), detail: text.slice(0, 1200), status: failed ? 'error' : 'ok' })
+      }
+      continue
+    }
+    if (role === 'assistant') {
+      const lines = text.split(/\r?\n/)
+      const prose = []
+      for (const line of lines) {
+        const match = /^\[调用工具\]\s+([^·\n]+?)(?:\s*·\s+(.+)|\s+-\s+(.+))?$/.exec(line.trim())
+        if (!match) { prose.push(line); continue }
+        if (prose.length) { items.push({ kind: 'assistant', text: prose.join('\n').trim(), at: row.at ?? null }); prose.length = 0 }
+        pushTool(match[1], match[2] ?? match[3] ?? '')
+      }
+      if (prose.length) {
+        const merged = prose.join('\n').trim()
+        if (merged) items.push({ kind: 'assistant', text: merged, at: row.at ?? null })
+      }
+      continue
+    }
+    items.push({ kind: 'assistant', text, at: row.at ?? null })
+  }
+  return items
+}
+
+/**
  * @param {import('@deepseek-ai/cordis').Context} ctx
  * @param {string} sessionId
  * @param {{ limit?: number }} [options]

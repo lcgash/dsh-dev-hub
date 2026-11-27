@@ -9,11 +9,13 @@ import { useEffect, useState } from 'react'
 import { h } from './i18n.mjs'
 import { API } from '../shared/api.mjs'
 import { Button, T, api, errorText, styles } from './common.mjs'
+import { SessionTimeline } from './session-log.mjs'
 
 const ROLE_LABEL = { user: '你', assistant: '助手', tool: '工具', system: '系统' }
 
 export function ClaudeConsole({ itemId, sessionId, onSessionChange }) {
   const [messages, setMessages] = useState([])
+  const [items, setItems] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [text, setText] = useState('')
@@ -27,6 +29,7 @@ export function ClaudeConsole({ itemId, sessionId, onSessionChange }) {
     try {
       const body = await api(`${API.sessionTranscript}?sessionId=${encodeURIComponent(currentId)}&engine=claude&limit=120`)
       setMessages(Array.isArray(body.messages) ? body.messages : [])
+      setItems(Array.isArray(body.items) ? body.items : [])
     } catch (err) {
       setError(errorText(err))
     } finally {
@@ -84,16 +87,8 @@ export function ClaudeConsole({ itemId, sessionId, onSessionChange }) {
         gap: 6,
       },
     },
-      messages.length
-        ? messages.slice(-120).map((message, index) => h('div', {
-          key: `${index}-${message.role}`,
-          style: { display: 'flex', flexDirection: 'column', gap: 2 },
-        },
-          h('span', { style: { fontSize: T.font.xs, color: message.role === 'user' ? T.brand : message.role === 'tool' ? T.warnText : T.text4 } },
-            message.roleLabel ?? ROLE_LABEL[message.role] ?? message.role),
-          h('span', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', fontSize: T.font.sm, lineHeight: 1.65, color: message.role === 'user' ? T.brand : T.text2 } },
-            String(message.text ?? '')),
-        ))
+      items.length
+        ? h(SessionTimeline, { items, maxHeight: '52vh', collapseOlder: false })
         : h('div', { style: styles.sectionHint }, loading ? '正在读取会话…' : '会话还没有可读记录；发送一句话后 Claude 会继续。'),
     ),
     error ? h('div', { style: styles.dangerCard }, error) : null,

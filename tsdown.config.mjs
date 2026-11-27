@@ -40,7 +40,7 @@ export default [
     sourcemap: true,
     clean: false,
     deps: {
-      alwaysBundle: [/^react($|[-\/])/],
+      alwaysBundle: [/^react($|[-\/])/, /^@xterm\//],
     },
     define: {
       'process.env.NODE_ENV': JSON.stringify('production'),

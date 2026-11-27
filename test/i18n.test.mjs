@@ -281,24 +281,20 @@ test('动态模板覆盖率：src/client 的中文模板字面量都有对应 te
   assert.deepEqual(missing, [], `缺少 templates 的动态文案：\n${missing.slice(0, 30).join('\n')}`)
 })
 
-test('h 合并相邻文本子节点、confirmText 多行模板都翻译', async () => {
+test('h 合并相邻文本子节点、确认弹层多行模板都翻译', async () => {
   const bundle = await loadLocaleBundle()
   const service = createLocaleService({ active: 'en' })
   const handle = installLocaleDictionaries({ locale: service }, bundle, { warn() {} })
   setActiveLocaleForTest('en', service.bind(LOCALE_NAMESPACE))
-  const originalWindow = globalThis.window
-  let confirmed = ''
-  globalThis.window = { confirm: (message) => { confirmed = message; return true } }
   try {
     const html = renderToStaticMarkup(h('span', null, '更新于 ', '2026-11-16 16:20'))
     assert.equal(html, '<span>Updated 2026-11-16 16:20</span>')
-    const { confirmText } = await import('../src/client/i18n.mjs')
-    assert.equal(confirmText('确认提交 2 个文件到「main」，并立即 git push？\n\nsrc/a.mjs\nsrc/b.mjs'), true)
-    assert.doesNotMatch(confirmed, /\p{Script=Han}/u)
-    assert.match(confirmed, /Commit 2 files to "main"/)
+    const { translateText } = await import('../src/client/i18n.mjs')
+    const translated = translateText('确认提交 2 个文件到「main」，并立即 git push？\n\nsrc/a.mjs\nsrc/b.mjs')
+    assert.match(translated, /Commit 2 files to "main"/)
+    assert.match(translated, /\n\nsrc\/a\.mjs\nsrc\/b\.mjs$/)
+    assert.doesNotMatch(translated, /\p{Script=Han}/u)
   } finally {
-    if (originalWindow === undefined) delete globalThis.window
-    else globalThis.window = originalWindow
     setActiveLocaleForTest('zh', (key) => key)
     handle.dispose()
   }
@@ -363,15 +359,12 @@ test('中文数据：翻译界面 chrome，数据片段原样保留', async () =
   const service = createLocaleService({ active: 'en' })
   const handle = installLocaleDictionaries({ locale: service }, bundle, { warn() {} })
   setActiveLocaleForTest('en', service.bind(LOCALE_NAMESPACE))
-  const originalWindow = globalThis.window
-  let confirmed = ''
-  globalThis.window = { confirm: (message) => { confirmed = message; return true } }
   try {
-    const { confirmText } = await import('../src/client/i18n.mjs')
-    confirmText('删除流程「多语言词典改造」？\n\n只删台账；代码不回滚、DSH 会话不删除。这个操作不可撤销。')
-    assert.match(confirmed, /Delete flow "多语言词典改造"/)
-    assert.match(confirmed, /Only the ledger is deleted/)
-    assert.doesNotMatch(confirmed.replace('多语言词典改造', ''), /\p{Script=Han}/u)
+    const { translateText } = await import('../src/client/i18n.mjs')
+    const deleteText = translateText('删除流程「多语言词典改造」？\n\n只删台账；代码不回滚、DSH 会话不删除。这个操作不可撤销。')
+    assert.match(deleteText, /Delete flow "多语言词典改造"/)
+    assert.match(deleteText, /Only the ledger is deleted/)
+    assert.doesNotMatch(deleteText.replace('多语言词典改造', ''), /\p{Script=Han}/u)
 
     const tip = renderToStaticMarkup(h('div', { title: '切换到虚拟库「我的库」：2 个成员库' }, 'x'))
     assert.match(tip, /Switch to virtual repository “我的库”: 2 member repositories/)
@@ -392,8 +385,6 @@ test('中文数据：翻译界面 chrome，数据片段原样保留', async () =
     const html = renderToStaticMarkup(h('div', null, reason))
     assert.doesNotMatch(html, /\p{Script=Han}/u, `评审异常 chrome 仍有中文：${html}`)
   } finally {
-    if (originalWindow === undefined) delete globalThis.window
-    else globalThis.window = originalWindow
     setActiveLocaleForTest('zh', (key) => key)
     handle.dispose()
   }

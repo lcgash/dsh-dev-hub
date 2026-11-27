@@ -570,7 +570,7 @@ test('回归：需求澄清要有进度反馈、已提交卡片锁死、聊天�
   const { readFile } = await import('node:fs/promises')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   // 进度：消息流里的打字气泡（动作名 + 已用秒数 + 三个点）
-  assert.match(chat, /正在进行需求澄清（第 \$\{round\} 轮）/)
+  assert.match(chat, /正在澄清需求（第 \$\{round\} 轮）/)
   assert.match(chat, /devhub-typing-dot/)
   assert.match(chat, /\$\{progress\.seconds\}s/)
   // 已提交：resolved 锁 + 防重复提交
@@ -624,7 +624,7 @@ test('回归：澄清卡已提交时只回看不对齐输入框，重复用户�
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   // resolved 分支：直接 return 摘要视图，不再渲染 input/chip
   assert.match(chat, /if \(resolved\) \{/)
-  assert.match(chat, /这一轮已经提交，可以继续补充，或直接生成计划/)
+  assert.match(chat, /这一轮回答已记录；可以继续补充，也可以直接生成计划/)
   // 相邻重复用户消息去重
   assert.match(chat, /function visibleMessages\(\)/)
   assert.match(chat, /visibleMessages\(\)\.map/)
@@ -693,8 +693,8 @@ test('回归：项目卡片支持移除，失效路径显示红标且不可切�
 test('回归：切走后回来会续跑扫描/澄清（不再显示"中断"）', async () => {
   const { readFile } = await import('node:fs/promises')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
-  assert.match(chat, /自动重新扫描/)
-  assert.match(chat, /已自动接着问/)
+  assert.match(chat, /自动重新开始/)
+  assert.match(chat, /正在自动继续/)
   assert.match(chat, /kind: 'recon'/)
   assert.match(chat, /kind: 'clarify'/)
   assert.match(chat, /resumeTriedRef/)
@@ -950,7 +950,8 @@ test('回归：开发会话动态把连续工具调用折叠成一组（不再�
   const panel = await readFile(new URL('../src/client/session-log.mjs', import.meta.url), 'utf8')
   assert.match(panel, /function ToolGroup/)
   assert.match(panel, /执行了 \$\{items\.length\} 个操作/)
-  assert.match(panel, /toolBuffer/)
+  assert.match(panel, /export function SessionTimeline/)
+  assert.match(panel, /rows\.push\(\{ kind: 'toolGroup'/)
   assert.match(panel, /limit=80/)
 })
 
@@ -1003,7 +1004,7 @@ test('聊天恢复：确认/计划阶段没有可操作卡片时解锁输入，�
   assert.doesNotMatch(chat, /onStateLoaded/)
   // 旧组件请求还在飞时，新组件轮询 chat store，收尾后自动载入结果而不是永远空白
   assert.match(chat, /isConversationRunning\(state\.repo\.path, scope, activeChatIdRef\.current, resumeKind\)\) \{/)
-  assert.match(chat, /仍在分析上一轮请求/)
+  assert.match(chat, /上一轮请求还在收尾/)
   assert.match(chat, /const stillRunning = isConversationRunning\(repoPath, scope, activeChatIdRef\.current, resumeKind\)/)
 })
 
@@ -1039,13 +1040,13 @@ test('回归：首页右上角的小房子按钮在「进行中」右侧，且�
   assert.match(index, /homeNonce/)
 })
 
-test('回归：聊天右区展示候选文件/计划，并支持按最新讨论重新扫描', async () => {
+test('回归：聊天右区展示候选文件/计划，并支持按最新讨论重新分析', async () => {
   const { readFile } = await import('node:fs/promises')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   assert.match(chat, /function renderSide/)
   assert.match(chat, /候选文件/)
-  assert.match(chat, /重新扫描/)
-  assert.match(chat, /正在按最新讨论重新扫描/)
+  assert.match(chat, /重新分析/)
+  assert.match(chat, /正在按最新讨论重新分析仓库/)
   assert.match(chat, /setSideOpen/)
 })
 
@@ -1700,7 +1701,7 @@ test('变更文件确认按成员库分组；探测卡片与右区按 repoName �
   assert.match(chat, /function groupReconFiles/)
   assert.match(chat, /function reconFileRepo/)
   assert.match(chat, /function reconMembers/)
-  assert.match(chat, /成员库扫描（/)
+  assert.match(chat, /成员库分析结果（/)
   assert.match(chat, /repoName/)
   // 单库没有 repoName 时只有一组，不显示组标题
   assert.match(chat, /multiRepo/)
@@ -2093,7 +2094,7 @@ test('聊天任务恢复：切页/刷新回来 job 与进度可见，不会静�
   const { readFile } = await import('node:fs/promises')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   assert.match(chat, /setJob\(conversation\?\.job \?\? null\)/)
-  assert.match(chat, /正在等待 \$\{engineName\(devEngine\)\} 返回/)
+  assert.match(chat, /正在等待工作站返回/)
   assert.match(chat, /setJob\(conversation\?\.job \?\? null\)/)
   assert.match(chat, /resumeTriedRef\.current = false/)
 })
@@ -2373,7 +2374,7 @@ test('Codex / Pi 引擎：澄清评审走结构化 CLI，开发走终端', async
   assert.match(host, /path: API.external/)
 })
 
-test('扫描也跟随 AI 引擎：Claude/Codex/Pi 不走 DSH 扫描', async () => {
+test('分析也跟随 AI 引擎：Claude/Codex/Pi 不走 DSH 分析', async () => {
   const { readFile } = await import('node:fs/promises')
   const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
@@ -2381,9 +2382,9 @@ test('扫描也跟随 AI 引擎：Claude/Codex/Pi 不走 DSH 扫描', async () =
   assert.match(host, /scanEngine === 'dsh'/)
   assert.match(host, /engine = scanEngine/)
   assert.match(host, /engineLabel: \{ dsh: 'DSH 扫描', 'dsh-llm': 'DSH 模型筛选', claude: 'Claude Code 扫描'/)
-  assert.match(chat, /Claude Code 扫描/)
-  assert.match(chat, /Codex 扫描/)
-  assert.match(chat, /Pi 扫描/)
+  assert.match(chat, /Claude Code 分析/)
+  assert.match(chat, /Codex 分析/)
+  assert.match(chat, /Pi 分析/)
 })
 
 test('需求澄清卡片显示本轮耗时和实际引擎', async () => {
@@ -2409,13 +2410,13 @@ test('Claude 授权/选择：blocked 会话提示打开站内会话控制台，�
   assert.match(automation, /bypassPermissions/)
 })
 
-test('长任务进度：计时从 job.at 恢复，文案显示实际 AI 引擎', async () => {
+test('长任务进度：计时从 job.at 恢复，文案不再暴露底层 AI 引擎名', async () => {
   const { readFile } = await import('node:fs/promises')
   const chat = await readFile(new URL('../src/client/chat.mjs', import.meta.url), 'utf8')
   assert.match(chat, /startedAt: Number\(job\.at\)/)
-  assert.match(chat, /正在等待 \$\{engineName\(devEngine\)\} 返回/)
-  assert.match(chat, /仍在分析上一轮请求/)
-  assert.match(chat, /正在扫描仓库、定位可能要改的文件/)
+  assert.match(chat, /正在等待工作站返回/)
+  assert.match(chat, /上一轮请求还在收尾/)
+  assert.match(chat, /正在分析仓库、定位可能要改的文件/)
   assert.match(chat, /props|flex: '0 0 auto', whiteSpace: 'nowrap'/)
 })
 
@@ -2567,4 +2568,38 @@ test('Claude 会话控制台：站内查看记录 + 发送消息，不调用本�
   assert.match(consoleSource, /force: true/)
   assert.match(host, /body\.force !== true/)
   assert.match(consoleSource, /onSessionChange/)
+})
+
+test('会话时间线：助手文本合并、工具调用折叠，渲染接近 DSH', async () => {
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { SessionTimeline } = await import('../src/client/session-log.mjs')
+  const html = renderToStaticMarkup(h(SessionTimeline, {
+    items: [
+      { kind: 'user', text: '把表单创建做出来' },
+      { kind: 'assistant', text: '先看一下现有列表页。' },
+      { kind: 'assistant', text: '然后补测试。' },
+      { kind: 'tool', name: 'Read', brief: 'web/templates/list.html', status: 'ok' },
+      { kind: 'tool', name: 'Bash', brief: 'go build ./...', status: 'ok' },
+    ],
+    collapseOlder: false,
+  }))
+  assert.match(html, /把表单创建做出来/)
+  assert.match(html, /先看一下现有列表页。[\s\S]*补测试。/)
+  assert.match(html, /执行了 2 个操作/)
+  assert.doesNotMatch(html, /助手/)
+  assert.doesNotMatch(html, /\[调用工具\]/)
+})
+
+test('站内 PTY：xterm 组件、Host 的 script/winpty 和 HTTP 输入输出都已接上', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const consoleSource = await readFile(new URL('../src/client/claude-terminal.mjs', import.meta.url), 'utf8')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  assert.match(index, /ClaudeTerminal/)
+  assert.match(consoleSource, /from '@xterm\/xterm'/)
+  assert.match(consoleSource, /API\.tty/)
+  assert.match(host, /function createClaudeTty/)
+  assert.match(host, /spawn\(script/)
+  assert.match(host, /winpty/)
+  assert.match(host, /CLAUDE_TTYS/)
 })

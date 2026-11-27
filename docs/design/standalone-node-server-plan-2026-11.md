@@ -300,6 +300,15 @@ shim 只用于 P0 验证和 v0.1 过渡。v0.1 发布前必须把路由注册从
 - 真实 `claude --bg` 用 stdin 启动后台会话已验证（临时会话已 stop）。
 - Windows 证据来自 CI 实际运行，不是本机模拟；CI run 13 `success`。
 
+## 5.11 macOS NavigationSplitView 结构（2026-11-27）
+
+- 独立版主界面改成左窄栏 + 右内容：左侧常驻导航（流程/会话/需求澄清/设置）和项目列表，顶部不再放重复页签。
+- 项目切换移到侧栏，走同一 `/switch-repo`；切换后重挂 Panel 并刷新 scope。顶部项目管理大卡在独立版隐藏。
+- 侧栏支持添加项目（新增 modal，不依赖 DSH 目录选择器）；流程详情仍保留当前项目的扫描/刷新/移除动作。
+- DSH 插件不启用该结构：仍是原顶部页签 + 项目管理卡，避免插件用户界面被独立版重构影响。
+- 侧栏视觉是半透明 source list：34px 行高、蓝色选中、项目名/分支两行、无重边框。
+- 依赖 panel 已拆分到 `src/client/standalone-sidebar.mjs`；内容区仍复用既有 HomeView/Panel/Chat，不复制流程逻辑。
+
 ## 6. 数据与兼容契约
 
 - 仓库台账继续是 `.dev-hub/items/*.json`，不新增第二套存储。

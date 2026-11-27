@@ -552,15 +552,16 @@ test('流程详情：阶段条/概览/页签都能看到独立评审与纠偏意
   assert.match(index, /children: '重新评审'/)
   assert.match(index, /查看开发报告/)
 
-  // 「继续推进」在评审阶段自动开始评审：走共用判定 + 复用现有 dispatch，不弹确认框
+  // 「继续推进」在评审阶段自动开始评审：走共用判定 + 复用现有 dispatch，只在开发会话仍在跑时确认一次
   const continueStart = index.indexOf('async function continueDev()')
   const continueBody = index.slice(continueStart, index.indexOf('async function', continueStart + 10))
   assert.match(continueBody, /reviewAdvancePlan\(draft\)/)
   assert.match(continueBody, /startReview\(\)/)
   const reviewStart = index.indexOf('async function startReview(')
   const reviewBody = index.slice(reviewStart, index.indexOf('async function', reviewStart + 10))
-  // 开发会话还在跑时，评审前允许确认一次，而不是让按钮看起来“点了没反应”
-  assert.match(reviewBody, /window\.confirm/)
+  // 开发会话还在跑时，评审前允许确认一次（自建弹层，不再用原生 window.confirm）
+  assert.match(reviewBody, /await askConfirm\(\{/)
+  assert.doesNotMatch(reviewBody, /window\.confirm/)
   assert.match(reviewBody, /current\.status === 'pending'/)
   assert.match(reviewBody, /reviewFailureHint\(view\)/)
 })

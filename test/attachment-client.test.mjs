@@ -14,7 +14,9 @@ test('聊天框：支持粘贴/拖入/选择文件，图片不支持时明确提
   assert.match(chat, /API\.capabilities/)
   assert.match(chat, /当前模型不支持图片输入/)
   assert.match(chat, /引用文件\/图片/)
-  assert.match(chat, /read_image/)
+  // 用户文案不暴露 read_image 这类工具名；Host prompt 仍会用工具读取
+  assert.match(chat, /文件路径交给会话/)
+  assert.doesNotMatch(chat, /图片用 read_image 读取/)
   // 附件跟着消息进入 recon / clarify / create
   assert.match(chat, /probeCode\(makeDeps\(ctx\), text, \{ attachments: usedAttachments(?:, repoPath: state\?\.repo\?\.path)? \}\)/)
   assert.match(chat, /attachments: usedAttachments/)

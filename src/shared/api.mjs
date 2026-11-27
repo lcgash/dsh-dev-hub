@@ -33,6 +33,7 @@ export const API = {
   skills: '/api/dev-hub/skills',
   sessionLog: '/api/dev-hub/session-log',
   liveTranscript: '/api/dev-hub/live-transcript',
+  tty: '/api/dev-hub/tty',
   sessionTranscript: '/api/dev-hub/session-transcript',
   lookup: '/api/dev-hub/lookup',
   assist: '/api/dev-hub/assist',

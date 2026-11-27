@@ -102,7 +102,7 @@ function TimelineRow({ item }) {
   const isUser = item.kind === 'user'
   const long = String(item.text ?? '').length > 320
   return h('div', { style: { display: 'flex', flexDirection: 'column', gap: 2, marginTop: 6 } },
-    h('span', { style: { fontSize: T.font.xs, color: T.text4 } }, isUser ? '你' : '助手'),
+    isUser ? h('span', { style: { fontSize: T.font.xs, color: T.text4 } }, '你') : null,
     h('div', {
       style: {
         whiteSpace: 'pre-wrap',
@@ -159,6 +159,49 @@ function MessageRow({ message }) {
 }
 
 /**
+ * DSH 风格时间线：相邻助手文本合并，连续工具调用折叠成一组；
+ * 详情、站内控制台、澄清等待共用，避免每处各画一套。
+ */
+export function SessionTimeline({ items: rawItems = [], emptyText = '（还没有消息）', maxHeight = 300, collapseOlder = true }) {
+  const merged = []
+  for (const item of rawItems) {
+    if (!item) continue
+    if (item.kind === 'toolGroup') { merged.push(item); continue }
+    if (item.kind === 'assistant') {
+      const last = merged[merged.length - 1]
+      if (last?.kind === 'assistant') {
+        last.text = `${String(last.text ?? '')}\n\n${String(item.text ?? '')}`.trim()
+        continue
+      }
+    }
+    merged.push({ ...item })
+  }
+  const rows = []
+  let tools = []
+  for (const item of merged) {
+    if (item.kind === 'tool') { tools.push(item); continue }
+    if (tools.length) { rows.push({ kind: 'toolGroup', items: tools }); tools = [] }
+    rows.push(item)
+  }
+  if (tools.length) rows.push({ kind: 'toolGroup', items: tools })
+  if (!rows.length) return h('div', { style: styles.sectionHint }, emptyText)
+  const head = collapseOlder ? rows.slice(0, Math.max(0, rows.length - 6)) : []
+  const tail = collapseOlder ? rows.slice(-6) : rows
+  const row = (item, key) => item.kind === 'toolGroup'
+    ? h('div', { key }, h(ToolGroup, { items: item.items }))
+    : h(TimelineRow, { key, item })
+  return h('div', { style: { maxHeight, overflow: 'auto', paddingRight: 4 } },
+    head.length
+      ? h('details', null,
+        h('summary', { style: { cursor: 'pointer', fontSize: T.font.xs, color: T.text4, padding: '2px 0' } }, `更早的 ${head.length} 条（展开）`),
+        ...head.map((item, index) => row(item, `h${index}`)),
+      )
+      : null,
+    ...tail.map((item, index) => row(item, `t${index}`)),
+  )
+}
+
+/**
  * @param {{ ctx: any, sessionId: string|null, alive?: boolean, onError?: (message: string) => void }} props
  */
 export function SessionLogPanel({ ctx, itemId, sessionId, alive, onError }) {
@@ -197,15 +240,7 @@ export function SessionLogPanel({ ctx, itemId, sessionId, alive, onError }) {
     return h('div', { style: styles.sectionHint }, '还没有关联开发会话。')
   }
 
-  const rawItems = log?.items ?? []
-  const items = []
-  let toolBuffer = []
-  for (const item of rawItems) {
-    if (item?.kind === 'tool') { toolBuffer.push(item); continue }
-    if (toolBuffer.length) { items.push({ kind: 'toolGroup', items: toolBuffer }); toolBuffer = [] }
-    items.push(item)
-  }
-  if (toolBuffer.length) items.push({ kind: 'toolGroup', items: toolBuffer })
+  const items = log?.items ?? []
   const rows = log?.messages ?? []
   return h('div', { style: { marginTop: T.gap.xs } },
     h('div', { style: { ...styles.row, marginBottom: 6 } },
@@ -217,25 +252,6 @@ export function SessionLogPanel({ ctx, itemId, sessionId, alive, onError }) {
     ),
     error ? h('div', { style: styles.dangerCard }, error) : null,
     !alive && log?.reason ? h('div', { style: styles.warnCard }, log.reason) : null,
-    items.length
-      ? (() => {
-        const head = items.slice(0, Math.max(0, items.length - 6))
-        const tail = items.slice(-6)
-        return h('div', {
-          style: { maxHeight: 300, overflow: 'auto', paddingRight: 4 },
-        },
-          head.length
-            ? h('details', null,
-              h('summary', { style: { cursor: 'pointer', fontSize: T.font.xs, color: T.text4, padding: '2px 0' } },
-                `更早的 ${head.length} 条（展开）`),
-              head.map((item, index) => (item.kind === 'toolGroup'
-                ? h('div', { key: `hg${index}` }, h(ToolGroup, { items: item.items }))
-                : h(TimelineRow, { key: `h${index}-${item.kind}`, item }))))
-            : null,
-          tail.map((item, index) => (item.kind === 'toolGroup'
-            ? h('div', { key: `tg${index}` }, h(ToolGroup, { items: item.items }))
-            : h(TimelineRow, { key: `t${index}-${item.kind}`, item }))))
-      })()
-      : h('div', { style: styles.sectionHint }, log?.reason ? '没有可展示的消息（会话可能尚未开始或已被清理）' : '（还没有消息）'),
+    h(SessionTimeline, { items, maxHeight: 320, emptyText: log?.reason ? '没有可展示的消息（会话可能尚未开始或已被清理）' : '（还没有消息）' }),
   )
 }

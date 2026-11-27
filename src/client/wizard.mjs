@@ -9,7 +9,8 @@
  * Lead 并行实现，这里只按契约调用，不做任何本地 mock。
  */
 import { useEffect, useMemo, useState } from 'react'
-import { h, confirmText } from './i18n.mjs'
+import { h } from './i18n.mjs'
+import { askConfirm } from './confirm.mjs'
 import { API } from '../shared/api.mjs'
 import { suggestFlowTitle } from '../shared/requirement.mjs'
 import { WIZARD_STEP_LABELS, WIZARD_STEPS } from '../shared/wizard.mjs'
@@ -198,9 +199,12 @@ export function NewFlowWizard({ state, onCreated }) {
     }
   }
 
-  function submitScope() {
+  async function submitScope() {
     setError('')
-    if (!scopeList.length && !confirmText('还没有选择代码目录或模块，并行冲突将无法判定。确定继续？')) return
+    if (!scopeList.length && !(await askConfirm({
+      title: '未选择代码目录',
+      message: '还没有选择代码目录或模块，并行冲突将无法判定。确定继续？',
+    }))) return
     setStepIndex((current) => current + 1)
   }
 

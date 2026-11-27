@@ -17,6 +17,7 @@ import {
   styles,
 } from './common.mjs'
 import { getConversation, listChats } from './chat-store.mjs'
+import { askConfirm } from './confirm.mjs'
 import { api } from './common.mjs'
 
 function statusOf(conversation, matchedFlow = null) {
@@ -25,7 +26,7 @@ function statusOf(conversation, matchedFlow = null) {
   if (job) {
     const label = job.kind === 'clarify'
       ? `正在澄清 · 第 ${Number(job.round) || 1} 轮`
-      : job.kind === 'plan' ? '正在生成计划' : '正在扫描仓库'
+      : job.kind === 'plan' ? '正在生成计划' : '正在分析仓库'
     return { label, tone: 'accent' }
   }
   if (conversation?.pendingPlan) return { label: '计划待确认', tone: 'warn' }
@@ -152,10 +153,14 @@ export function ClarificationWorkspace({ repoPath, refreshNonce = 0, onOpen, onO
     return () => { alive = false }
   }, [repoPath, refreshNonce])
 
-  function remove(card) {
+  async function remove(card) {
     if (!card || card.busy) return
-    if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-      && !window.confirm(`删除澄清草稿「${card.title}」？这不会删除任何代码或已创建的流程。`)) return
+    const confirmed = await askConfirm({
+      title: '删除澄清草稿',
+      tone: 'danger',
+      message: `删除澄清草稿「${card.title}」？这不会删除任何代码或已创建的流程。`,
+    })
+    if (!confirmed) return
     onDelete?.(card)
   }
 

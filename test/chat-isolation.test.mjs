@@ -67,7 +67,7 @@ test('会话隔离：任务收尾清 job，且同一对话不允许并行同类�
   assert.match(source, /isConversationRunning\(state\.repo\.path, scope, activeChatIdRef\.current, resumeKind\)/)
   assert.match(source, /if \(!beginRun\(key\)\)/)
   // 同一段对话的扫描不能并行（否则两次结果交错）
-  assert.match(source, /上一次扫描还没结束/)
+  assert.match(source, /上一次仓库分析还在进行/)
 })
 
 test('会话登记表：同一段对话的同类任务只登记一次（进程内）', () => {
@@ -116,5 +116,5 @@ test('切走页签：未返回的澄清/计划结果写回 chat store，不写�
   assert.match(chat, /API\.liveTranscript/)
   assert.match(chat, /const clarifyJob = \{ kind: 'clarify'/)
   assert.match(chat, /job: clarifyJob/)
-  assert.match(chat, /会话记录（实时）/)
+  assert.match(chat, /会话记录/)
 })

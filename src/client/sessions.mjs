@@ -18,6 +18,8 @@ import {
   styles,
 } from './common.mjs'
 import { API } from '../shared/api.mjs'
+import { askConfirm } from './confirm.mjs'
+import { SessionTimeline } from './session-log.mjs'
 
 const CATEGORY_ICON = {
   development: '◈',
@@ -224,8 +226,8 @@ function SessionRow({ session, busy, onOpen, onAction }) {
       },
         transcriptError ? h('div', { style: styles.dangerCard }, transcriptError) : null,
         transcript?.persisted ? h('div', { style: styles.sectionHint }, `历史记录 · ${transcript.messages?.length ?? 0} 条`) : null,
-        transcript?.messages?.length
-          ? transcript.messages.map((message, index) => h(TranscriptBubble, { key: `${message.role}-${index}`, message }))
+        (transcript?.items ?? []).length
+          ? h(SessionTimeline, { items: transcript.items, maxHeight: 320, collapseOlder: false })
           : h('div', { style: styles.sectionHint }, transcript?.reason ?? '这条会话还没有可读的对话内容'),
       )
       : null,
@@ -353,7 +355,12 @@ export function SessionsPanel({ ctx, activeRepoPath = null, activeWorkspacePath 
   async function act(action, session) {
     const label = action === 'archive' ? '归档' : action === 'unarchive' ? '取消归档' : action === 'pin' ? '置顶' : action === 'unpin' ? '取消置顶' : action
     if (action === 'archive' && session.running
-      && !window.confirm(`会话「${session.title}」正在运行。归档会停止它当前的工作。\n\n继续归档？`)) return
+      && !(await askConfirm({
+        title: '归档会话',
+        tone: 'danger',
+        confirmLabel: '确认归档',
+        message: `会话「${session.title}」正在运行。归档会停止它当前的工作。\n\n继续归档？`,
+      }))) return
     setBusy(true)
     setError('')
     setNotice('')
@@ -374,7 +381,12 @@ export function SessionsPanel({ ctx, activeRepoPath = null, activeWorkspacePath 
   async function archiveCategory(category) {
     const targets = (category.sessions ?? []).filter((session) => !session.archived)
     if (!targets.length) return
-    if (!window.confirm(`归档「${category.label}」里的 ${targets.length} 个会话？\n\n正在运行的会话会被停止；归档只隐藏 Workspace 分组，不删除会话日志。`)) return
+    if (!(await askConfirm({
+      title: '归档会话',
+      tone: 'danger',
+      confirmLabel: '确认归档',
+      message: `归档「${category.label}」里的 ${targets.length} 个会话？\n\n正在运行的会话会被停止；归档只隐藏 Workspace 分组，不删除会话日志。`,
+    }))) return
     setBusy(true)
     setError('')
     setNotice('')

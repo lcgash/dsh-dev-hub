@@ -43,10 +43,10 @@
     "react-dom": "^18.2.0"
   },
   "devDependencies": {
-    "tsdown": "0.22.2",
-    "typescript": "~5.7.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "tsdown": "0.22.2",
+    "typescript": "~5.7.2"
   },
   "license": "Apache-2.0",
   "keywords": [
@@ -87,5 +87,8 @@
     "react-dom": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "@xterm/xterm": "^6.0.0"
   }
 }

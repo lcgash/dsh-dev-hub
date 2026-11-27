@@ -11,7 +11,8 @@
  * 流程台账与详情、环境探测、测试与提交等既有功能。
  */
 import { useEffect, useRef, useState } from 'react'
-import { h, confirmText, LocaleProvider, LOCALE_NAMESPACE, installLocaleDictionaries, loadLocaleDictionaries } from './i18n.mjs'
+import { h, LocaleProvider, LOCALE_NAMESPACE, installLocaleDictionaries, loadLocaleDictionaries } from './i18n.mjs'
+import { askConfirm, ConfirmHost } from './confirm.mjs'
 import { API, STATUS_LABELS } from '../shared/api.mjs'
 import { REVIEWER_ROLES, REVIEW_STATUS_LABELS, REVIEW_STATUS_TONES, STAGE_LABELS, WORKFLOW_STAGES } from '../shared/workflow.mjs'
 import { describeReview, reviewAdvancePlan, reviewFailureHint } from '../core/review.mjs'
@@ -63,6 +64,8 @@ import { HomeView, SessionBadge, pendingFlowStep, sessionActivity, sessionStageT
 import { DevHubSessionQuick } from './session-entry.mjs'
 import { SessionLogPanel } from './session-log.mjs'
 import { ClaudeConsole } from './claude-console.mjs'
+import { StandaloneSidebar, StandaloneProjectModal } from './standalone-sidebar.mjs'
+import { ClaudeTerminal } from './claude-terminal.mjs'
 import { DevHubBoundary } from './error-boundary.mjs'
 import { loadLastTab, loadPanelState, saveLastTab, savePanelState } from './ui-state.mjs'
 import { deleteChat, selectChat, startNewChat } from './chat-store.mjs'
@@ -1362,7 +1365,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       return
     }
     const command = tests[phase]?.command || (phase === 'local' ? '项目配置的 localTest' : '项目配置的 environmentTest')
-    if (!auto && !confirmText(`执行${phase === 'local' ? '本机自测' : '环境测试'}？\n\n${command}`)) return
+    if (!auto && !(await askConfirm({
+      title: '执行测试',
+      message: `执行${phase === 'local' ? '本机自测' : '环境测试'}？\n\n${command}`,
+    }))) return
     setBusy(true); setError(''); setNotice('')
     try {
       await persistDraft()
@@ -1383,7 +1389,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
 
   /** 开发前同步：fetch + ff-only 合并；不自动 rebase/reset，冲突/分叉明确报错。 */
   async function syncCode() {
-    if (!confirmText('拉取最新代码？\n\n会对当前流程涉及的仓库执行 git fetch + merge --ff-only。\n有本地未提交改动或分支分叉时不会强推/回滚，失败原因会显示在页面上。')) return
+    if (!(await askConfirm({
+      title: '同步代码',
+      message: '拉取最新代码？\n\n会对当前流程涉及的仓库执行 git fetch + merge --ff-only。\n有本地未提交改动或分支分叉时不会强推/回滚，失败原因会显示在页面上。',
+    }))) return
     setSyncBusy(true)
     setError('')
     setNotice('')
@@ -1492,9 +1501,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     if (reviewBusy || busy) return
     // 开发会话还在跑时，审核员可能读到半成品：默认先确认，而不是让按钮看起来“点了没反应”
     if (sessionRunning && options !== true && options?.force !== true) {
-      const ok = typeof window !== 'undefined' && typeof window.confirm === 'function'
-        ? window.confirm('开发会话还在运行。现在开始评审可能读到半成品代码。\n\n仍要现在开始评审吗？')
-        : false
+      const ok = await askConfirm({
+        title: '开始独立评审',
+        message: '开发会话还在运行。现在开始评审可能读到半成品代码。\n\n仍要现在开始评审吗？',
+      })
       if (!ok) {
         setNotice('已取消评审：等开发会话结束后再点「重新评审」。')
         return
@@ -1603,8 +1613,10 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   /** 评审卡在 pending（常见于 DSH 重启/请求中断）：允许用户显式重置本轮后重试。 */
   async function resetReview() {
     if (reviewBusy || busy) return
-    if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-      && !window.confirm('重置本轮独立评审？当前 pending 的审核员会话会停止；历史轮次仍保留。')) return
+    if (!(await askConfirm({
+      title: '重置独立评审',
+      message: '重置本轮独立评审？当前 pending 的审核员会话会停止；历史轮次仍保留。',
+    }))) return
     setReviewBusy(true); setError(''); setNotice(''); setAdvanceError('')
     try {
       const body = await postAllowingFailure(API.review, { id: draft.id, action: 'reset' })
@@ -1623,8 +1635,12 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     if (!['failed', 'error', 'pending'].includes(view.status)) return
     const count = (view.reviewers ?? []).filter((reviewer) => reviewer.status !== 'passed').length
     const label = view.status === 'pending' ? '评审进行中' : view.status === 'error' ? '评审异常' : '评审未通过'
-    if (typeof window !== 'undefined' && typeof window.confirm === 'function'
-      && !window.confirm(`${label}（${count} 位未通过/未返回）。确认停止本轮并人工通过？\n\n原审核意见会保留在流程历史与报告中，晚到的审核结果不会再覆盖这个决定。`)) return
+    if (!(await askConfirm({
+      title: '人工通过评审',
+      tone: 'danger',
+      confirmLabel: '确认通过',
+      message: `${label}（${count} 位未通过/未返回）。确认停止本轮并人工通过？\n\n原审核意见会保留在流程历史与报告中，晚到的审核结果不会再覆盖这个决定。`,
+    }))) return
     setOverrideBusy(true); setError(''); setNotice(''); setAdvanceError('')
     try {
       const body = await postAllowingFailure(API.review, { id: draft.id, action: 'override' })
@@ -1745,9 +1761,13 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       const pathLines = groups.length > 1
         ? groups.map(([repo, list]) => `【${repo || '成员库'}】\n${list.filter((change) => paths.includes(change.path)).map((change) => change.path).join('\n')}`).join('\n\n')
         : paths.join('\n')
-      if (!confirmText(pushOnly
-        ? '上次提交没推送成功：现在重试 git push？'
-        : `确认提交 ${paths.length} 个文件到「${target}」，并立即 git push？\n\n${pathLines}`)) return
+      const confirmed = await askConfirm({
+        title: '提交并推送',
+        message: pushOnly
+          ? '上次提交没推送成功：现在重试 git push？'
+          : `确认提交 ${paths.length} 个文件到「${target}」，并立即 git push？\n\n${pathLines}`,
+      })
+      if (!confirmed) return
       setBusy(true); setError(''); setNotice('')
     }
     try {
@@ -3506,11 +3526,13 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               },
               disabled: busy,
               onClick: async () => {
-                const ok = typeof window !== 'undefined' && confirmText(
-                  `删除流程「${draft.title || draft.id}」？\n\n${deleteWorktree
+                const ok = await askConfirm({
+                  title: '删除开发流程',
+                  tone: 'danger',
+                  message: `删除流程「${draft.title || draft.id}」？\n\n${deleteWorktree
                     ? '将删除台账，并丢弃 worktree 与 devhub 分支上的未提交/未合并代码改动；DSH 会话不删除。'
                     : '只删台账；代码不回滚、DSH 会话不删除。'}这个操作不可撤销。`,
-                )
+                })
                 if (!ok) return
                 setBusy(true)
                 setError('')
@@ -4152,14 +4174,17 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               tone: workflow.intent === 'bug' ? 'warn' : workflow.intent === 'refactor' ? 'info' : workflow.intent === 'analysis' ? 'accent' : 'neutral',
               title: '点击切换流程类型（bug 先复现/定位；feature 先对齐范围；refactor 保持行为不变并补保护网；analysis 只读分析、不进入提交）',
               style: { cursor: 'pointer' },
-              onClick: () => {
+              onClick: async () => {
                 const nextIntent = nextIntentOf(workflow.intent)
                 const hint = nextIntent === 'bug'
                   ? 'bug 模板会要求先复现与定位根因。'
                   : nextIntent === 'analysis'
                     ? '分析流程只读：不建 worktree、不产生提交，只产出结论与补丁建议。'
                     : 'feature 先对齐范围与验收，再改代码。'
-                if (!confirmText(`把流程类型改成「${INTENT_LABEL[nextIntent]}」？\n\n${hint}`)) return
+                if (!(await askConfirm({
+                  title: '切换流程类型',
+                  message: `把流程类型改成「${INTENT_LABEL[nextIntent]}」？\n\n${hint}`,
+                }))) return
                 commit({ ...draft, workflow: { ...workflow, intent: nextIntent } }, '已更新流程类型')
               },
             }, INTENT_LABEL[intentOf(workflow.intent)]),
@@ -4398,7 +4423,7 @@ import { continuePrompt, describeFlow, suggestNextSteps } from './next-steps.mjs
 
 export { launchDevSession, launchPrompt }
 
-function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openFlowNonce = 0, homeNonce = 0, onScopeChanged = null }) {
+function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openFlowNonce = 0, homeNonce = 0, onScopeChanged = null, hideProjectBar = false }) {
   const [state, setState] = useState(null)
   // 独立版首次进入：先给一段 mac 风格的引导，再进入项目初始化。
   // DSH 插件保持原有 SetupForm，不改变插件用户的首屏。
@@ -4415,6 +4440,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   const [selected, setSelected] = useState(null)
   // Claude Code 会话内嵌控制台：不打开本机 Terminal，直接在站内看记录/发消息
   const [claudeConsole, setClaudeConsole] = useState(null)
+  const [claudeView, setClaudeView] = useState('tty')
   // 详情是否处于编辑态：编辑时暂停自动刷新，避免把未保存输入冲掉
   const [detailEditing, setDetailEditing] = useState(false)
   // 最近一次写进 state 的详情 JSON：自动刷新只在内容真变化时 setState（避免无意义重渲染/重置草稿）
@@ -4756,6 +4782,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     if (current?.session?.engine === 'claude' && id === current.session.id) {
       // 不调用本机 Terminal.app：Claude Code 的查看/发送在站内控制台完成
       setClaudeConsole({ itemId: current.id, sessionId: id })
+      setClaudeView('tty')
       return
     }
     if (current?.session?.engine === 'claude') {
@@ -4815,7 +4842,10 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
 
   /** 解绑：只断开追踪，不删流程、不动历史；确认后执行。 */
   async function unbindSession(itemId) {
-    if (!confirmText('解绑当前开发会话？流程内容与历史不受影响，只是不再追踪该会话。')) return
+    if (!(await askConfirm({
+      title: '解绑开发会话',
+      message: '解绑当前开发会话？流程内容与历史不受影响，只是不再追踪该会话。',
+    }))) return
     setBusy(true); setError(''); setNotice('')
     try {
       const body = await api(API.session, {
@@ -4850,9 +4880,12 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     const previousEngine = item?.session?.engine === 'claude' ? 'claude' : 'dsh'
     const continueExisting = Boolean(previous) && !fresh && engine === previousEngine
     // resync 来自「更多」里的显式低频按钮，标签已说明后果，不再弹确认。
-    if (!resync && !confirmText(continueExisting
-      ? `把「${title}」的最新 Context Pack 重发到 ${previous}？（之前聊过的内容、决定与工具结果都还在）\n\n日常推进用「继续推进」就够了；要开新的，请在「更多 → 换一条开发会话」里新建。`
-      : `开启新的开发会话？\n\n将新建一个 ${engine === 'claude' ? 'Claude Code 后台会话' : 'DSH 会话'}，并把「${title}」的约束与 Context Pack 作为首条消息发送。`)) return
+    if (!resync && !(await askConfirm({
+      title: '开启开发会话',
+      message: continueExisting
+        ? `把「${title}」的最新 Context Pack 重发到 ${previous}？（之前聊过的内容、决定与工具结果都还在）\n\n日常推进用「继续推进」就够了；要开新的，请在「更多 → 换一条开发会话」里新建。`
+        : `开启新的开发会话？\n\n将新建一个 ${engine === 'claude' ? 'Claude Code 后台会话' : 'DSH 会话'}，并把「${title}」的约束与 Context Pack 作为首条消息发送。`,
+    }))) return
     setBusy(true); setError(''); setNotice('')
     try {
       // 重发上下文只读台账、重新生成 Context Pack；不能走 start（那会把阶段打回 develop、并记一条 baseline）
@@ -5058,9 +5091,11 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
    */
   async function removeWorkspace(workspace) {
     const name = workspace?.name ?? workspace?.id ?? '未命名'
-    const ok = typeof window !== 'undefined' && confirmText(
-      `从本机移除多库项目「${name}」？\n\n只删本机的分组登记，不会删除或修改任何成员库的代码与 .dev-hub；成员库本身仍保留在项目列表里。\n\n多库项目自己的台账/规范/上下文/证据仍留在本机 ~/.dev-hub/workspaces/${workspace?.id ?? '<id>'}/（不删数据）。`,
-    )
+    const ok = await askConfirm({
+      title: '移除多库项目',
+      tone: 'danger',
+      message: `从本机移除多库项目「${name}」？\n\n只删本机的分组登记，不会删除或修改任何成员库的代码与 .dev-hub；成员库本身仍保留在项目列表里。\n\n多库项目自己的台账/规范/上下文/证据仍留在本机 ~/.dev-hub/workspaces/${workspace?.id ?? '<id>'}/（不删数据）。`,
+    })
     if (!ok) return
     setError('')
     setNotice('')
@@ -5082,9 +5117,11 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
 
   async function removeRepo(repoPath) {
     const name = repoBaseName(repoPath) || repoPath
-    const ok = typeof window !== 'undefined' && confirmText(
-      `从列表移除项目「${name}」？\n\n只删本机列表登记，不会删除磁盘上的代码/流程台账；以后还能重新添加。`,
-    )
+    const ok = await askConfirm({
+      title: '移除项目',
+      tone: 'danger',
+      message: `从列表移除项目「${name}」？\n\n只删本机列表登记，不会删除磁盘上的代码/流程台账；以后还能重新添加。`,
+    })
     if (!ok) return
     setError('')
     try {
@@ -5233,6 +5270,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
           )))
       : h(HomeView, {
         state,
+        hideProjectBar,
         items,
         selectedId: selected,
         parallel,
@@ -5358,22 +5396,36 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
         title: 'Claude Code 会话',
         width: 'min(920px, 94vw)',
         onClose: () => setClaudeConsole(null),
-      }, h(ClaudeConsole, {
-        itemId: claudeConsole.itemId,
-        sessionId: claudeConsole.sessionId,
-        onSessionChange: (next) => {
-          setClaudeConsole((current) => current ? { ...current, sessionId: next } : current)
-          setState((current) => current?.selectedItem
-            ? {
-                ...current,
-                selectedItem: {
-                  ...current.selectedItem,
-                  session: { ...(current.selectedItem.session ?? {}), id: next },
-                },
-              }
-            : current)
-        },
-      }))
+      }, h('div', { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+        h('div', { style: { ...styles.row, gap: 6 } },
+          h(Button, { primary: claudeView === 'tty', onClick: () => setClaudeView('tty'), children: '终端（PTY）' }),
+          h(Button, { primary: claudeView === 'console', onClick: () => setClaudeView('console'), children: '会话记录' }),
+          h('div', { style: styles.spacer }),
+          h('span', { style: styles.sectionHint }, claudeView === 'tty' ? '可查看、按键、处理授权' : '只读记录 + 发送消息'),
+        ),
+        claudeView === 'tty'
+          ? h(ClaudeTerminal, {
+            itemId: claudeConsole.itemId,
+            sessionId: claudeConsole.sessionId,
+            onClose: () => setClaudeConsole(null),
+          })
+          : h(ClaudeConsole, {
+            itemId: claudeConsole.itemId,
+            sessionId: claudeConsole.sessionId,
+            onSessionChange: (next) => {
+              setClaudeConsole((current) => current ? { ...current, sessionId: next } : current)
+              setState((current) => current?.selectedItem
+                ? {
+                    ...current,
+                    selectedItem: {
+                      ...current.selectedItem,
+                      session: { ...(current.selectedItem.session ?? {}), id: next },
+                    },
+                  }
+                : current)
+            },
+          }),
+      ))
       : null,
     // 报告入口不靠 window.open：站内弹窗一定能打开；弹窗内再提供保存到本机/打开完整报告
     reportPreviewId
@@ -5722,8 +5774,10 @@ export function DevHubPage({ ctx }) {
     }
     // 在需求澄清页点跨项目流程时，先确认：切换目标会离开当前项目的澄清对话，
     // 草稿虽然保存在原项目，但界面会跳到另一个项目，容易让人误以为会话丢了。
-    if (tab === 'chat' && typeof window !== 'undefined' && typeof window.confirm === 'function'
-      && !window.confirm(`当前在需求澄清页，切换到「${target.name}」会离开当前项目；澄清草稿已保存在原项目。继续？`)) return
+    if (tab === 'chat' && !(await askConfirm({
+      title: '切换项目',
+      message: `当前在需求澄清页，切换到「${target.name}」会离开当前项目；澄清草稿已保存在原项目。继续？`,
+    }))) return
     setSwitchingTarget(target.key)
     try {
       const body = await api(API.switchRepo, {
@@ -5794,7 +5848,33 @@ export function DevHubPage({ ctx }) {
   const runningCount = overview?.runningCount ?? flowItems.filter((item) => isItemRunning(flowList, item)).length
   const targetCount = overview?.targetCount ?? (flowList?.repo ? 1 : 0)
 
-  return h('div', { style: styles.page },
+  const standalone = Boolean(globalThis.__DEVHUB_STANDALONE__)
+  const [sidebarProjectOpen, setSidebarProjectOpen] = useState(false)
+
+  async function switchSidebarTarget(row) {
+    if (!row || switchingTarget) return
+    setSwitchingTarget(row)
+    try {
+      const next = await api(API.switchRepo, {
+        method: 'POST',
+        body: JSON.stringify(row.kind === 'workspace'
+          ? { workspaceId: row.id }
+          : { repoPath: row.id, name: flowList?.profile?.member, detect: false }),
+      })
+      setFlowList(next)
+      setOverview(null)
+      setFlowsNonce((value) => value + 1)
+      setScopeNonce((value) => value + 1)
+      setOpenFlow(null)
+      setTab('flows')
+    } catch (err) {
+      setOverviewError(`切换项目失败：${errorText(err)}`)
+    } finally {
+      setSwitchingTarget(null)
+    }
+  }
+
+  const page = h('div', { style: styles.page },
     h('div', {
       style: {
         ...styles.pageHeader,
@@ -5824,7 +5904,7 @@ export function DevHubPage({ ctx }) {
         ),
       ),
       // 中：当前项目（流程台账、技能与约束都落在这个目标上；点击回流程页切库）
-      h('div', { style: { display: 'flex', justifyContent: 'center', minWidth: 0, maxWidth: 560, padding: '0 8px' } },
+      standalone ? null : h('div', { style: { display: 'flex', justifyContent: 'center', minWidth: 0, maxWidth: 560, padding: '0 8px' } },
         flowList
           ? h(RepoScopeBadge, {
             repo: flowList.repo ?? null,
@@ -5886,7 +5966,7 @@ export function DevHubPage({ ctx }) {
           flex: '0 0 auto',
         },
       }, h(HomeGlyph, { size: 15 })),
-      h(Segmented, {
+      standalone ? null : h(Segmented, {
         // 聊天页属于“需求澄清”流程内部，不再单独占一个顶层页签；
         // 在聊天页时让「需求澄清」保持选中，点击它回草稿工作区。
         value: tab === 'chat' ? 'clarify' : tab,
@@ -5943,6 +6023,7 @@ export function DevHubPage({ ctx }) {
         }))
         : h('div', { style: styles.pageBody }, h(Panel, {
           ctx,
+          hideProjectBar: standalone,
           key: flowsNonce,
           onOpenChat: openChat,
           onOpenClarifications: () => setTab('clarify'),
@@ -5951,6 +6032,37 @@ export function DevHubPage({ ctx }) {
           homeNonce,
           onScopeChanged: () => setScopeNonce((value) => value + 1),
         })),
+    // 确认弹层：全局只挂一个宿主，任何页签里的 askConfirm 都渲染到这里。
+    h(ConfirmHost, { key: 'confirm-host' }),
+  )
+
+  if (!standalone) return page
+  return h('div', { style: { display: 'flex', height: '100%', minHeight: 0, background: T.bg } },
+    h(StandaloneSidebar, {
+      state: flowList,
+      tab,
+      switching: Boolean(switchingTarget),
+      counts: {
+        flows: (flowList?.items ?? []).length,
+        sessions: (flowList?.sessionStates ?? []).filter((row) => row.alive).length,
+      },
+      onTab: setTab,
+      onSelectTarget: switchSidebarTarget,
+      onNewProject: () => setSidebarProjectOpen(true),
+    }),
+    h('div', { style: { flex: '1 1 auto', minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' } }, page),
+    sidebarProjectOpen
+      ? h(StandaloneProjectModal, {
+        onClose: () => setSidebarProjectOpen(false),
+        onDone: (next) => {
+          setFlowList(next)
+          setSidebarProjectOpen(false)
+          setFlowsNonce((value) => value + 1)
+          setScopeNonce((value) => value + 1)
+          setTab('flows')
+        },
+      })
+      : null,
   )
 }
 

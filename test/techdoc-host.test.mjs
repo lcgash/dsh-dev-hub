@@ -307,6 +307,13 @@ test('Claude bridge：DevHub 重启后从本机 bridge 文件恢复 token，不�
       repo,
       createdAt: new Date().toISOString(),
     }), 'utf8')
+    // 站内 PTY：没有会话/没有 tty 时显式失败，不假装已连接
+    const noTty = await call(routes, API.tty, { queryParams: { id: 'missing-tty' } })
+    assert.equal(noTty.status, 400)
+    const noSession = await call(routes, API.tty, { method: 'POST', body: { action: 'create', itemId: 'techdoc-flow', sessionId: 'missing-claude' } })
+    assert.equal(noSession.status, 400)
+    assert.match(noSession.body.error, /会话不存在/)
+
     // 澄清等待时：没有正在写的 Claude 会话就返回 found:false，不留假数据
     const live = await call(routes, API.liveTranscript, { queryParams: { since: Date.now() } })
     assert.equal(live.status, 200)
