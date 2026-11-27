@@ -23,4 +23,13 @@ jobs:
       - run: npm install --no-audit --no-fund
       - run: npm run build
       - name: standalone server + fake Claude E2E
-        run: node --test test/onboarding.test.mjs test/standalone-server.test.mjs test/standalone-e2e.test.mjs
+        shell: bash
+        run: |
+          status=0
+          node --test test/onboarding.test.mjs test/standalone-server.test.mjs test/standalone-e2e.test.mjs 2>&1 | tee standalone-test.log || status=$?
+          if [ "$status" -ne 0 ]; then
+            tail -80 standalone-test.log | while IFS= read -r line; do
+              echo "::error::$line"
+            done
+          fi
+          exit "$status"
