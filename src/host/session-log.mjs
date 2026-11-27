@@ -38,6 +38,18 @@ function textOnly(content) {
     .trim()
 }
 
+function summarizeToolArgs(args) {
+  let value = args
+  if (typeof value === 'string') {
+    try { value = JSON.parse(value) } catch { return value.slice(0, 300) }
+  }
+  if (!value || typeof value !== 'object') return ''
+  const direct = value.command ?? value.path ?? value.file_path ?? value.pattern ?? value.query ?? value.url
+  if (typeof direct === 'string' && direct.trim()) return direct.trim().slice(0, 300)
+  const first = Object.values(value).find((entry) => typeof entry === 'string' && entry.trim())
+  return first ? String(first).trim().slice(0, 300) : ''
+}
+
 function textOfContent(content) {
   if (typeof content === 'string') return content.trim()
   if (!Array.isArray(content)) return ''
@@ -45,11 +57,63 @@ function textOfContent(content) {
   for (const block of content) {
     if (!block || typeof block !== 'object') continue
     if (block.type === 'text' && block.text) parts.push(String(block.text))
-    else if (block.type === 'tool-call') parts.push(`[调用工具] ${block.name ?? 'unknown'}`)
-    else if (block.type === 'image') parts.push('[图片]')
+    else if (block.type === 'tool-call') {
+      const brief = summarizeToolArgs(block.arguments ?? block.args ?? block.input)
+      parts.push(`[调用工具] ${block.name ?? 'unknown'}${brief ? ` · ${brief}` : ''}`)
+    } else if (block.type === 'image') parts.push('[图片]')
     else if (block.type === 'file') parts.push('[文件]')
   }
   return parts.join('\n').trim()
+}
+
+/** 系统提示/时间上下文不是人写的对话，展开历史时不占行。 */
+function isTranscriptNoise(text) {
+  const value = String(text ?? '').trim()
+  return value.startsWith('<system-reminder>')
+    || /^Time sampled while preparing/i.test(value)
+    || value.startsWith('A skill is a reusable set of task-specific instructions')
+}
+
+/**
+ * 历史事件 → 可读对话行：用户文本、助手文本+工具调用、工具结果。
+ * tool/result 是「看到了什么」，只给工具名会像截图里那样整页都是「[调用工具] bash」。
+ */
+export function transcriptRowsFromEvents(events, { limit = 80, resultMax = 1200 } = {}) {
+  const rows = []
+  const pending = new Map()
+  for (const event of events ?? []) {
+    if (event?.type === 'user/message') {
+      const text = textOfContent(event?.data?.message?.content ?? event?.data?.content)
+      if (!text || isTranscriptNoise(text)) continue
+      rows.push({ role: 'user', roleLabel: '你', text: text.slice(0, 1600), at: event?.time ?? null })
+      continue
+    }
+    if (event?.type === 'assistant/message') {
+      const text = textOfContent(event?.data?.message?.content)
+      if (!text) continue
+      rows.push({ role: 'assistant', roleLabel: '助手', text: text.slice(0, 1600), at: event?.time ?? null })
+      for (const block of event?.data?.message?.content ?? []) {
+        if (block?.type === 'tool-call' && block?.id) {
+          pending.set(String(block.id), { name: String(block.name ?? 'tool'), brief: summarizeToolArgs(block.arguments ?? block.args ?? block.input) })
+        }
+      }
+      continue
+    }
+    if (event?.type === 'tool/result') {
+      const text = textOfContent(event?.data?.message?.content)
+      if (!text || isTranscriptNoise(text)) continue
+      const callId = String(event?.data?.message?.toolCallId ?? event?.data?.callId ?? '')
+      const call = pending.get(callId)
+      rows.push({
+        role: 'tool',
+        roleLabel: call?.name ? `工具 ${call.name}` : '工具结果',
+        text: text.length > resultMax ? `${text.slice(0, resultMax)}…` : text,
+        at: event?.time ?? null,
+      })
+      if (callId) pending.delete(callId)
+    }
+  }
+  return rows.slice(-limit)
 }
 
 const ROLE_TEXT = { user: '你', assistant: '助手', tool: '工具', developer: '开发', system: '系统' }
@@ -145,7 +209,7 @@ export function sessionTimeline(ctx, sessionId, { limit = 60 } = {}) {
   for (const event of events.slice(-600)) {
     const at = event?.time ?? null
     if (event?.type === 'user/message') {
-      const text = textOfContent(event?.data?.message?.content)
+      const text = textOfContent(event?.data?.message?.content ?? event?.data?.content)
       if (text) items.push({ kind: 'user', text: text.slice(0, 800), at })
       continue
     }
@@ -228,27 +292,15 @@ export async function sessionTranscript(ctx, sessionId, { limit = 80 } = {}) {
     } catch {
       events = (await handle.read()).events
     }
-    const rows = []
-    for (const event of events) {
-      if (event?.type !== 'user/message' && event?.type !== 'assistant/message') continue
-      const role = event.type === 'user/message' ? 'user' : 'assistant'
-      const text = textOfContent(event?.data?.message?.content)
-      if (!text) continue
-      rows.push({
-        role,
-        roleLabel: ROLE_TEXT[role] ?? role,
-        text: text.length > 1600 ? text.slice(0, 1600) + '…' : text,
-        at: event?.time ?? null,
-      })
-    }
+    const allRows = transcriptRowsFromEvents(events, { limit: Number.MAX_SAFE_INTEGER })
     return {
       sessionId: id,
       alive: false,
       persisted: true,
-      total: rows.length,
-      messages: rows.slice(-limit),
-      truncated: rows.length > limit,
-      reason: rows.length ? null : '这条会话还没有可读的对话内容',
+      total: allRows.length,
+      messages: allRows.slice(-limit),
+      truncated: allRows.length > limit,
+      reason: allRows.length ? null : '这条会话还没有可读的对话内容',
     }
   } catch (error) {
     return {

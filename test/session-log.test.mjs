@@ -111,3 +111,26 @@ test('sanitizeTerminalText：清掉 ANSI/光标序列，保留可读文本', () 
   assert.equal(clean, '·Loading\nNo sessions match "x".')
   assert.doesNotMatch(clean, /\u001b|\[2C|\[H/)
 })
+
+test('transcriptRowsFromEvents：工具调用带参数，工具结果可见，系统提醒不占行', async () => {
+  const { transcriptRowsFromEvents } = await import('../src/host/session-log.mjs')
+  const rows = transcriptRowsFromEvents([
+    { type: 'user/message', time: 1, data: { content: [{ type: 'text', text: '<system-reminder>ignore me</system-reminder>' }] } },
+    { type: 'user/message', time: 2, data: { content: [{ type: 'text', text: '请检查 diff' }] } },
+    { type: 'assistant/message', time: 3, data: { message: { content: [
+      { type: 'text', text: '先看状态' },
+      { type: 'tool-call', id: 'c1', name: 'bash', arguments: '{"command":"git status --short"}' },
+    ] } } },
+    { type: 'tool/result', time: 4, data: { message: { toolCallId: 'c1', content: [{ type: 'text', text: ' M A.java' }] } } },
+    { type: 'assistant/message', time: 5, data: { message: { content: [{ type: 'tool-call', id: 'c2', name: 'read', arguments: { path: 'src/A.java' } }] } } },
+    { type: 'tool/result', time: 6, data: { message: { toolCallId: 'c2', content: [{ type: 'text', text: 'class A {}' }] } } },
+  ])
+  assert.equal(rows.length, 5)
+  assert.deepEqual(rows.map((row) => row.role), ['user', 'assistant', 'tool', 'assistant', 'tool'])
+  assert.match(rows[1].text, /git status --short/)
+  assert.match(rows[2].roleLabel, /bash/)
+  assert.match(rows[2].text, /M A.java/)
+  assert.match(rows[3].text, /src\/A.java/)
+  assert.match(rows[4].roleLabel, /read/)
+  assert.equal(rows[0].text, '请检查 diff')
+})
