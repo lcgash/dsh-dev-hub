@@ -107,7 +107,7 @@ test('standalone E2E：Claude 开工 → bridge 回写 → 评审 → 自测 →
     assert.equal(review.review.reviewers[0].engine, 'claude')
 
     const local = await call('/api/dev-hub/test', {
-      id: 'e2e-flow', phase: 'local', command: 'node -e "process.exit(0)"',
+      id: 'e2e-flow', phase: 'local', command: 'node -e 0',
     }, 'POST')
     assert.equal(local.item.workflow.tests.local.status, 'passed')
     assert.equal(local.item.workflow.stage, 'verify')
