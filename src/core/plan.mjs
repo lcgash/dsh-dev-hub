@@ -45,6 +45,9 @@ function shortModule(path) {
  *   intent?: 'bug'|'feature'|'refactor'|'analysis',
  * }} input
  */
+/** 计划规则版本：改了 buildPlan 的步骤/验收/估算语义就 +1；用于区分「规则升级」与「计划被手改」。 */
+export const PLAN_RULES_VERSION = 1
+
 export function buildPlan({ description, recon, scope = [], answers = {}, project, conventions, template, language, repoNames = [], intent: intentInput } = {}) {
   const text = String(description ?? '').trim()
   // 创建入口显式传入的 intent 优先：用户在界面上手动切到「分析」时，不能被 detectIntent 改回去

@@ -86,7 +86,7 @@ import { catalogFor, findSkill } from './core/skills.mjs'
 import { moduleOfPath } from './core/modules.mjs'
 import { deriveQuestions } from './core/questions.mjs'
 import { estimateWork } from './core/estimate.mjs'
-import { buildPlan } from './core/plan.mjs'
+import { PLAN_RULES_VERSION, buildPlan } from './core/plan.mjs'
 import { buildReport } from './core/report.mjs'
 import {
   REVIEW_SCHEMA,
@@ -3813,6 +3813,7 @@ async function createWorkspaceFlow({ profile, repo, body, conventions, loaded })
         inputHash: inputHash({ description, answers, scope, conventions }),
         specHash: specHash({ description, answers, scope }),
         pluginVersion: pluginVersion(),
+        planVersion: PLAN_RULES_VERSION,
         at: new Date().toISOString(),
       },
     },
@@ -6606,6 +6607,7 @@ export function apply(ctx) {
               inputHash: result.current.inputHash,
               specHash: result.current.specHash,
               pluginVersion: pluginVersion(),
+              planVersion: PLAN_RULES_VERSION,
             })
             saved = await saveItem(repo, appendHistory(item, 'repro', '重算计划并记录指纹'))
           }
@@ -7514,6 +7516,7 @@ export function apply(ctx) {
                     }),
                     specHash: specHash({ description, answers: answerSet, scope }),
                     pluginVersion: pluginVersion(),
+                    planVersion: PLAN_RULES_VERSION,
                     at: new Date().toISOString(),
                   },
                 }

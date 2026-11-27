@@ -6,7 +6,7 @@ const {
   conventionsHash, inputHash, planHash, recordProvenance, pluginVersion,
 } = await import('../src/core/provenance.mjs')
 const { reproPlan, planInputsFromItem } = await import('../src/core/repro.mjs')
-const { buildPlan } = await import('../src/core/plan.mjs')
+const { PLAN_RULES_VERSION, buildPlan } = await import('../src/core/plan.mjs')
 
 test('稳定哈希：键顺序/答案顺序不影响结果，内容变化会变', () => {
   assert.equal(stableStringify({ b: 1, a: 2 }), stableStringify({ a: 2, b: 1 }))
@@ -70,6 +70,7 @@ function flowItem(extra = {}) {
         inputHash: inputHash({ description: '给 A 加 B', answers, scope: ['src/a'], conventions }),
         specHash: specHash({ description: '给 A 加 B', answers, scope: ['src/a'] }),
         pluginVersion: pluginVersion(),
+        planVersion: PLAN_RULES_VERSION,
       },
     },
     ...extra,
@@ -106,6 +107,7 @@ test('reproPlan：输入没变但计划哈希不同 → planChanged（手改计�
   const result = reproPlan(item, { project, conventions })
   assert.equal(result.inputChanged, false)
   assert.equal(result.planChanged, true)
+  assert.equal(result.attention, true)
   assert.match(result.message, /不一致/)
 })
 
@@ -115,4 +117,14 @@ test('reproPlan：旧流程没有指纹 → recorded=false，给出补记录提�
   assert.equal(result.recorded, false)
   assert.equal(result.same, false)
   assert.match(result.message, /还没有记录计划指纹/)
+})
+
+test('reproPlan：旧流程没有计划规则版本 → 计划变化不报警，提示重算对齐', () => {
+  const item = flowItem()
+  delete item.provenance.plan.planVersion
+  item.provenance.plan.hash = 'deadbeefdeadbeef'
+  const result = reproPlan(item, { project, conventions })
+  assert.equal(result.legacyVersion, true)
+  assert.equal(result.attention, false)
+  assert.match(result.message, /重算/)
 })

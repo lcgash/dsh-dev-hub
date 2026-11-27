@@ -2084,7 +2084,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     const checks = draft.checks ?? []
     const references = draft.references ?? []
     return h('div', { style: { display: 'flex', flexDirection: 'column', gap: T.gap.sm } },
-      planCheck
+      planCheck?.attention
         ? h('div', {
           style: {
             display: 'flex',
