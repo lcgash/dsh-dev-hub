@@ -88,6 +88,9 @@ export function pendingFlowStep(item) {
   if (stage === 'discovery' || stage === 'techdoc' || stage === 'plan') return '还没进入开发'
   if (stage === 'develop') {
     if (review === 'failed') return '评审未通过，待纠偏'
+    if (Array.isArray(item.tasks) && item.tasks.length === 0) {
+      return isAnalysis ? '只读分析中，未出结论' : '开发中（任务清单为空，等待开发会话回写任务）'
+    }
     return isAnalysis ? '只读分析中，未出结论' : '开发中，待评审'
   }
   if (stage === 'review') {

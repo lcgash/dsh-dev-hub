@@ -2321,6 +2321,12 @@ test('Claude 联动 CLI：bridge token 路由、get/update 协议与绝对路径
   assert.match(cli, /taskText/)
   assert.match(cli, /changePoint/)
   assert.match(cli, /risk/)
+  // 重启后 bridge 仍能恢复：磁盘扫描 + 每次启动独立文件 + runtime 端口重试
+  assert.match(host, /bridgeEntryFromDisk/)
+  assert.match(host, /runtime\.json/)
+  assert.match(host, /\$\{safeId\}-\$\{String\(token\)\.slice\(0, 8\)\}\.json/)
+  assert.match(cli, /runtimePaths/)
+  assert.match(cli, /不需要重开本会话/)
 })
 
 test('Windows 路径：提交路径拒绝盘符/UNC，展示不再按 / 切割盘符', async () => {
@@ -2447,7 +2453,7 @@ test('外部 Claude 会话按 CLI 状态显示运行中，不误报会话已结�
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /const externalEngine = \['claude', 'codex', 'pi'\]/)
-  assert.match(index, /running: Boolean\(draft\.running\) \|\| externalState === 'working'/)
+  assert.match(index, /externalState === 'blocked'[\s\S]*?Boolean\(draft\.running\) \|\| externalState === 'working'/)
   assert.match(index, /!externalEngine && live\?\.alive === false/)
 })
 

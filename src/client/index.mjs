@@ -2233,6 +2233,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             environmentTestState: tests.environment?.status,
             reviewState: workflow.review?.status ?? 'idle',
             intent: workflow.intent,
+            tasks,
           }) ?? '还差测试/提交'}`),
         isEditing('tasks')
           ? h('div', null,
@@ -3544,6 +3545,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       environmentTestState: summary.environmentTest,
       reviewState: summary.review?.status ?? 'idle',
       intent: summary.intent,
+      tasks: draft.tasks ?? [],
     })
     const tasksAllDone = summary.tasks.total > 0 && summary.tasks.done >= summary.tasks.total
     // 流程已完成：隐藏「继续推进」输入区与待处理审批，只留结果入口
@@ -3900,6 +3902,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       environmentTestState: tests.environment?.status,
       reviewState: workflow.review?.status ?? 'idle',
       intent: workflow.intent,
+      tasks,
     })
     const testTone = (test) => (test?.status === 'passed' ? 'ok' : test?.status === 'failed' ? 'danger' : test?.status === 'running' ? 'info' : test?.status === 'skipped' ? 'warn' : 'neutral')
     const testLabel = (test) => TEST_TEXT[test?.status] ?? '未运行'
@@ -3963,7 +3966,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           completed: draft.status === 'done' || stage === 'done',
           blocked: externalState === 'blocked',
           state: externalState,
-          running: Boolean(draft.running) || externalState === 'working' || externalState === 'running',
+          running: externalState === 'blocked'
+            ? false
+            : (Boolean(draft.running) || externalState === 'working' || externalState === 'running'),
           reason: externalState === 'blocked'
             ? '等待授权/选择，请打开终端处理'
             : `${draft.session.engine} 外部会话（状态由 CLI 提供）`,
