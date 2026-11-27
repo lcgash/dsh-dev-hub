@@ -58,15 +58,15 @@ export const T = {
   border: 'var(--devhub-border, var(--dsw-alias-border-l1, #e9eaec))',
   borderSoft: 'var(--devhub-border-soft, var(--dsw-alias-border-l2, #ecedf0))',
   // 圆角梯度
-  rSm: 6,
-  rBase: 8,
-  rLg: 12,
+  rSm: 'var(--devhub-r-sm, 6px)',
+  rBase: 'var(--devhub-r-base, 8px)',
+  rLg: 'var(--devhub-r-lg, 12px)',
   rTag: 4,
   rPill: 999,
   // 阴影
-  shadowCard: '0 0 2px rgba(9,25,64,.1), 0 2px 6px -2px rgba(9,25,64,.25)',
-  shadowHover: '0 0 2px rgba(9,25,64,.12), 0 6px 16px -4px rgba(9,25,64,.22)',
-  shadowModal: '0 18px 50px rgba(9,25,64,.18)',
+  shadowCard: 'var(--devhub-shadow-card, 0 0 2px rgba(9,25,64,.1), 0 2px 6px -2px rgba(9,25,64,.25))',
+  shadowHover: 'var(--devhub-shadow-hover, 0 0 2px rgba(9,25,64,.12), 0 6px 16px -4px rgba(9,25,64,.22))',
+  shadowModal: 'var(--devhub-shadow-modal, 0 18px 50px rgba(9,25,64,.18))',
   // 间距 / 字号 / 字体
   gap: { xs: 8, sm: 12, md: 16, lg: 24 },
   font: {
@@ -77,7 +77,7 @@ export const T = {
     lg: 16,
     stat: 22,
   },
-  line: 1.8,
+  line: 'var(--devhub-line-height, 1.8)',
   mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace',
   transition: 'all .18s ease',
 }
@@ -123,15 +123,19 @@ export const styles = {
     alignItems: 'center',
     gap: T.gap.sm,
     flexWrap: 'wrap',
-    minHeight: 48,
-    padding: '8px 24px',
+    minHeight: 'var(--devhub-header-height, 48px)',
+    padding: 'var(--devhub-header-padding, 8px 24px)',
     borderBottom: `1px solid ${T.borderSoft}`,
-    background: T.surface,
+    background: 'var(--devhub-toolbar, ' + T.surface + ')',
+    backdropFilter: 'var(--devhub-toolbar-blur, none)',
+    WebkitBackdropFilter: 'var(--devhub-toolbar-blur, none)',
+    position: 'relative',
+    zIndex: 5,
     flex: '0 0 auto',
   },
-  pageTitle: { fontSize: T.font.lg, fontWeight: 600, color: T.text, letterSpacing: 0.2 },
+  pageTitle: { fontSize: T.font.lg, fontWeight: 600, color: T.text, letterSpacing: 'var(--devhub-title-tracking, 0.2px)' },
   pageSubtitle: { fontSize: T.font.sm, color: T.text4 },
-  pageBody: { flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: '16px 24px 24px' },
+  pageBody: { flex: '1 1 auto', minHeight: 0, overflow: 'auto', padding: 'var(--devhub-page-padding, 16px 24px 24px)' },
 
   row: { display: 'flex', gap: T.gap.xs, alignItems: 'center', flexWrap: 'wrap' },
   col: { display: 'flex', flexDirection: 'column', gap: T.gap.xs },
@@ -141,17 +145,18 @@ export const styles = {
 
   /* 容器：12 圆角 + 双层柔影 + 白底 */
   card: {
-    border: `1px solid ${T.borderSoft}`,
+    border: `1px solid var(--devhub-card-border, ${T.borderSoft})`,
     borderRadius: T.rLg,
     background: T.surface,
     padding: T.gap.md,
     boxShadow: T.shadowCard,
   },
   cardFlat: {
-    border: `1px solid ${T.borderSoft}`,
+    border: `1px solid var(--devhub-card-border, ${T.borderSoft})`,
     borderRadius: T.rLg,
     background: T.surface,
     padding: T.gap.md,
+    boxShadow: 'var(--devhub-card-shadow, none)',
   },
   cardHoverable: {
     border: `1px solid ${T.borderSoft}`,

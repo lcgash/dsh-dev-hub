@@ -1519,7 +1519,20 @@
     "会话记录（实时）": "Session log (live)",
     "工具": "Tool",
     "请填写你的名字/成员标识": "Enter your name / member id",
-    "你的名字 / 成员标识": "Your name / member id"
+    "你的名字 / 成员标识": "Your name / member id",
+    "系统": "System",
+    "读取中…": "Loading...",
+    "正在读取会话…": "Reading session...",
+    "会话还没有可读记录；发送一句话后 Claude 会继续。": "No readable session history yet; send a message and Claude will continue.",
+    "给 Claude Code 发一句话（Enter 发送，Shift+Enter 换行）": "Send a message to Claude Code (Enter to send, Shift+Enter for newline)",
+    "发送中…": "Sending...",
+    "发送会在后台继续这个 Claude 会话；授权/登录类操作仍以 Claude 的终端能力为准。": "Sending continues this Claude session in the background; authorization/login still depends on Claude terminal capabilities.",
+    "Claude Code 正在等待授权/选择：已打开会话控制台，处理后回来继续": "Claude Code is waiting for authorization/choice: the session console is open; come back after handling it.",
+    "等待授权/选择，请打开会话控制台": "Waiting for authorization/choice; open the session console",
+    "打开会话控制台": "Open session console",
+    "Claude Code 正在等待授权/选择：点它会话控制台查看/发送": "Claude Code is waiting for authorization/choice: click to view/send in the session console",
+    "Claude Code 已启动，但没有拿到会话 id；请打开会话控制台确认。": "Claude Code started but no session id was returned; open the session console to check.",
+    "Claude Code 会话": "Claude Code session"
   },
   "templates": {
     "你是由 DevHub 开发工作站启动的{value1}开发会话。开发流程：{value2}{value3}。": "You are a {value1}development session started by the DevHub workstation. Flow: {value2}{value3}.",
@@ -2018,7 +2031,9 @@
     "{value1} 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。": "{value1} cannot call devhub_get / devhub_update; use the DevHub bridge CLI in the launch message to write back tasks/change points/risks. Review and tests are advanced automatically by the workstation's \"Continue\" action: do not ask the user to trigger them manually, and do not run tests or submit yourself. Do not fabricate baseline diffs.",
     "检测失败：{value1}": "Check failed: {value1}",
     "当前 {value1}": "Current {value1}",
-    "最近 {value1} 条": "Latest {value1} entries"
+    "最近 {value1} 条": "Latest {value1} entries",
+    "发送失败：{value1}": "Send failed: {value1}",
+    "会话 {value1}": "Session {value1}"
   },
   "templateValues": {
     "通过": "passed",

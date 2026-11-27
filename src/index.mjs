@@ -6012,7 +6012,7 @@ export function createRoutes(ctx) {
             if (!id) throw new Error('没有 Claude Code 会话 id')
             const agents = await claudeAgents().catch(() => [])
             const current = agents.find((entry) => entry.id === id || entry.sessionId === id)
-            if (current && ['blocked'].includes(String(current.state ?? '').toLowerCase())) {
+            if (current && ['blocked'].includes(String(current.state ?? '').toLowerCase()) && body.force !== true) {
               throw new Error(`Claude Code 正在等待${current.waitingFor ? `「${current.waitingFor}」` : '授权/选择'}，请在终端处理后再继续`)
             }
             const result = await runClaudeBackground(root, body.prompt, {
