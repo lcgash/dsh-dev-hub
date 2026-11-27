@@ -34,6 +34,7 @@ import {
   normalizeDocsConfig,
   renderLocalDoc,
 } from './core/techdoc.mjs'
+import { checkDesign } from './core/design-gate.mjs'
 import { run, which } from './core/detect.mjs'
 import {
   buildDefaultConventions,
@@ -94,6 +95,7 @@ import {
   invalidateReview,
   normalizeReviewerVerdict,
   reviewGate,
+  reviewPolicy,
   reviewerPrompt,
   staleReviewerFailures,
   startReviewRound,
@@ -3372,6 +3374,31 @@ async function gitEvidenceOf(repo, item, profile) {
  * 审核员看到的证据：改动范围 + 自测结果 + 开发报告 + 规范约束。
  * 一次算好，所有审核员共用同一份快照；审核员自己再读代码核对，Host 不替它推理。
  */
+/** 计算当前技术方案的机器门禁；本地方案文件优先，没有就按台账实时渲染。 */
+async function designGateFor({ repo, item, profile } = {}) {
+  const techDoc = item?.workflow?.techDoc ?? {}
+  let markdown = ''
+  if (techDoc.localPath) {
+    const rel = String(techDoc.localPath).replace(/\\/g, '/').replace(/^\.\//, '')
+    if (!rel.includes('..') && !rel.startsWith('/')) {
+      try { markdown = await readFile(join(repo, rel), 'utf8') } catch { markdown = '' }
+    }
+  }
+  if (!markdown) {
+    markdown = [
+      buildTechDocMarkdown(item, { repoName: repoName(repo) }),
+      techDoc.supplement ? `## 8. 我的补充\n\n${techDoc.supplement}` : '',
+    ].filter(Boolean).join('\n')
+  }
+  return checkDesign(markdown, {
+    // 原始需求只用于识别「把客户原话照搬进意图」；没有就留空
+    rawRequest: String(item?.description ?? item?.requirement?.raw ?? '').trim(),
+    // 有 git baseline 就按存量项目检查现状/回滚章节；新项目也接受这些章节，不额外扣分
+    legacy: Boolean(item?.baseline?.commit),
+    scope: item?.scope ?? [],
+  })
+}
+
 async function reviewEvidenceOf({ repo, item, profile }) {
   const files = await collectItemFiles({ repo, item, profile })
   const git = await gitEvidenceOf(repo, item, profile)
@@ -3456,7 +3483,22 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
   // pending 幂等；error 但还有审核员在返回时也不能开新一轮，否则会把活着的审核员结果丢掉
   if (before.status === 'pending' || (before.status === 'error' && before.pending > 0)) return item
   const evidence = await reviewEvidenceOf({ repo, item, profile })
-  const started = startReviewRound(item.workflow.review, { count, basis: evidence.basis })
+  const designGate = await designGateFor({ repo, item, profile })
+  const policy = reviewPolicy(item, { files: evidence.files?.files ?? [], designGate })
+  const requestedCount = Number(count)
+  const effectiveCount = Number.isFinite(requestedCount) && requestedCount > 0
+    ? requestedCount
+    : Math.max(1, policy.reviewers ?? 1)
+  const started = startReviewRound(item.workflow.review, {
+    count: effectiveCount,
+    basis: {
+      ...evidence.basis,
+      designHash: designGate.basisHash,
+      designStatus: designGate.status,
+      depth: policy.depth,
+      signals: policy.signals,
+    },
+  })
   const reviewEngine = projectAutomation(profile, repo).engine
   if (reviewEngine !== 'dsh') {
     started.reviewers = started.reviewers.map((reviewer) => ({ ...reviewer, engine: reviewEngine, external: true }))
@@ -3475,6 +3517,7 @@ async function runReviewRound({ ctx, repo, item, profile, count }) {
       report: evidence.report,
       workspace: evidence.workspace,
       constraints: evidence.constraints,
+      designGate,
       total: started.reviewers.length,
     })
     const runOnce = async (attempt = 1) => {
@@ -4054,6 +4097,10 @@ export function apply(ctx) {
               freshItem.running = ['running', 'working', 'in_progress'].includes(externalState.status.toLowerCase())
             }
           }
+          // 方案门禁是详情页的只读事实，不写回台账；技术方案文件被改后下一次轮询即可看到
+          if (freshItem && freshItem.workflow?.intent !== 'analysis') {
+            freshItem.designGate = await designGateFor({ repo, item: freshItem, profile })
+          }
           sendJson(res, 200, { ok: true, item: freshItem })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
@@ -4493,6 +4540,11 @@ export function apply(ctx) {
             return sendJson(res, 200, {
               ok: true,
               markdown,
+              gate: checkDesign(markdown, {
+                rawRequest: String(item.description ?? item.requirement?.raw ?? '').trim(),
+                legacy: Boolean(item.baseline?.commit),
+                scope: item.scope ?? [],
+              }),
               provider: techDoc.provider ?? docsConfig.provider,
               title,
               path: relPath || techDoc.localPath || '',

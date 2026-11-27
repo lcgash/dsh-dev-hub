@@ -1468,6 +1468,8 @@
     "等待授权/选择": "等待授权/选择"
   },
   "templates": {
+    "方案门禁 {value1}": "方案门禁 {value1}",
+    "{value1} · {value2} 位审核员": "{value1} · {value2} 位审核员",
     "成员 {name}": "成员 {name}",
     "开发目标（{count}）": "开发目标（{count}）",
     "开发流程（{count}）": "开发流程（{count}）",

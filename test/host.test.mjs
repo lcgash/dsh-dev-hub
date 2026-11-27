@@ -684,7 +684,7 @@ test('独立评审：已有 pending 评审时再派发保持幂等，不重复�
     const first = await call(a.routes, API.review, { method: 'POST', body: { id: 'review-gate', action: 'dispatch' } })
     assert.equal(first.status, 200)
     assert.equal(first.body.review.status, 'passed')
-    assert.equal(first.body.review.total, 2, '未指定数量时按默认配置派 2 位审核员')
+    assert.equal(first.body.review.total, 1, '未指定数量时按 R1 自动派 1 位审核员')
     const callsAfterFirst = a.reviewLabels.length
 
     // 把台账置为「评审中」（模拟另一处已派发 / 页面刷新前的 pending 状态）

@@ -1468,6 +1468,8 @@
     "等待授权/选择": "Waiting for approval/choice"
   },
   "templates": {
+    "方案门禁 {value1}": "Design gate {value1}",
+    "{value1} · {value2} 位审核员": "{value1} · {value2} reviewers",
     "成员 {name}": "Member {name}",
     "开发目标（{count}）": "Development targets ({count})",
     "开发流程（{count}）": "Development flows ({count})",

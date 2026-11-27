@@ -696,3 +696,32 @@ test('审核员提示词包含影响面与代码负担检查', () => {
   assert.match(prompt, /代码负担/)
   assert.match(prompt, /复用/)
 })
+
+test('reviewDepth：核心路径/越界/方案门禁失败会抬升 R 档，但不按文件数叠加', () => {
+  const base = item({ plan: { summary: 'L', steps: ['a'], estimate: { size: 'L', days: 6 } }, scope: ['src/core'] })
+  const core = item({
+    plan: { summary: 'L', steps: ['a'], estimate: { size: 'L', days: 6 } },
+    scope: ['src/main/java/com/gitee/pipeline/dao/service'],
+  })
+  const basePolicy = reviewPolicy(base)
+  const corePolicy = reviewPolicy(core)
+  assert.equal(basePolicy.depth, 'R2')
+  assert.equal(basePolicy.reviewers, 2)
+  assert.equal(corePolicy.depth, 'R3')
+  assert.equal(corePolicy.reviewers, 3)
+  assert.ok(corePolicy.signals.some((signal) => /核心路径/.test(signal)))
+
+  const outOfScope = reviewPolicy(item({
+    plan: { summary: 'M', steps: ['a'], estimate: { size: 'M', days: 2 } },
+    scope: ['src/core'],
+  }), { files: [{ path: 'src/core/a.mjs', inScope: false }, { path: 'src/core/a.test.mjs', inScope: true }] })
+  assert.equal(outOfScope.depth, 'R2')
+  assert.equal(outOfScope.reviewers, 2)
+
+  const badDesign = reviewPolicy(item({
+    plan: { summary: 'M', steps: ['a'], estimate: { size: 'M', days: 2 } },
+    scope: ['src/core'],
+  }), { designGate: { ok: false, errors: ['缺少方案'] } })
+  assert.equal(badDesign.depth, 'R2')
+  assert.ok(badDesign.signals.some((signal) => /方案门禁/.test(signal)))
+})

@@ -2277,6 +2277,14 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               ? '未生成'
               : stale ? '台账已更新，建议重新生成' : (status === 'external-modified' ? '本地文件已被修改' : '已生成')
           const statusTone = provider === 'none' ? 'neutral' : (!techDoc.exists ? 'warn' : (stale || status === 'external-modified' ? 'warn' : 'ok'))
+          const designGate = draft.designGate
+          const gateTone = designGate?.status === 'fail' ? 'danger' : designGate?.status === 'warn' ? 'warn' : 'ok'
+          const gateTitle = designGate
+            ? [...(designGate.errors ?? []), ...(designGate.warnings ?? [])].join('\n')
+            : ''
+          const gateLabel = designGate
+            ? `方案门禁 ${designGate.status === 'fail' ? 'FAIL' : designGate.status === 'warn' ? 'PASS · 有提醒' : 'PASS'}`
+            : '' 
           const copyPath = async () => {
             const path = techDoc.localPath || techDocDefaultPath()
             try { await navigator.clipboard.writeText(path); setNotice(`已复制路径：${path}`) } catch { setNotice(path) }
@@ -2302,6 +2310,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               h('option', { value: 'none' }, '暂不需要'),
               ),
               h(Tag, { tone: statusTone }, statusLabel),
+              designGate ? h(Tag, { tone: gateTone, title: gateTitle }, gateLabel) : null,
               techDoc.localPath ? h('span', { style: { ...styles.mono, color: T.text4, wordBreak: 'break-all' } }, techDoc.localPath) : null,
               techDoc.url ? h('span', { style: { ...styles.mono, color: T.text4, wordBreak: 'break-all' } }, techDoc.url) : null,
             ),
@@ -2986,7 +2995,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         h('span', { style: styles.sectionTitle }, '独立评审'),
         h(Tag, { tone }, `${REVIEW_STATUS_LABELS[view.status] ?? view.status}${view.total ? ` · ${view.passed}/${view.total}` : ''}`),
         view.status === 'idle'
-          ? h(Tag, { tone: view.required === false ? 'warn' : 'neutral' }, view.required === false ? '免评审' : `${view.policy?.reviewers || 2} 位审核员`)
+          ? h(Tag, { tone: view.required === false ? 'warn' : 'neutral' }, view.required === false ? '免评审' : `${view.policy?.depth ?? 'R?'} · ${view.policy?.reviewers ?? 2} 位审核员`)
           : null,
         h('div', { style: styles.spacer }),
         h(Button, { style: mini, onClick: () => setTab('review'), children: '查看评审' }),
@@ -3090,7 +3099,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           h(Tag, { tone }, REVIEW_STATUS_LABELS[view.status] ?? view.status),
           view.round ? h(Tag, { tone: 'neutral' }, `第 ${view.round} 轮`) : null,
           view.status === 'idle'
-            ? h(Tag, { tone: view.required === false ? 'warn' : 'neutral' }, view.required === false ? '免评审' : `${view.policy?.reviewers || 2} 位审核员`)
+            ? h(Tag, { tone: view.required === false ? 'warn' : 'neutral' }, view.required === false ? '免评审' : `${view.policy?.depth ?? 'R?'} · ${view.policy?.reviewers ?? 2} 位审核员`)
             : null,
           h('div', { style: styles.spacer }),
           view.status === 'pending'

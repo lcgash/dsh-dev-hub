@@ -117,6 +117,10 @@ function normalizeBasis(raw) {
     removed: Number.isFinite(Number(raw.removed)) ? Number(raw.removed) : 0,
     head: str(raw.head, 80),
     localTest: str(raw.localTest, 40) || 'not_run',
+    ...(raw.designHash ? { designHash: str(raw.designHash, 32) } : {}),
+    ...(raw.designStatus && ['pass', 'warn', 'fail'].includes(raw.designStatus) ? { designStatus: raw.designStatus } : {}),
+    ...(REVIEW_DEPTH_ORDER.includes(raw.depth) ? { depth: raw.depth } : {}),
+    ...(Array.isArray(raw.signals) && raw.signals.length ? { signals: strList(raw.signals, 5, 120) } : {}),
     at: raw.at || null,
   }
 }
@@ -428,25 +432,90 @@ export function correctionsOf(review) {
  * @returns {{ allowed: boolean, status: string, stage: 'develop'|'review'|'verify', reason: string, corrections: object[] }}
  */
 
+const REVIEW_DEPTH_BY_COUNT = [0, 1, 2, 3]
+const REVIEW_DEPTH_ORDER = ['R0', 'R1', 'R2', 'R3']
+const CORE_PATH_RE = /(^|\/)(db|dao|migration|migrations|mapper|repository|controller|auth|permission|security|payment|billing|order|account|concurrency|transaction|lock)(\/|$)|\/auth\/|\/security\/|\.sql$/i
+const TEST_PATH_RE = /(^|\/)(tests?|__tests__|e2e|spec)\/|\.(test|spec)\.(?:[cm]?[jt]sx?|vue)$|Test\.(java|kt)$|_test\.(go|py)$/i
+
+/** 评审深度信号：只认能拿代码/证据证明的风险，不把文件数量当复杂度。 */
+export function reviewRiskSignals(item, { files = [], designGate = null } = {}) {
+  const signals = []
+  const changed = Array.isArray(files) ? files : []
+  if (changed.some((file) => file?.inScope === false)) {
+    signals.push({ id: 'scope', label: '改动越出已确认 scope' })
+  }
+  if (designGate && designGate.ok === false) {
+    signals.push({ id: 'design', label: '方案门禁未通过' })
+  }
+  const paths = [...(item?.scope ?? []), ...changed.map((file) => file?.path)].map(String)
+  if (paths.some((path) => CORE_PATH_RE.test(path))) {
+    signals.push({ id: 'core', label: '触达持久化/接口/权限/并发等核心路径' })
+  }
+  if (changed.length && !changed.some((file) => TEST_PATH_RE.test(String(file?.path ?? '')))) {
+    signals.push({ id: 'no-tests', label: '改动未包含测试' })
+  }
+  if (item?.workflow?.rework?.at) {
+    signals.push({ id: 'rework', label: '上一轮测试后又有新改动' })
+  }
+  return signals.slice(0, 3)
+}
+
+function baseDepth(item) {
+  const estimate = item?.workflow?.plan?.estimate ?? {}
+  const size = String(estimate.size ?? '').trim().toUpperCase()
+  const days = Number(estimate.days)
+  if (size === 'S' || (Number.isFinite(days) && days < 1.5)) return 0
+  if (size === 'M' || (Number.isFinite(days) && days < 4)) return 1
+  if (size === 'L' || (Number.isFinite(days) && days < 8)) return 2
+  if (size === 'XL' || (Number.isFinite(days) && days >= 8)) return 3
+  return 2
+}
+
 /**
- * 按工程量决定是否值得引入独立评审。
- *
- * 经验规则：S（<1.5 人日）的小改动直接进测试验证，避免每次都为一个小修调用
- * 1~3 个审核员；M/L/XL 仍保留评审。没有估算或旧台账按需要评审处理，保持原行为。
- * 也允许台账显式写 reviewRequired=true/false 覆盖（审计/特殊流程）。
+ * 评审深度 R0-R3：规模只决定基线，风险信号逐级抬升；每个信号只加一档，
+ * 不按文件/模块数量叠加，避免「复制了 N 份」被误判成 N 倍复杂度。
  */
-export function reviewPolicy(item) {
+export function reviewDepth(item, { files = [], designGate = null } = {}) {
+  const signals = reviewRiskSignals(item, { files, designGate })
+  const base = baseDepth(item)
+  const level = Math.min(3, Math.max(0, base + signals.length))
+  const depth = REVIEW_DEPTH_ORDER[level]
+  const reviewers = REVIEW_DEPTH_BY_COUNT[level]
+  return {
+    depth,
+    level,
+    reviewers,
+    signals: signals.map((signal) => signal.label),
+    signalIds: signals.map((signal) => signal.id),
+    required: level > 0,
+    reason: signals.length
+      ? `${depth}（${signals.map((signal) => signal.label).join('；')}）`
+      : `${depth}（按工程量与证据自动定档）`,
+  }
+}
+
+/**
+ * 按工程量和风险信号决定是否值得引入独立评审。
+ *
+ * 经验规则：S（<1.5 人日）的小改动默认直接进测试验证；M/L/XL 保留评审。
+ * 如果出现「越出 scope / 方案门禁 FAIL / 触达核心路径 / 改动没测试 / 测试后又改」，
+ * 逐级抬升 R1→R2→R3，而不是按文件数量盲目加审核员。显式 reviewRequired 仍优先。
+ */
+export function reviewPolicy(item, options = {}) {
   const workflow = item?.workflow ?? {}
+  const depth = reviewDepth(item, options)
   if (workflow.reviewEnabled === false) {
-    return { required: false, reviewers: 0, size: null, days: null, reason: '设置已关闭独立评审环节', source: 'setting' }
+    return { ...depth, required: false, reviewers: 0, size: null, days: null, reason: '设置已关闭独立评审环节', source: 'setting' }
   }
   const estimate = workflow.plan?.estimate ?? {}
   const size = String(estimate.size ?? '').trim().toUpperCase()
   const days = Number(estimate.days)
   if (typeof workflow.reviewRequired === 'boolean') {
+    const reviewers = workflow.reviewRequired ? Math.max(2, depth.reviewers) : 0
     return {
+      ...depth,
       required: workflow.reviewRequired,
-      reviewers: workflow.reviewRequired ? 2 : 0,
+      reviewers: Math.min(3, reviewers),
       size: size || null,
       days: Number.isFinite(days) ? days : null,
       reason: workflow.reviewRequired ? '台账显式要求独立评审' : '台账显式跳过独立评审',
@@ -454,39 +523,27 @@ export function reviewPolicy(item) {
     }
   }
   if (workflow.intent === 'analysis') {
-    return { required: false, reviewers: 0, size: size || null, days: Number.isFinite(days) ? days : null, reason: '分析流程只读，产出结论即可', source: 'intent' }
+    return { ...depth, required: false, reviewers: 0, size: size || null, days: Number.isFinite(days) ? days : null, reason: '分析流程只读，产出结论即可', source: 'intent' }
   }
-  if (size === 'S' || (Number.isFinite(days) && days < 1.5)) {
+  if (!depth.required) {
     return {
+      ...depth,
       required: false,
       reviewers: 0,
       size: size || 'S',
       days: Number.isFinite(days) ? days : null,
-      reason: '小改动（S / 少于 1.5 人日）：默认跳过独立评审，直接进入测试验证',
+      reason: `小改动（S / 少于 1.5 人日）：默认跳过独立评审，直接进入测试验证`,
       source: 'size',
     }
   }
-  if (size === 'M' || (Number.isFinite(days) && days < 4)) {
-    return {
-      required: true,
-      reviewers: 1,
-      size: size || 'M',
-      days: Number.isFinite(days) ? days : null,
-      reason: '中等改动（M）：保留 1 位审核员的轻量评审，控制成本',
-      source: 'size',
-    }
+  const sizeReason = size === 'M' ? '中等改动（M）' : size === 'L' ? '较大改动（L）' : size === 'XL' ? '大改动（XL）' : '没有可用的工程量估算'
+  return {
+    ...depth,
+    size: size || null,
+    days: Number.isFinite(days) ? days : null,
+    reason: `${depth.depth} · ${sizeReason}：${depth.signals.length ? depth.signals.join('；') : '保留独立评审，控制风险'}`,
+    source: depth.signals.length ? 'risk' : 'size',
   }
-  if (['L', 'XL'].includes(size) || (Number.isFinite(days) && days >= 4)) {
-    return {
-      required: true,
-      reviewers: 2,
-      size: size || null,
-      days: Number.isFinite(days) ? days : null,
-      reason: `${size || 'L'} 规模改动：保留 2 位审核员复核方向与风险`,
-      source: 'size',
-    }
-  }
-  return { required: true, reviewers: 2, size: null, days: null, reason: '没有可用的工程量估算：保留独立评审', source: 'default' }
 }
 
 export function reviewGate(item) {
@@ -771,6 +828,7 @@ export function reviewerPrompt({
   report = null,
   workspace = null,
   constraints = [],
+  designGate = null,
   total = 1,
 } = {}) {
   if (!item?.id) throw new Error('reviewerPrompt 需要开发项')
@@ -834,6 +892,12 @@ export function reviewerPrompt({
     lines.push('- （未读到改动证据：改动内容请以仓库实际状态为准）')
   }
   lines.push(`- 已确认 scope：${(item.scope ?? []).length ? item.scope.join('、') : '（未限定）'}`)
+  if (designGate) {
+    lines.push('', '【方案门禁（机器检查，不是最终结论）】')
+    lines.push(`- 结论：${designGate.ok ? 'PASS' : 'FAIL'}${designGate.warnings?.length ? `（${designGate.warnings.length} 条提醒）` : ''}`)
+    for (const error of (designGate.errors ?? []).slice(0, 6)) lines.push(`  - ${error}`)
+    for (const warning of (designGate.warnings ?? []).slice(0, 4)) lines.push(`  - 提醒：${warning}`)
+  }
 
   lines.push('', '【已有测试结果（事实，不是结论）】')
   lines.push(`- 本机自测：${testLabel(tests.local?.status)}${tests.local?.command ? ` · ${tests.local.command}` : ''}`)
