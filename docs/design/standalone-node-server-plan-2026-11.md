@@ -290,6 +290,16 @@ shim 只用于 P0 验证和 v0.1 过渡。v0.1 发布前必须把路由注册从
 - headless Chrome 验证 page/root 均为 757px（窗口内容高度），聊天页也填满；亮/暗色截图通过。
 - 注意：当前工作区还有并行的 Claude 会话控制台改动，本轮不把它混进独立版提交。
 
+## 5.10 CI / Windows 验收（2026-11-27）
+
+- GitHub Actions `standalone-ci` 全矩阵通过：Ubuntu/macOS/Windows × Node 22/24，运行 `npm install`、build、standalone server + fake Claude E2E。
+- 修复了三个真实 CI 问题：
+  1. 测试依赖本机已有 profile，空 HOME 下 state/settings 断言失败；
+  2. Claude `-p` 评审 prompt 拼进 Windows 命令行，超过 ~8k 上限；
+  3. Claude `--bg` 启动 prompt 含换行 bridge 说明，Windows cmd 无法作为单个参数；agents/logs 的 `.cmd` 调用也统一走 shell。
+- 真实 `claude --bg` 用 stdin 启动后台会话已验证（临时会话已 stop）。
+- Windows 证据来自 CI 实际运行，不是本机模拟；CI run 13 `success`。
+
 ## 6. 数据与兼容契约
 
 - 仓库台账继续是 `.dev-hub/items/*.json`，不新增第二套存储。
