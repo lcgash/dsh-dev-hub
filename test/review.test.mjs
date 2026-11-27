@@ -725,3 +725,18 @@ test('reviewDepth：核心路径/越界/方案门禁失败会抬升 R 档，但�
   assert.equal(badDesign.depth, 'R2')
   assert.ok(badDesign.signals.some((signal) => /方案门禁/.test(signal)))
 })
+
+test('staleReviewerFailures：外部审核会话超时后标异常，不再永久 pending', () => {
+  const now = Date.parse(AT)
+  const old = new Date(now - 11 * 60_000).toISOString()
+  const review = normalizeReview({
+    round: 1,
+    dispatchedAt: old,
+    reviewers: [
+      reviewer('reviewer-1', 'pending', { engine: 'claude', external: true, dispatchedAt: old }),
+    ],
+  })
+  const failures = staleReviewerFailures(review, { now })
+  assert.equal(failures.length, 1)
+  assert.match(failures[0].reason, /外部审核会话超过/)
+})

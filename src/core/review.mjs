@@ -205,11 +205,21 @@ export function staleReviewerFailures(review, {
   const outcomes = []
   for (const reviewer of normalized.reviewers ?? []) {
     if (reviewer.status !== 'pending') continue
-    // 外部引擎（Claude/Codex/Pi）不经过 DSH live registry，不能按 session 存活时间判失联
-    if (reviewer.engine !== 'dsh' || reviewer.external) continue
     const dispatchedAt = Date.parse(reviewer.dispatchedAt ?? normalized.dispatchedAt ?? '')
     if (!Number.isFinite(dispatchedAt)) continue
     const age = now - dispatchedAt
+    // 外部引擎（Claude/Codex/Pi）不经过 DSH live registry：给硬上限，避免进程重启/卡授权后永久 pending。
+    // Host 的一次性评审本身有 5 分钟上限；这里留 10 分钟兜底。
+    if (reviewer.engine !== 'dsh' || reviewer.external) {
+      const externalTimeout = Number.isFinite(staleMs) && staleMs > 0 ? staleMs : 10 * 60_000
+      if (age >= externalTimeout) {
+        outcomes.push({
+          reviewerId: reviewer.id,
+          reason: `外部审核会话超过 ${Math.round(externalTimeout / 60_000)} 分钟未返回结论（可能卡在授权或已随进程重启丢失）；请重试评审`,
+        })
+      }
+      continue
+    }
     const sessionId = reviewer.sessionId
     if (!sessionId) {
       if (age >= startGraceMs) {
