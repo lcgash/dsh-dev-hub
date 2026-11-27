@@ -887,13 +887,13 @@ async function runClaudeBackground(root, prompt, { resumeId = null, permissionMo
   if (!text) throw new Error('Claude Code 启动内容为空')
   const args = ['--bg', '--permission-mode', String(permissionMode || 'auto')]
   if (resumeId) args.push('--resume', String(resumeId))
-  args.push(text)
-  const { stdout, stderr } = await runExecutable(bin, args, {
+  // 启动 prompt 含换行与 bridge 多行说明：Windows cmd 不能把换行塞进单个参数。
+  const { stdout, stderr } = await runExecutableInput(bin, args, {
+    input: text,
     cwd: root,
     timeout: 120000,
     maxBuffer: 8 * 1024 * 1024,
     env: process.env,
-    windowsHide: true,
   })
   const output = `${stdout ?? ''}${stderr ? '\n' + stderr : ''}`.trim()
   return { id: claudeSessionId(output), output }
