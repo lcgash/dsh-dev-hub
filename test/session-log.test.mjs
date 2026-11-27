@@ -134,3 +134,24 @@ test('transcriptRowsFromEvents：工具调用带参数，工具结果可见，�
   assert.match(rows[4].roleLabel, /read/)
   assert.equal(rows[0].text, '请检查 diff')
 })
+
+test('claudeTranscriptFromJsonl：还原 Claude 开发对话（工具参数+结果）', async () => {
+  const { claudeTranscriptFromJsonl } = await import('../src/host/session-log.mjs')
+  const lines = [
+    { type: 'user', timestamp: '2026-11-26T08:58:35.271Z', message: { role: 'user', content: '请实现 pipelineCount' } },
+    { type: 'assistant', timestamp: '2026-11-26T08:58:55.702Z', message: { content: [
+      { type: 'tool_use', id: 't1', name: 'Bash', input: { command: 'git status --short' } },
+    ] } },
+    { type: 'user', timestamp: '2026-11-26T08:59:00.678Z', message: { content: [
+      { type: 'tool_result', tool_use_id: 't1', content: ' M A.java' },
+    ] } },
+    { type: 'assistant', timestamp: '2026-11-26T08:59:10.000Z', message: { content: [{ type: 'text', text: '已实现' }] } },
+  ].map((line) => JSON.stringify(line)).join('\n')
+  const rows = await claudeTranscriptFromJsonl(lines)
+  assert.equal(rows.length, 4)
+  assert.deepEqual(rows.map((row) => row.role), ['user', 'assistant', 'tool', 'assistant'])
+  assert.match(rows[1].text, /git status --short/)
+  assert.match(rows[2].roleLabel, /Bash/)
+  assert.match(rows[2].text, /M A.java/)
+  assert.equal(rows[3].text, '已实现')
+})

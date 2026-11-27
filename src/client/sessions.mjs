@@ -50,6 +50,52 @@ function shortNumber(value) {
   return String(number)
 }
 
+/** 会话历史用聊天框样式：用户靠右、助手靠左、工具输出用等宽气泡。 */
+function TranscriptBubble({ message }) {
+  const isUser = message.role === 'user'
+  const isTool = message.role === 'tool'
+  return h('div', {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: isUser ? 'flex-end' : 'flex-start',
+      gap: 3,
+      width: '100%',
+    },
+  },
+    h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: T.font.xs, color: T.text4 } },
+      h('span', { style: { fontWeight: 600, color: isUser ? T.brand : T.text2 } }, message.roleLabel ?? message.role),
+      message.at ? h('span', null, fmtTime(message.at)) : null,
+    ),
+    h('div', {
+      style: {
+        maxWidth: isUser ? '82%' : '94%',
+        padding: '7px 10px',
+        borderRadius: T.rBase,
+        border: `1px solid ${isUser ? 'transparent' : T.borderSoft}`,
+        background: isUser ? T.brandSoft : isTool ? T.surface : T.surface2,
+        color: T.text,
+        fontSize: isTool ? T.font.xs : T.font.sm,
+        lineHeight: 1.65,
+      },
+    },
+      isTool
+        ? h('pre', {
+          style: {
+            ...styles.mono,
+            margin: 0,
+            whiteSpace: 'pre-wrap',
+            overflowWrap: 'anywhere',
+            maxHeight: 220,
+            overflow: 'auto',
+            color: T.text2,
+          },
+        }, message.text)
+        : h('div', { style: { whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } }, message.text),
+    ),
+  )
+}
+
 function SessionRow({ session, busy, onOpen, onAction }) {
   const [expanded, setExpanded] = useState(false)
   const [transcript, setTranscript] = useState(null)
@@ -64,7 +110,9 @@ function SessionRow({ session, busy, onOpen, onAction }) {
     setTranscriptBusy(true)
     setTranscriptError('')
     try {
-      const body = await api(`${API.sessionTranscript}?sessionId=${encodeURIComponent(session.id)}&limit=80`)
+      const params = new URLSearchParams({ sessionId: String(session.id), limit: '80' })
+      if (session.engine === 'claude') params.set('engine', 'claude')
+      const body = await api(`${API.sessionTranscript}?${params.toString()}`)
       setTranscript(body)
     } catch (err) {
       setTranscriptError(errorText(err))
@@ -177,16 +225,7 @@ function SessionRow({ session, busy, onOpen, onAction }) {
         transcriptError ? h('div', { style: styles.dangerCard }, transcriptError) : null,
         transcript?.persisted ? h('div', { style: styles.sectionHint }, `历史记录 · ${transcript.messages?.length ?? 0} 条`) : null,
         transcript?.messages?.length
-          ? transcript.messages.map((message, index) => h('div', {
-            key: `${message.role}-${index}`,
-            style: { display: 'flex', flexDirection: 'column', gap: 2 },
-          },
-            h('div', { style: { display: 'flex', gap: 6, alignItems: 'center', fontSize: T.font.xs, color: T.text4 } },
-              h('span', { style: { fontWeight: 600, color: message.role === 'user' ? T.brand : T.text2 } }, message.roleLabel ?? message.role),
-              message.at ? h('span', null, fmtTime(message.at)) : null,
-            ),
-            h('div', { style: { fontSize: T.font.sm, color: T.text, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' } }, message.text),
-          ))
+          ? transcript.messages.map((message, index) => h(TranscriptBubble, { key: `${message.role}-${index}`, message }))
           : h('div', { style: styles.sectionHint }, transcript?.reason ?? '这条会话还没有可读的对话内容'),
       )
       : null,

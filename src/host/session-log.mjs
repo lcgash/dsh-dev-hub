@@ -74,6 +74,58 @@ function isTranscriptNoise(text) {
     || value.startsWith('A skill is a reusable set of task-specific instructions')
 }
 
+/** 把 Claude Code 的 JSONL 消息压成与 DSH transcript 相同的事件形状。 */
+export function claudeTranscriptFromJsonl(text, { limit = 80 } = {}) {
+  const events = []
+  const lines = String(text ?? '').split(/\r?\n/)
+  for (const line of lines) {
+    if (!line.trim()) continue
+    let entry = null
+    try { entry = JSON.parse(line) } catch { continue }
+    if (entry?.isSidechain) continue
+    if (entry?.type === 'user') {
+      const content = entry?.message?.content
+      if (typeof content === 'string') {
+        events.push({ type: 'user/message', time: entry.timestamp ? Date.parse(entry.timestamp) : null, data: { content: [{ type: 'text', text: content }] } })
+        continue
+      }
+      if (!Array.isArray(content)) continue
+      for (const block of content) {
+        if (!block || typeof block !== 'object') continue
+        if (block.type === 'tool_result') {
+          const resultText = typeof block.content === 'string'
+            ? block.content
+            : textOfContent(block.content)
+          if (!resultText) continue
+          events.push({
+            type: 'tool/result',
+            time: entry.timestamp ? Date.parse(entry.timestamp) : null,
+            data: { message: { toolCallId: block.tool_use_id, content: [{ type: 'text', text: resultText }] } },
+          })
+        } else if (block.type === 'text' && block.text) {
+          events.push({ type: 'user/message', time: entry.timestamp ? Date.parse(entry.timestamp) : null, data: { content: [{ type: 'text', text: block.text }] } })
+        }
+      }
+      continue
+    }
+    if (entry?.type === 'assistant') {
+      const blocks = []
+      for (const block of entry?.message?.content ?? []) {
+        if (!block || typeof block !== 'object') continue
+        if (block.type === 'text' && block.text) blocks.push({ type: 'text', text: block.text })
+        else if (block.type === 'tool_use') blocks.push({ type: 'tool-call', id: block.id, name: block.name, arguments: block.input })
+      }
+      if (!blocks.length) continue
+      events.push({
+        type: 'assistant/message',
+        time: entry.timestamp ? Date.parse(entry.timestamp) : null,
+        data: { message: { content: blocks } },
+      })
+    }
+  }
+  return transcriptRowsFromEvents(events, { limit })
+}
+
 /**
  * 历史事件 → 可读对话行：用户文本、助手文本+工具调用、工具结果。
  * tool/result 是「看到了什么」，只给工具名会像截图里那样整页都是「[调用工具] bash」。

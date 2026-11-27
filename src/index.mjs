@@ -6,8 +6,8 @@
  * The browser half only talks to the loopback /api/dev-hub/* routes.
  */
 import { exec, execFile, spawn } from 'node:child_process'
-import { access, mkdir, readFile, stat, unlink, writeFile } from 'node:fs/promises'
-import { tmpdir } from 'node:os'
+import { access, mkdir, readFile, readdir, stat, unlink, writeFile } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
@@ -52,8 +52,8 @@ import { extractJson, runAgentJson, runLlmJson } from './host/agent-run.mjs'
 import { answerPendingQuestion, readPendingApprovals, readPendingQuestions } from './host/pending-questions.mjs'
 import { ASSIST_SCHEMA, applyAssistUpdates, buildAssistPrompt } from './core/assist.mjs'
 import { sessionState, sessionStates } from './host/session-state.mjs'
-import { sanitizeTerminalText, sessionLog, sessionTimeline, sessionTranscript } from './host/session-log.mjs'
-import { buildSessionCatalog } from './host/session-catalog.mjs'
+import { claudeTranscriptFromJsonl, sanitizeTerminalText, sessionLog, sessionTimeline, sessionTranscript } from './host/session-log.mjs'
+import { SESSION_CATEGORIES, buildSessionCatalog } from './host/session-catalog.mjs'
 import { loadLocaleBundle } from './host/locales.mjs'
 import { addCustomConstraint, installSkill, regenerateConventions, removeConstraint, uninstallSkill, updateConstraint } from './core/conventions.mjs'
 import { PROMPT_VERSION, hashOf, inputHash, normalizeAnswers, planHash, pluginVersion, recordProvenance, specHash } from './core/provenance.mjs'
@@ -2307,6 +2307,168 @@ function buildProjectHierarchy({ catalog, entries, projectWorkspaces }) {
   return [...projects.values()].sort((left, right) => right.counts.sessions - left.counts.sessions || left.title.localeCompare(right.title))
 }
 
+const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects')
+const CLAUDE_JOBS_DIR = join(homedir(), '.claude', 'jobs')
+
+/** 找 Claude Code 的会话 JSONL；短 id 也接受。 */
+async function findClaudeTranscript(id) {
+  const wanted = String(id ?? '').trim()
+  if (!wanted) return null
+  let dirs = []
+  try { dirs = await readdir(CLAUDE_PROJECTS_DIR, { withFileTypes: true }) } catch { return null }
+  for (const dir of dirs) {
+    if (!dir.isDirectory()) continue
+    const folder = join(CLAUDE_PROJECTS_DIR, dir.name)
+    let files = []
+    try { files = await readdir(folder) } catch { continue }
+    for (const file of files) {
+      if (!file.endsWith('.jsonl')) continue
+      if (file === `${wanted}.jsonl` || file.startsWith(`${wanted}-`)) return join(folder, file)
+    }
+  }
+  return null
+}
+
+/** Claude Code 的终端日志不可读，历史对话从它落盘的 JSONL 读。 */
+async function claudeTranscript(id, { limit = 80 } = {}) {
+  const file = await findClaudeTranscript(id)
+  if (!file) {
+    return {
+      sessionId: id,
+      alive: false,
+      persisted: false,
+      messages: [],
+      reason: '这条 Claude Code 会话没有落盘对话（可能卡在启动/授权界面，或尚未产生消息）',
+    }
+  }
+  const text = await readFile(file, 'utf8')
+  const rows = claudeTranscriptFromJsonl(text, { limit: Number.MAX_SAFE_INTEGER })
+  return {
+    sessionId: id,
+    alive: false,
+    persisted: true,
+    total: rows.length,
+    messages: rows.slice(-limit),
+    truncated: rows.length > limit,
+    reason: rows.length ? null : '这条 Claude Code 会话还没有可读的对话内容',
+  }
+}
+
+async function claudeJobStates() {
+  let dirs = []
+  try { dirs = await readdir(CLAUDE_JOBS_DIR, { withFileTypes: true }) } catch { return [] }
+  const jobs = []
+  for (const dir of dirs) {
+    if (!dir.isDirectory()) continue
+    try {
+      const state = JSON.parse(await readFile(join(CLAUDE_JOBS_DIR, dir.name, 'state.json'), 'utf8'))
+      if (!state?.sessionId) continue
+      jobs.push({
+        id: dir.name,
+        sessionId: String(state.sessionId),
+        cwd: state.cwd ? resolve(String(state.cwd)) : null,
+        createdAt: state.createdAt ? Date.parse(state.createdAt) : null,
+        state: state.state ?? '',
+        intent: state.intent ?? '',
+      })
+    } catch { /* 目录/状态损坏时跳过 */ }
+  }
+  return jobs
+}
+
+function flowRefOf(entry) {
+  const item = entry.item
+  return {
+    id: item.id,
+    title: item.title ?? item.id,
+    repoPath: entry.repoPath ?? null,
+    repoName: entry.repoName ?? null,
+    workspaceName: entry.workspaceName ?? null,
+  }
+}
+
+function claudeDevRow({ job, item, entry, history = false }) {
+  const meta = SESSION_CATEGORIES.find((category) => category.id === 'development')
+  return {
+    id: job.sessionId,
+    shortId: job.sessionId.length > 22 ? `${job.sessionId.slice(0, 18)}…` : job.sessionId,
+    title: history ? `${item.title ?? item.id} · 历史开发` : (item.title ?? item.id),
+    category: 'development',
+    categoryLabel: meta?.label ?? '开发会话',
+    kind: 'development',
+    kindLabel: meta?.label ?? '开发会话',
+    createdAt: job.createdAt ?? null,
+    cwd: job.cwd ?? null,
+    cwdName: repoName(job.cwd ?? ''),
+    parentSession: null,
+    origin: 'external',
+    delegationDepth: 0,
+    agentPreset: 'claude',
+    eventCount: null,
+    sizeBytes: null,
+    location: null,
+    live: false,
+    running: false,
+    turns: 0,
+    lastEventAt: null,
+    lastText: '',
+    archived: false,
+    pinned: false,
+    visible: false,
+    workspace: null,
+    flow: flowRefOf(entry),
+    reviewer: null,
+    preview: String(job.intent ?? '').slice(0, 160),
+    engine: 'claude',
+    external: true,
+  }
+}
+
+/**
+ * 外部 Claude 开发会话也进会话管理：台账只记当前 id，历史 fork 可能才是真正写了代码的那条。
+ * 每个流程补「当前会话 + 最近一条有落盘对话的历史会话」，避免 75 条并排。
+ */
+async function collectClaudeDevSessions(entries, existing = []) {
+  const jobs = await claudeJobStates()
+  const existingIds = new Set(existing.map((row) => String(row.id)))
+  const rows = []
+  for (const entry of entries) {
+    const item = entry.item
+    if (item?.session?.engine !== 'claude') continue
+    const cwd = item.session.cwd ? resolve(String(item.session.cwd)) : null
+    if (!cwd) continue
+    const currentId = String(item.session.id ?? '')
+    const sameCwd = jobs.filter((job) => job.cwd === cwd)
+    const current = sameCwd.find((job) => job.id === currentId || job.sessionId === currentId || job.sessionId.startsWith(currentId))
+      ?? sameCwd.find((job) => job.sessionId.startsWith(currentId))
+    const currentJob = current ?? {
+      sessionId: currentId,
+      cwd,
+      createdAt: item.session.boundAt ? Date.parse(item.session.boundAt) : null,
+      state: '',
+      intent: '',
+    }
+    if (currentId && !existingIds.has(currentJob.sessionId)) {
+      rows.push(claudeDevRow({ job: currentJob, item, entry }))
+      existingIds.add(currentJob.sessionId)
+    }
+    // 当前会话没有对话（卡启动/授权）时，补最近一条真正落过盘的会话，用户才能看到开发过程
+    const currentHasTranscript = Boolean(await findClaudeTranscript(currentJob.sessionId))
+    if (currentHasTranscript) continue
+    const history = sameCwd
+      .filter((job) => job.sessionId !== currentJob.sessionId)
+      .sort((left, right) => Number(right.createdAt ?? 0) - Number(left.createdAt ?? 0))
+    for (const job of history) {
+      if (existingIds.has(job.sessionId)) continue
+      if (!(await findClaudeTranscript(job.sessionId))) continue
+      rows.push(claudeDevRow({ job, item, entry, history: true }))
+      existingIds.add(job.sessionId)
+      break
+    }
+  }
+  return rows
+}
+
 /** 会话管理页的数据：持久化快照 + 实时状态 + 流程/工作区归属。 */
 async function managedSessionsFor(ctx, profile) {
   const persistence = ctx.get('sessionPersistence')
@@ -2345,6 +2507,16 @@ async function managedSessionsFor(ctx, profile) {
     pinned: workspace.pinnedSessionIds ?? [],
     roots,
   })
+  // Claude Code 的会话不在 DSH snapshots 里；补进「开发会话」，否则会话管理只剩评审会话
+  const claudeDevRows = await collectClaudeDevSessions(entries, rawCatalog.sessions)
+  if (claudeDevRows.length) {
+    rawCatalog.sessions = [...rawCatalog.sessions, ...claudeDevRows]
+    rawCatalog.categories = SESSION_CATEGORIES.map((meta) => ({
+      ...meta,
+      sessions: rawCatalog.sessions.filter((session) => session.category === meta.id),
+    }))
+    rawCatalog.counts = Object.fromEntries(rawCatalog.categories.map((category) => [category.id, category.sessions.length]))
+  }
   // 工作站只管理自己创建的会话：外部 DSH 会话（未绑定/其他）不进这个页面
   const catalog = {
     ...rawCatalog,
@@ -6550,7 +6722,11 @@ export function apply(ctx) {
           if (!sessionId) throw new Error('缺少 sessionId')
           const limitRaw = Number(query(req.url, 'limit'))
           const limit = Number.isFinite(limitRaw) && limitRaw > 0 ? Math.min(limitRaw, 200) : 80
-          sendJson(res, 200, { ok: true, ...(await sessionTranscript(ctx, sessionId, { limit })) })
+          const engine = String(query(req.url, 'engine') ?? '').trim()
+          const payload = engine === 'claude'
+            ? await claudeTranscript(sessionId, { limit })
+            : await sessionTranscript(ctx, sessionId, { limit })
+          sendJson(res, 200, { ok: true, ...payload })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }
