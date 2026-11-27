@@ -34,6 +34,7 @@ jobs:
               tail -160 standalone-test.log
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            echo "::error::standalone tests failed; see the job summary for the full tail"
+            summary="$(grep -E '✖|AssertionError|Error:|expected|actual|not ok|code:' standalone-test.log | tail -8 | tr '\n' '|' | cut -c1-1800)"
+            echo "::error::standalone tests failed: ${summary}"
           fi
           exit "$status"
