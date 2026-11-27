@@ -181,6 +181,53 @@ async function runExecutable(bin, args, options = {}) {
   }
   return execFileAsync(command, args, options)
 }
+/**
+ * 用 stdin 把长 prompt 交给子进程。
+ *
+ * Windows 命令行上限约 8k；Claude 评审 prompt 很容易超过，不能再用 args 传。
+ */
+function runExecutableInput(bin, args, { input = '', cwd, timeout = 0, maxBuffer = 16 * 1024 * 1024, env = process.env } = {}) {
+  return new Promise((resolve, reject) => {
+    const useShell = process.platform === 'win32' && /\.(cmd|bat)$/i.test(String(bin ?? ''))
+    const child = spawn(String(bin), args, {
+      cwd,
+      env,
+      windowsHide: true,
+      shell: useShell,
+    })
+    let stdout = ''
+    let stderr = ''
+    let settled = false
+    const finish = (error) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (error) {
+        error.stdout = stdout
+        error.stderr = stderr
+        reject(error)
+      } else resolve({ stdout, stderr })
+    }
+    const timer = Number(timeout) > 0
+      ? setTimeout(() => { child.kill(); finish(new Error(`timeout after ${timeout}ms`)) }, Number(timeout))
+      : null
+    child.stdout.on('data', (chunk) => {
+      stdout += chunk.toString()
+      if (stdout.length + stderr.length > maxBuffer) { child.kill(); finish(new Error('output exceeded maxBuffer')) }
+    })
+    child.stderr.on('data', (chunk) => { stderr += chunk.toString() })
+    child.on('error', finish)
+    child.on('close', (code) => {
+      if (code === 0) return finish()
+      const error = new Error(`Command failed: ${String(bin)} ${args.join(' ')}\n${stderr || stdout}`)
+      error.code = code
+      finish(error)
+    })
+    child.stdin.on('error', () => { /* 子进程提前退出时忽略 EPIPE */ })
+    child.stdin.end(String(input ?? ''))
+  })
+}
+
 /** 用 Claude Code 的一次性 -p 会话跑结构化任务（澄清/评审等只读阶段）。 */
 async function runClaudeJson({ cwd, prompt, schema = null, label = 'devhub-claude', timeoutMs = 0 } = {}) {
   const startedAt = Date.now()
@@ -188,13 +235,13 @@ async function runClaudeJson({ cwd, prompt, schema = null, label = 'devhub-claud
   const schemaText = schema
     ? `\n\n只输出一个严格 JSON 对象，不要 Markdown/解释。JSON Schema：\n${JSON.stringify(schema)}`
     : ''
-  const args = ['-p', `${String(prompt ?? '')}${schemaText}`, '--output-format', 'json', '--permission-mode', 'plan', '--name', String(label).slice(0, 60)]
-  const { stdout, stderr } = await runExecutable(bin, args, {
+  const args = ['-p', '--output-format', 'json', '--permission-mode', 'plan', '--name', String(label).slice(0, 60)]
+  const { stdout, stderr } = await runExecutableInput(bin, args, {
+    input: `${String(prompt ?? '')}${schemaText}`,
     cwd: cwd ?? process.cwd(),
     timeout: Number(timeoutMs) > 0 ? Number(timeoutMs) : 0,
     maxBuffer: 16 * 1024 * 1024,
     env: process.env,
-    windowsHide: true,
   })
   let outer = null
   try { outer = JSON.parse(String(stdout ?? '')) } catch { outer = null }
