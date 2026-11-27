@@ -809,6 +809,21 @@ async function claudeAgents() {
 
 const CLAUDE_ACTIVE_STATES = new Set(['running', 'working', 'in_progress', 'blocked'])
 
+/** 读一个 Claude 后台会话的实时状态；CLI 不可达时返回 null（调用方不能据此判定已结束）。 */
+async function claudeLiveState(id) {
+  if (!id) return null
+  try {
+    const agents = await claudeAgents()
+    const found = agents.find((entry) => entry.id === id
+      || entry.sessionId === id
+      || String(entry.sessionId ?? '').startsWith(id))
+    if (!found) return null
+    return { engine: 'claude', status: String(found.state ?? ''), cwd: found.cwd, name: found.name }
+  } catch {
+    return null
+  }
+}
+
 /** 把 Claude Code 后台会话的实时状态合到流程 running，自动化才不会在 Claude 还没跑完时抢跑评审。 */
 async function applyClaudeRunning(views, items) {
   const claudeItems = items.filter((item) => item?.session?.engine === 'claude' && item.session?.id)
@@ -3858,7 +3873,16 @@ export function apply(ctx) {
           const reconciled = await reconcileStaleReview(ctx, repo, item)
           // 详情刷新/重新打开时也做一次过期检测，保证阶段及时回到开发中
           const [fresh] = await applyReworkFacts(ctx, profile, repo, [reconciled])
-          sendJson(res, 200, { ok: true, item: fresh ?? reconciled })
+          const freshItem = fresh ?? reconciled
+          // 详情页也要拿到 Claude CLI 的实时状态，否则 blocked 会被显示成「会话空闲」
+          if (freshItem?.session?.engine === 'claude' && freshItem.session.id) {
+            const externalState = await claudeLiveState(freshItem.session.id)
+            if (externalState) {
+              freshItem.externalState = externalState
+              freshItem.running = ['running', 'working', 'in_progress'].includes(externalState.status.toLowerCase())
+            }
+          }
+          sendJson(res, 200, { ok: true, item: freshItem })
         } catch (error) {
           sendJson(res, 400, { ok: false, error: String(error?.message ?? error) })
         }
