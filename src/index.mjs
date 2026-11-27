@@ -6817,15 +6817,8 @@ export function apply(ctx) {
                 items: [{ kind: 'assistant', text: `外部终端会话\n${item.session.promptPath ? `提示词：${item.session.promptPath}` : ''}` }],
               })
             }
-            let output = ''
             let state = null
-            let logsError = ''
             let stateError = ''
-            try {
-              output = sessionId ? await claudeLogs(sessionId) : ''
-            } catch (error) {
-              logsError = `读取 Claude Code 日志失败：${String(error?.message ?? error)}`
-            }
             try {
               const agents = await claudeAgents()
               const found = agents.find((entry) => entry.id === sessionId || entry.sessionId === sessionId || String(entry.sessionId ?? '').startsWith(sessionId))
@@ -6834,7 +6827,19 @@ export function apply(ctx) {
               stateError = `无法读取 Claude Code 会话状态：${String(error?.message ?? error)}`
             }
             const active = ['running', 'working', 'in_progress'].includes(String(state?.status ?? '').toLowerCase())
-            const cleanOutput = logsError ? '' : sanitizeTerminalText(output).slice(-20000)
+            // 终端 logs 是 TUI 快照（会被清屏/光标序列污染），不能当对话读；
+            // 优先读 Claude Code 自己落盘的 JSONL，拿不到才明确说明原因。
+            let transcript
+            try {
+              transcript = await claudeTranscript(sessionId, { limit })
+            } catch (error) {
+              transcript = { messages: [], total: 0, persisted: false, reason: `读取 Claude Code 对话失败：${String(error?.message ?? error)}` }
+            }
+            const items = (transcript.messages ?? []).map((entry) => ({
+              kind: entry.role === 'user' ? 'user' : 'assistant',
+              text: entry.role === 'tool' ? `【${entry.roleLabel ?? '工具'}】\n${entry.text}` : entry.text,
+              at: entry.at ?? null,
+            }))
             // 状态查不到 ≠ 会话已结束：daemon 暂时不可达时显示「读取中」，不伪造已结束
             const alive = state ? true : (stateError ? null : false)
             return sendJson(res, 200, {
@@ -6843,13 +6848,11 @@ export function apply(ctx) {
               sessionId,
               alive,
               state: state ?? { engine: 'claude' },
-              messages: cleanOutput
-                ? [{ role: 'assistant', roleLabel: '助手', text: cleanOutput }]
-                : [],
-              total: cleanOutput ? 1 : 0,
-              truncated: false,
-              reason: logsError || stateError || (active ? '' : 'Claude Code 后台会话'),
-              items: cleanOutput ? [{ kind: 'assistant', text: cleanOutput }] : [],
+              messages: transcript.messages ?? [],
+              total: transcript.total ?? 0,
+              truncated: Boolean(transcript.truncated),
+              reason: transcript.reason || stateError || (active ? '' : 'Claude Code 后台会话'),
+              items,
             })
           }
           sendJson(res, 200, {
