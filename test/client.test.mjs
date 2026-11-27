@@ -2603,3 +2603,16 @@ test('站内 PTY：xterm 组件、Host 的 script/winpty 和 HTTP 输入输出�
   assert.match(host, /winpty/)
   assert.match(host, /CLAUDE_TTYS/)
 })
+
+test('下一步问答：历史线程按项目+流程留档，并用 DSH 时间线渲染', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const store = await readFile(new URL('../src/client/assist-store.mjs', import.meta.url), 'utf8')
+  assert.match(index, /loadAssistThread\(repoPath, item\?\.id\)/)
+  assert.match(index, /saveAssistThread\(repoPath, item\.id, assistLog\)/)
+  assert.match(index, /SessionTimeline, \{\s*items: \[/s)
+  assert.match(index, /kind: entry\.role === 'user' \? 'user' : 'assistant'/)
+  assert.match(store, /localStorage/)
+  assert.match(store, /devhub:assist-thread:/)
+  assert.doesNotMatch(index, /alignSelf: 'flex-end', maxWidth: '86%'/)
+})

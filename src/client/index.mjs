@@ -62,10 +62,11 @@ import {
 } from './common.mjs'
 import { HomeView, SessionBadge, pendingFlowStep, sessionActivity, sessionStageText, workspaceMembersView } from './home.mjs'
 import { DevHubSessionQuick } from './session-entry.mjs'
-import { SessionLogPanel } from './session-log.mjs'
+import { SessionLogPanel, SessionTimeline } from './session-log.mjs'
 import { ClaudeConsole } from './claude-console.mjs'
 import { StandaloneSidebar, StandaloneProjectModal } from './standalone-sidebar.mjs'
 import { ClaudeTerminal } from './claude-terminal.mjs'
+import { loadAssistThread, saveAssistThread } from './assist-store.mjs'
 import { DevHubBoundary } from './error-boundary.mjs'
 import { loadLastTab, loadPanelState, saveLastTab, savePanelState } from './ui-state.mjs'
 import { deleteChat, selectChat, startNewChat } from './chat-store.mjs'
@@ -691,7 +692,7 @@ function fileRepoOf(file) {
   return String(file?.repoName ?? (file?.repo ? repoBaseName(file.repo) : ''))
 }
 
-export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals = [], onPendingRefresh, onBack, onSaved, onContext, onLaunch, session, onOpenSession, onUnbindSession, onDeleted, onEditingChange }) {
+export function ItemEditor({ item, ctx, repoPath = '', pendingQuestions = [], pendingApprovals = [], onPendingRefresh, onBack, onSaved, onContext, onLaunch, session, onOpenSession, onUnbindSession, onDeleted, onEditingChange }) {
   const [draft, setDraft] = useState(item)
   const [busy, setBusy] = useState(false)
   // 开启/继续/更换开发会话：建会话、发 Context Pack、绑定都要几秒，期间按钮必须锁住并转圈，
@@ -753,6 +754,15 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 对话式补充：线程只展示最近几轮（完整留痕在 history）
   const [assistBusy, setAssistBusy] = useState(false)
   const [assistLog, setAssistLog] = useState([])
+  // 下一步问答线程按「项目 + 流程」留档：切页签/重开详情仍能回看
+  useEffect(() => {
+    setAssistLog(loadAssistThread(repoPath, item?.id))
+  }, [repoPath, item?.id])
+  useEffect(() => {
+    // 首次挂载时 load 与 save 会在同一轮 effect 里先后跑；空数组不覆盖已存历史
+    if (!item?.id || !assistLog.length) return
+    saveAssistThread(repoPath, item.id, assistLog)
+  }, [repoPath, item?.id, assistLog])
   // 待答问题：questionId -> 选中的选项 label 列表；custom 为自由输入
   const [answerPick, setAnswerPick] = useState({})
   const [answerCustom, setAnswerCustom] = useState({})
@@ -3884,14 +3894,17 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           )),
         )
         : null,
-      assistLog.length
-        ? h('div', { style: { display: 'flex', flexDirection: 'column', gap: 6, marginTop: 4, maxHeight: 220, overflow: 'auto' } },
-          assistLog.map((entry, index) => h('div', {
-            key: `${index}-${entry.role}`,
-            style: entry.role === 'user'
-              ? { alignSelf: 'flex-end', maxWidth: '86%', padding: '6px 10px', borderRadius: '10px 10px 2px 10px', background: T.brandSoft, color: T.text, fontSize: T.font.sm }
-              : { alignSelf: 'flex-start', maxWidth: '86%', padding: '6px 10px', borderRadius: '2px 10px 10px 10px', background: T.surface2, color: T.text2, fontSize: T.font.sm },
-          }, entry.text)),
+      (assistLog.length || assistBusy)
+        ? h('div', { style: { marginTop: 4, padding: '6px 10px', border: `1px solid ${T.borderSoft}`, borderRadius: T.rBase, background: T.surface2 } },
+          h(SessionTimeline, {
+            items: [
+              ...assistLog.map((entry) => ({ kind: entry.role === 'user' ? 'user' : 'assistant', text: entry.text })),
+              ...(assistBusy ? [{ kind: 'assistant', text: '工作站正在处理这条补充…' }] : []),
+            ],
+            maxHeight: 220,
+            collapseOlder: false,
+            emptyText: '还没有问答记录',
+          }),
         )
         : null,
       h('div', { style: { display: 'flex', gap: T.gap.xs, marginTop: 4 } },
@@ -5252,6 +5265,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
               pending: true,
             })
             : null,
+          repoPath: state?.repo?.path ?? '',
           onOpenSession: openSession,
           onUnbindSession: unbindSession,
           onEditingChange: setDetailEditing,
