@@ -62,6 +62,7 @@ import {
 import { HomeView, SessionBadge, pendingFlowStep, sessionActivity, sessionStageText, workspaceMembersView } from './home.mjs'
 import { DevHubSessionQuick } from './session-entry.mjs'
 import { SessionLogPanel } from './session-log.mjs'
+import { ClaudeConsole } from './claude-console.mjs'
 import { DevHubBoundary } from './error-boundary.mjs'
 import { loadLastTab, loadPanelState, saveLastTab, savePanelState } from './ui-state.mjs'
 import { deleteChat, selectChat, startNewChat } from './chat-store.mjs'
@@ -1295,7 +1296,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     const boundId = draft.session?.id
     if (!boundId) { onLaunch?.(draft.id); return }
     if (draft.externalState?.status === 'blocked') {
-      setNotice('Claude Code 正在等待授权/选择：已打开终端，请处理后回来继续')
+      setNotice('Claude Code 正在等待授权/选择：已打开会话控制台，处理后回来继续')
       onOpenSession?.(boundId)
       return
     }
@@ -3980,7 +3981,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             ? false
             : (Boolean(draft.running) || externalState === 'working' || externalState === 'running'),
           reason: externalBlocked
-            ? '等待授权/选择，请打开终端处理'
+            ? '等待授权/选择，请打开会话控制台'
             : (flowDone ? '流程已完成：外部会话状态不再参与推进判断' : `${draft.session.engine} 外部会话（状态由 CLI 提供）`),
           lastStage: null,
           turns: null,
@@ -4055,7 +4056,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             h('span', { style: { fontWeight: 600 } }, 'Claude Code 正在等待授权或选择'),
             h('div', { style: styles.spacer }),
             onOpenSession
-              ? h(Button, { style: { height: 26, padding: '0 9px', fontSize: T.font.xs }, onClick: () => onOpenSession(boundId), children: '打开终端处理' })
+              ? h(Button, { style: { height: 26, padding: '0 9px', fontSize: T.font.xs }, onClick: () => onOpenSession(boundId), children: '打开会话控制台' })
               : null,
           ),
           h('div', { style: { ...styles.smallMuted, marginTop: 4 } },
@@ -4203,7 +4204,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               // 评审动作即使开发会话还在跑也允许点击：先确认是否接受“可能审到半成品”
               disabled: busy || Boolean(launchBusy) || reviewBusy || (isAnalysisFlow ? false : advance.disabled) || (sessionRunning && !reviewAction),
               title: !flowDone && draft.externalState?.status === 'blocked'
-                ? 'Claude Code 正在等待授权/选择：点它打开终端处理'
+                ? 'Claude Code 正在等待授权/选择：点它会话控制台查看/发送'
                 : sessionRunning
                   ? (reviewAction ? '开发会话还在运行：点击会先确认是否现在评审' : '开发会话正在工作：等当前这步结束再继续推进')
                   : (advanceHint || undefined),
@@ -4211,7 +4212,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                 // 外部会话 blocked 是终端里的授权/选择，不是流程动作；点击先去终端，
                 // 不能让按钮显示“等待授权”却去派评审/继续开发。
                 if (!flowDone && draft.externalState?.status === 'blocked' && draft.session?.id) {
-                  setNotice('Claude Code 正在等待授权/选择：已打开终端，请处理后回来继续')
+                  setNotice('Claude Code 正在等待授权/选择：已打开会话控制台，处理后回来继续')
                   onOpenSession?.(draft.session.id)
                   return
                 }
@@ -4412,6 +4413,8 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   const [wsPicked, setWsPicked] = useState([])
   const [wsError, setWsError] = useState('')
   const [selected, setSelected] = useState(null)
+  // Claude Code 会话内嵌控制台：不打开本机 Terminal，直接在站内看记录/发消息
+  const [claudeConsole, setClaudeConsole] = useState(null)
   // 详情是否处于编辑态：编辑时暂停自动刷新，避免把未保存输入冲掉
   const [detailEditing, setDetailEditing] = useState(false)
   // 最近一次写进 state 的详情 JSON：自动刷新只在内容真变化时 setState（避免无意义重渲染/重置草稿）
@@ -4750,6 +4753,11 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
     const id = String(sessionId ?? '').trim()
     const current = state?.selectedItem
     if (!id) { setError('该流程还没有绑定开发会话'); return }
+    if (current?.session?.engine === 'claude' && id === current.session.id) {
+      // 不调用本机 Terminal.app：Claude Code 的查看/发送在站内控制台完成
+      setClaudeConsole({ itemId: current.id, sessionId: id })
+      return
+    }
     if (current?.session?.engine === 'claude') {
       try {
         if (current.session.engine === 'claude') {
@@ -4882,7 +4890,7 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
         setState((current) => current ? { ...current, selectedItem: body?.item ?? current.selectedItem } : current)
         setNotice(sessionId
           ? `${continueExisting ? '已把最新上下文追加到' : '已用 Claude Code 启动'}后台会话 ${sessionId}。可在下方查看日志，或点「打开会话」进终端。`
-          : 'Claude Code 已启动，但没有拿到会话 id；请打开终端确认。')
+          : 'Claude Code 已启动，但没有拿到会话 id；请打开会话控制台确认。')
         await reload()
         return { sessionId, sent: Boolean(sessionId), continued: continueExisting }
       }
@@ -5345,6 +5353,28 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
         },
       }),
     ) : null,
+    claudeConsole
+      ? h(Modal, {
+        title: 'Claude Code 会话',
+        width: 'min(920px, 94vw)',
+        onClose: () => setClaudeConsole(null),
+      }, h(ClaudeConsole, {
+        itemId: claudeConsole.itemId,
+        sessionId: claudeConsole.sessionId,
+        onSessionChange: (next) => {
+          setClaudeConsole((current) => current ? { ...current, sessionId: next } : current)
+          setState((current) => current?.selectedItem
+            ? {
+                ...current,
+                selectedItem: {
+                  ...current.selectedItem,
+                  session: { ...(current.selectedItem.session ?? {}), id: next },
+                },
+              }
+            : current)
+        },
+      }))
+      : null,
     // 报告入口不靠 window.open：站内弹窗一定能打开；弹窗内再提供保存到本机/打开完整报告
     reportPreviewId
       ? h(Modal, {

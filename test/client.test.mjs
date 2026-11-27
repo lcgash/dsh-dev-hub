@@ -2395,7 +2395,7 @@ test('需求澄清卡片显示本轮耗时和实际引擎', async () => {
   assert.match(flow, /elapsedMs: Number\.isFinite/)
 })
 
-test('Claude 授权/选择：blocked 会话提示打开终端，权限模式可配置', async () => {
+test('Claude 授权/选择：blocked 会话提示打开站内会话控制台，权限模式可配置', async () => {
   const { readFile } = await import('node:fs/promises')
   const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
@@ -2404,6 +2404,7 @@ test('Claude 授权/选择：blocked 会话提示打开终端，权限模式可�
   assert.match(host, /externalState/)
   assert.match(host, /permissionMode: projectAutomation\(profile, repo\)\.claudePermissionMode/)
   assert.match(index, /Claude Code 正在等待授权或选择/)
+  assert.match(index, /打开会话控制台/)
   assert.match(settings, /claudePermissionMode/)
   assert.match(automation, /bypassPermissions/)
 })
@@ -2439,14 +2440,14 @@ test('所有 Agent 流程都通过当前 AI 引擎：扫描/澄清/评审/需求
   assert.match(host, /engine: projectAutomation\(profile, repo\)\.engine/)
 })
 
-test('Claude 等待授权时继续推进会打开终端，而不是假成功', async () => {
+test('Claude 等待授权时继续推进会打开站内会话控制台，而不是假成功', async () => {
   const { readFile } = await import('node:fs/promises')
   const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(host, /正在等待.*授权\/选择/)
   assert.match(host, /current\.state/)
   assert.match(index, /draft\.externalState\?\.status === 'blocked'/)
-  assert.match(index, /已打开终端，请处理后回来继续/)
+  assert.match(index, /已打开会话控制台，处理后回来继续/)
 })
 
 test('Claude resume fork：新会话 id 必须重新绑定到台账', async () => {
@@ -2550,4 +2551,20 @@ test('流程已完成：外部 Claude 会话遗留 blocked 不再显示等待授
   assert.doesNotMatch(html, /Claude Code 正在等待授权或选择/)
   assert.doesNotMatch(html, /等待授权\/选择/)
   assert.match(html, /流程已完成/)
+})
+
+test('Claude 会话控制台：站内查看记录 + 发送消息，不调用本机终端', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
+  const consoleSource = await readFile(new URL('../src/client/claude-console.mjs', import.meta.url), 'utf8')
+  const host = await readFile(new URL('../src/index.mjs', import.meta.url), 'utf8')
+  // 绑定的 Claude 会话走站内控制台，而不是 API.claude open 本机 Terminal
+  assert.match(index, /id === current\.session\.id/)
+  assert.match(index, /setClaudeConsole\(\{ itemId: current\.id, sessionId: id \}\)/)
+  assert.match(index, /h\(ClaudeConsole/)
+  assert.match(consoleSource, /API\.sessionTranscript/)
+  assert.match(consoleSource, /action: 'send'/)
+  assert.match(consoleSource, /force: true/)
+  assert.match(host, /body\.force !== true/)
+  assert.match(consoleSource, /onSessionChange/)
 })
