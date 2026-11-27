@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import { execFile, execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { delimiter, join } from 'node:path'
 import test from 'node:test'
 
 const FAKE_CLAUDE = `#!/usr/bin/env node
@@ -24,8 +24,15 @@ test('standalone E2E：Claude 开工 → bridge 回写 → 评审 → 自测 →
   const repo = join(root, 'repo')
   const binDir = join(root, 'bin')
   await Promise.all([mkdir(home, { recursive: true }), mkdir(binDir, { recursive: true }), mkdir(repo, { recursive: true })])
-  const fakeClaude = join(binDir, 'claude')
-  await writeFile(fakeClaude, FAKE_CLAUDE, { mode: 0o755 })
+  const isWin = process.platform === 'win32'
+  const fakeClaude = join(binDir, isWin ? 'claude.cmd' : 'claude')
+  if (isWin) {
+    // Windows 的 claude 通常是 .cmd：runExecutable / which 都必须走 cmd.exe。
+    await writeFile(join(binDir, 'claude.js'), FAKE_CLAUDE)
+    await writeFile(fakeClaude, '@echo off\r\nnode "%~dp0claude.js" %*\r\n')
+  } else {
+    await writeFile(fakeClaude, FAKE_CLAUDE, { mode: 0o755 })
+  }
   execFileSync('git', ['init', '-q'], { cwd: repo })
   execFileSync('git', ['config', 'user.email', 'e2e@example.com'], { cwd: repo })
   execFileSync('git', ['config', 'user.name', 'E2E'], { cwd: repo })
@@ -34,10 +41,11 @@ test('standalone E2E：Claude 开工 → bridge 回写 → 评审 → 自测 →
   execFileSync('git', ['commit', '-qm', 'init'], { cwd: repo })
 
   // HostContext 的 PROFILE_DIR 是模块级常量：必须在 import 前设置。
+  const pathKey = Object.keys(process.env).find((key) => key.toLowerCase() === 'path') ?? 'PATH'
   const previousHome = process.env.DEVHUB_HOME
-  const previousPath = process.env.PATH
+  const previousPath = process.env[pathKey]
   process.env.DEVHUB_HOME = home
-  process.env.PATH = `${binDir}:${process.env.PATH ?? ''}`
+  process.env[pathKey] = `${binDir}${delimiter}${previousPath ?? ''}`
   const { startStandaloneServer } = await import('../src/standalone/server.mjs')
   const instance = await startStandaloneServer({ port: 0 })
   const auth = { 'content-type': 'application/json', 'x-devhub-token': instance.token }
@@ -82,7 +90,7 @@ test('standalone E2E：Claude 开工 → bridge 回写 → 评审 → 自测 →
       execFile(process.execPath, [join(process.cwd(), 'bin', 'devhub.mjs'), 'update', '--bridge', bridge,
         '--task', 'fake claude 写了函数', '--done', '--change-point', '新增 e2e 函数'], {
         cwd: repo,
-        env: { ...process.env, DEVHUB_HOME: home, PATH: `${binDir}:${process.env.PATH ?? ''}` },
+        env: { ...process.env, DEVHUB_HOME: home, [pathKey]: `${binDir}${delimiter}${previousPath ?? ''}` },
         encoding: 'utf8',
       }, (error, stdout, stderr) => {
         if (error) reject(new Error(`${error.message}\n${stderr ?? ''}`))
@@ -111,8 +119,8 @@ test('standalone E2E：Claude 开工 → bridge 回写 → 评审 → 自测 →
     await instance.close()
     if (previousHome === undefined) delete process.env.DEVHUB_HOME
     else process.env.DEVHUB_HOME = previousHome
-    if (previousPath === undefined) delete process.env.PATH
-    else process.env.PATH = previousPath
+    if (previousPath === undefined) delete process.env[pathKey]
+    else process.env[pathKey] = previousPath
     await rm(root, { recursive: true, force: true })
   }
 })

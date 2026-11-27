@@ -258,6 +258,15 @@ shim 只用于 P0 验证和 v0.1 过渡。v0.1 发布前必须把路由注册从
 - `close()` 会关闭 keep-alive 连接，E2E 不会因为 undici 连接池挂住。
 - 仍缺：Windows 实机冒烟、单实例跨宿主（DSH 插件 + 独立版同时写台账）写锁、发布版本号与 npm dry-run。
 
+## 5.6 发布前加固（2026-11-27）
+
+- 版本升到 `0.2.0-beta.1`，中英文 CHANGELOG 记录独立版能力与边界。
+- `npm pack` 产物 `dsh-dev-hub-0.2.0-beta.1.tgz` 在临时 prefix 与空 HOME 安装/启动通过。
+- 新增 `.github/workflows/standalone-ci.yml`：Ubuntu/macOS/Windows × Node 22/24，跑 build + standalone server + fake Claude E2E。
+- E2E 测试已做 Windows 形态：fake `claude.cmd` + `claude.js`、`path.delimiter`、`where`/`cmd.exe` 路径。
+- 真实 Claude CLI 的一次性 `-p` 调用可用；但 DevHub 全链路真实会话仍需手工跑一条（不能拿 fake 结果冒充）。
+- CI 尚未在 GitHub 上实际跑过；Windows 证据要等 CI 结果，不能先写成“已通过”。
+
 ## 6. 数据与兼容契约
 
 - 仓库台账继续是 `.dev-hub/items/*.json`，不新增第二套存储。
