@@ -28,8 +28,12 @@ jobs:
           status=0
           node --test test/onboarding.test.mjs test/standalone-server.test.mjs test/standalone-e2e.test.mjs 2>&1 | tee standalone-test.log || status=$?
           if [ "$status" -ne 0 ]; then
-            tail -80 standalone-test.log | while IFS= read -r line; do
-              echo "::error::$line"
-            done
+            {
+              echo '## standalone tests failed'
+              echo '```'
+              tail -160 standalone-test.log
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::standalone tests failed; see the job summary for the full tail"
           fi
           exit "$status"
