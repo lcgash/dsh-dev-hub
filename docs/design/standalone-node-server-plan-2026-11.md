@@ -309,6 +309,14 @@ shim 只用于 P0 验证和 v0.1 过渡。v0.1 发布前必须把路由注册从
 - 侧栏视觉是半透明 source list：34px 行高、蓝色选中、项目名/分支两行、无重边框。
 - 依赖 panel 已拆分到 `src/client/standalone-sidebar.mjs`；内容区仍复用既有 HomeView/Panel/Chat，不复制流程逻辑。
 
+## 5.12 v0.1 工程收口（2026-11-27）
+
+- `npm pack` 最终产物 `dsh-dev-hub-0.2.0-beta.1.tgz` 在临时 prefix + 空 HOME 安装，`devhub` 启动 62 routes，静态页与 token 注入正常。
+- GitHub Actions `standalone-ci` 全矩阵 passing（Ubuntu/macOS/Windows × Node 22/24）。
+- 本机全量 `npm test` 637 pass / 0 fail；typecheck/build 通过；DSH 插件仅插件重载后 `/state` 正常。
+- 仍未替用户执行的安全步骤：真实 worktree 首次信任授权、真实 Claude 权限处理。DevHub 已给出路径和下一步，但不能替用户接受 Claude 的安全设置。真实 Claude `-p` / `--bg` stdin 已单独验证。
+- 其余 v0.1 DoD 已满足；人工真实流程验收是发布前的人工动作，不是代码阻塞。
+
 ## 6. 数据与兼容契约
 
 - 仓库台账继续是 `.dev-hub/items/*.json`，不新增第二套存储。
