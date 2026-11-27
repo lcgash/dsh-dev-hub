@@ -6,13 +6,14 @@ test('standalone M0：现有 Host 路由可在纯 Node HTTP server 上启动', a
   const instance = await startStandaloneServer()
   try {
     assert.equal(instance.routes.length, 60)
+    const auth = { headers: { 'x-devhub-token': instance.token } }
     const health = await fetch(`${instance.url}/health`)
     assert.equal(health.status, 200)
     const body = await health.json()
     assert.equal(body.ok, true)
     assert.equal(body.routes, 60)
 
-    const state = await fetch(`${instance.url}/api/dev-hub/state`)
+    const state = await fetch(`${instance.url}/api/dev-hub/state`, auth)
     assert.equal(state.status, 200)
     const stateBody = await state.json()
     assert.equal(stateBody.ok, true)
@@ -30,7 +31,10 @@ test('standalone M0：现有 Host 路由可在纯 Node HTTP server 上启动', a
     assert.match(js, /createRoot/)
     assert.doesNotMatch(js, /__ModuleLoader__/)
 
-    const missing = await fetch(`${instance.url}/api/dev-hub/not-a-route`)
+    const denied = await fetch(`${instance.url}/api/dev-hub/state`)
+    assert.equal(denied.status, 403)
+
+    const missing = await fetch(`${instance.url}/api/dev-hub/not-a-route`, auth)
     assert.equal(missing.status, 404)
   } finally {
     await instance.close()

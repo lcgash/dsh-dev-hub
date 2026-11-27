@@ -888,8 +888,11 @@ test('回归：会话运行中主按钮变成禁用的「正在开发…」，�
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /const sessionRunning = Boolean\(draft\.session\?\.id\)[\s\S]{0,160}Boolean\(session\?\.running\) \|\| Boolean\(draft\.running\)/)
-  assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| reviewBusy \|\| \(!flowDone && draft\.externalState\?\.status === 'blocked'\) \|\| \(isAnalysisFlow \? false : advance\.disabled\)/)
+  assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| reviewBusy \|\| \(isAnalysisFlow \? false : advance\.disabled\)/)
   assert.match(index, /开发会话还在运行。现在开始评审可能读到半成品代码/)
+  // blocked 不是禁用的死按钮：点它打开终端处理，避免“等待授权”和“重新评审”口径打架
+  assert.match(index, /处理会话授权/)
+  assert.match(index, /if \(!flowDone && draft\.externalState\?\.status === 'blocked' && draft\.session\?\.id\)/)
   assert.match(index, /sessionRunning && reviewAction/)
   assert.match(index, /advance\.label \|\| '评审'/)
   assert.match(index, /sessionRunning\s*\?\s*\[h\(Spinner/)

@@ -332,7 +332,10 @@ export async function loadLocaleDictionaries({
   const response = await fetchImpl(endpoint, {
     signal,
     cache: 'no-store',
-    headers: { accept: 'application/json' },
+    headers: {
+      accept: 'application/json',
+      ...(globalThis.__DEVHUB_TOKEN__ ? { 'x-devhub-token': String(globalThis.__DEVHUB_TOKEN__) } : {}),
+    },
   })
   if (!response?.ok) {
     throw new Error(`语言词典请求失败：HTTP ${response?.status ?? 'unknown'}`)

@@ -8,7 +8,8 @@
     ".": "./lib/index.js",
     "./client": "./lib/client.js",
     "./package.json": "./package.json",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./standalone": "./src/standalone/server.mjs"
   },
   "dsh": {
     "manifestVersion": 1,
@@ -70,5 +71,19 @@
   ],
   "bin": {
     "devhub": "./bin/devhub.mjs"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/cordis": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-dom": {
+      "optional": true
+    }
   }
 }

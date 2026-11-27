@@ -314,3 +314,13 @@ test('suggestNextSteps：小改动自动免评审，直接进入测试验证', (
   assert.ok(local.steps.some((step) => step.action === 'local-test'))
   assert.ok(!local.steps.some((step) => step.action === 'start-review'))
 })
+
+test('会话等待授权：下一步只给“先处理授权”，不再建议重新评审/继续开发', () => {
+  const blocked = suggestNextSteps(
+    flow({ status: 'developing', workflow: { stage: 'develop', tests: { local: { status: 'not_run' }, environment: { status: 'not_run' } } } }),
+    { sessionId: 's1', running: false, blocked: true, alive: true },
+  )
+  assert.equal(blocked.steps[0].action, 'open-session')
+  assert.match(blocked.steps[0].title, /授权/)
+  assert.ok(!blocked.steps.some((step) => ['start-review', 'rework', 'local-test', 'env-test'].includes(step.action)))
+})

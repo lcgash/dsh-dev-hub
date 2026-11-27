@@ -297,7 +297,9 @@ const S = {
 
 /** 本机附件 URL：Host 只服务附件目录内的文件，浏览器不能直接读 file://。 */
 function attachmentUrl(entry) {
-  return `${API.attachment}?path=${encodeURIComponent(String(entry?.path ?? ''))}`
+  const base = `${API.attachment}?path=${encodeURIComponent(String(entry?.path ?? ''))}`
+  // <img> 不能自定义请求头：独立 server 用 query token 授权；DSH 插件没有 token，URL 不变。
+  return globalThis.__DEVHUB_TOKEN__ ? `${base}&token=${encodeURIComponent(String(globalThis.__DEVHUB_TOKEN__))}` : base
 }
 
 /** 附件 chip：图片显示缩略图，点名称/缩略图打开预览；可选的移除按钮保留在右侧。 */

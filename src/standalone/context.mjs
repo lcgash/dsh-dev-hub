@@ -1,9 +1,9 @@
 /**
- * M0 spike only: a minimal Cordis-compatible context for the standalone host.
+ * Standalone HostContext.
  *
- * The production path (M1) will replace this with a real HostContext adapter.
- * Keep this file free of DSH-specific behavior so the spike can prove which
- * existing routes already run without a DSH process.
+ * Existing routes still accept the Cordis-shaped `ctx` surface (get/sessions/
+ * agents). Standalone implements only what the external-CLI path needs; DSH-
+ * only services are deliberately null instead of pretending to exist.
  */
 export function createStandaloneContext({ services = {}, sessions, agents } = {}) {
   const routes = []

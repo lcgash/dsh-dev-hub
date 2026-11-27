@@ -413,7 +413,12 @@ export async function api(url, options = {}) {
   try {
     response = await fetch(url, {
       ...options,
-      headers: { 'content-type': 'application/json', ...(options.headers ?? {}) },
+      headers: {
+        'content-type': 'application/json',
+        // 独立 Node Server 的启动 token；DSH 插件里这个全局不存在，不改变原请求。
+        ...(globalThis.__DEVHUB_TOKEN__ ? { 'x-devhub-token': String(globalThis.__DEVHUB_TOKEN__) } : {}),
+        ...(options.headers ?? {}),
+      },
     })
   } catch (err) {
     // 网络层失败（DSH 重启/页面与宿主断开）不要把 TypeError 直接甩给用户

@@ -228,6 +228,16 @@ shim 只用于 P0 验证和 v0.1 过渡。v0.1 发布前必须把路由注册从
 - 独立首页已用 headless Chrome 验证，不再是占位页。
 - 剩余：正式 DSH adapter、独立 sessions/agents、Claude 全链路、鉴权与 npm 包安装验收。
 
+## 5.3 当前进度（2026-11-27 17:10）
+
+- `devhub` / `devhub serve` / `devhub doctor` 可用；`npm pack` + 临时 prefix 安装 + 空 HOME 启动已验证。
+- `createRoutes(ctx)` 已抽出；独立 server 直接使用，DSH 插件仍由 `apply(ctx)` 注册同一组路由。
+- 独立浏览器构建（`lib/standalone.js`，React 打包）已能加载首页；headless Chrome 已渲染真实流程。
+- 独立宿主通过 `globalThis.__DEVHUB_STANDALONE__` 回退 Claude；`/settings` 返回 `dshAvailable:false`，UI 隐藏 DSH 引擎。
+- 启动 token 鉴权、Host/Origin 校验、附件 query token 已接入；无 token 的 `/api/dev-hub/*` 返回 403（bridge CLI 除外）。
+- `peerDependenciesMeta` 已把 DSH/React 标 optional；空环境安装不拉 DSH 包。
+- 仍需：独立 sessions/agents 的完整管理页、Claude 全链路真实回归、评审失败不依赖 DSH fallback、Windows 冒烟、官方 README/发布。
+
 ## 6. 数据与兼容契约
 
 - 仓库台账继续是 `.dev-hub/items/*.json`，不新增第二套存储。
