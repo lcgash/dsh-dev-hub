@@ -3950,6 +3950,9 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
           sessionId: boundId,
           boundAt: draft.session?.boundAt ?? null,
           alive: true,
+          external: true,
+          blocked: externalState === 'blocked',
+          state: externalState,
           running: Boolean(draft.running) || externalState === 'working' || externalState === 'running',
           reason: externalState === 'blocked'
             ? '等待授权/选择，请打开终端处理'
@@ -3973,9 +3976,6 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
         h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
           h('span', { style: styles.sectionTitle }, isAnalysisFlow ? '分析会话' : '关联会话'),
           boundId ? h(SessionBadge, { session: live }) : null,
-          boundId && externalEngine && externalState === 'blocked'
-            ? h(Tag, { tone: 'warn' }, '等待授权/选择')
-            : null,
           boundId && Number(live?.turns) > 0
             ? h('span', { style: styles.sectionHint }, `第 ${live.turns} 轮`)
             : null,
@@ -4569,8 +4569,9 @@ function Panel({ ctx, onOpenChat, onOpenClarifications, openFlowId = null, openF
   // 这里每 8 秒拉一次（仅在内容变化时更新），让用户不用手动刷新就能看到阶段回退。
   useEffect(() => {
     if (!selected || !state?.repo || detailEditing) return undefined
-    // 外部会话（Claude/Codex/Pi）通过 bridge 回写任务；运行中 2 秒刷新一次，空闲 5 秒
-    const interval = state?.selectedItem?.running ? 2000 : 5000
+    // 运行中 / 评审待返回时 2 秒刷新一次（评审可能持续数分钟，5 秒会让进度看起来卡住）；空闲 5 秒
+    const reviewPending = ['pending', 'error'].includes(state?.selectedItem?.workflow?.review?.status)
+    const interval = (state?.selectedItem?.running || reviewPending) ? 2000 : 5000
     const timer = setInterval(async () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
       const seq = selectedLoadSeqRef.current

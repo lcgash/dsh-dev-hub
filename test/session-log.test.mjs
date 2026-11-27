@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-const { sessionLog } = await import('../src/host/session-log.mjs')
+const { sanitizeTerminalText, sessionLog } = await import('../src/host/session-log.mjs')
 
 function ctxWith(messages, { alive = true, present = true } = {}) {
   return {
@@ -103,4 +103,11 @@ test('sessionTimeline：job/settled 当作工具活动（命令可读）', async
   assert.equal(result.items[0].name, 'bash')
   assert.match(result.items[0].brief, /mvn -o clean test/)
   assert.equal(result.items[1].status, 'error')
+})
+
+test('sanitizeTerminalText：清掉 ANSI/光标序列，保留可读文本', () => {
+  const raw = '\u001b[2J\u001b[H\u001b[38;2;255;255;255m·\u001b[39mLoading\r\u001b[2CNo sessions match "x".'
+  const clean = sanitizeTerminalText(raw)
+  assert.equal(clean, '·Loading\nNo sessions match "x".')
+  assert.doesNotMatch(clean, /\u001b|\[2C|\[H/)
 })

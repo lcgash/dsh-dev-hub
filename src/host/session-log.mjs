@@ -8,6 +8,26 @@
 const DEFAULT_LIMIT = 30
 const TEXT_MAX = 600
 
+/**
+ * 终端快照清理：Claude Code / Codex 的 `logs` 输出带 ANSI 颜色、光标移动和清屏序列，
+ * 直接塞进详情页会变成 `[2C`、`[H` 这类乱码。这里只保留可读字符，不改变对话内容。
+ * 先删 OSC/CSI 序列，再删单字符 ESC，最后去掉 C0 控制码与多余空行。
+ */
+export function sanitizeTerminalText(value) {
+  return String(value ?? '')
+    .replace(/\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)/g, '')
+    .replace(/\x1b[P^_][^\x1b]*\x1b\\/g, '')
+    .replace(/\x1b\[[0-?]*[ -/]*[@-~]/g, '')
+    .replace(/\x1b[()][A-Za-z0-9]/g, '')
+    .replace(/\x1b[>=]/g, '')
+    .replace(/\x1b/g, '')
+    .replace(/\r/g, '\n')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
 function textOnly(content) {
   if (typeof content === 'string') return content.trim()
   if (!Array.isArray(content)) return ''

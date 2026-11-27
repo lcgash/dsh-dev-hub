@@ -52,7 +52,7 @@ import { extractJson, runAgentJson, runLlmJson } from './host/agent-run.mjs'
 import { answerPendingQuestion, readPendingApprovals, readPendingQuestions } from './host/pending-questions.mjs'
 import { ASSIST_SCHEMA, applyAssistUpdates, buildAssistPrompt } from './core/assist.mjs'
 import { sessionState, sessionStates } from './host/session-state.mjs'
-import { sessionLog, sessionTimeline, sessionTranscript } from './host/session-log.mjs'
+import { sanitizeTerminalText, sessionLog, sessionTimeline, sessionTranscript } from './host/session-log.mjs'
 import { buildSessionCatalog } from './host/session-catalog.mjs'
 import { loadLocaleBundle } from './host/locales.mjs'
 import { addCustomConstraint, installSkill, regenerateConventions, removeConstraint, uninstallSkill, updateConstraint } from './core/conventions.mjs'
@@ -855,7 +855,7 @@ async function claudeLogs(id) {
     env: process.env,
     windowsHide: true,
   })
-  return `${stdout ?? ''}${stderr ? '\n' + stderr : ''}`.trim()
+  return sanitizeTerminalText(`${stdout ?? ''}${stderr ? '\n' + stderr : ''}`)
 }
 
 function openClaudeTerminal(root, id) {
@@ -6565,26 +6565,37 @@ export function apply(ctx) {
             }
             let output = ''
             let state = null
+            let logsError = ''
+            let stateError = ''
             try {
               output = sessionId ? await claudeLogs(sessionId) : ''
+            } catch (error) {
+              logsError = `读取 Claude Code 日志失败：${String(error?.message ?? error)}`
+            }
+            try {
               const agents = await claudeAgents()
               const found = agents.find((entry) => entry.id === sessionId || entry.sessionId === sessionId || String(entry.sessionId ?? '').startsWith(sessionId))
               if (found) state = { engine: 'claude', status: found.state, cwd: found.cwd, name: found.name }
             } catch (error) {
-              output = `读取 Claude Code 日志失败：${String(error?.message ?? error)}`
+              stateError = `无法读取 Claude Code 会话状态：${String(error?.message ?? error)}`
             }
             const active = ['running', 'working', 'in_progress'].includes(String(state?.status ?? '').toLowerCase())
+            const cleanOutput = logsError ? '' : sanitizeTerminalText(output).slice(-20000)
+            // 状态查不到 ≠ 会话已结束：daemon 暂时不可达时显示「读取中」，不伪造已结束
+            const alive = state ? true : (stateError ? null : false)
             return sendJson(res, 200, {
               ok: true,
               itemId: item.id,
               sessionId,
-              alive: active || Boolean(state),
+              alive,
               state: state ?? { engine: 'claude' },
-              messages: [],
-              total: 0,
+              messages: cleanOutput
+                ? [{ role: 'assistant', roleLabel: '助手', text: cleanOutput }]
+                : [],
+              total: cleanOutput ? 1 : 0,
               truncated: false,
-              reason: active ? '' : 'Claude Code 后台会话',
-              items: output ? [{ kind: 'assistant', text: output.slice(-20000) }] : [],
+              reason: logsError || stateError || (active ? '' : 'Claude Code 后台会话'),
+              items: cleanOutput ? [{ kind: 'assistant', text: cleanOutput }] : [],
             })
           }
           sendJson(res, 200, {
