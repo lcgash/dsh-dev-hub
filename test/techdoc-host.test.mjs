@@ -334,3 +334,24 @@ test('Claude bridge：DevHub 重启后从本机 bridge 文件恢复 token，不�
     await rm(repo, { recursive: true, force: true })
   }
 })
+
+test('旧 bridge 没写 repo 且当前项目已切走：按 itemId 扫描项目台账找到流程', async () => {
+  const { repo, routes } = await setup()
+  const other = await tempRepo()
+  const bridgeDir = join(home, 'claude-bridges')
+  const token = 'legacy-bridge-without-repo'
+  try {
+    await call(routes, API.setup, { method: 'POST', body: { repoPath: other, name: '张三' } })
+    await mkdir(bridgeDir, { recursive: true })
+    const bridgePath = join(bridgeDir, 'legacy.json')
+    await writeFile(bridgePath, JSON.stringify({ url: 'http://127.0.0.1', token, itemId: 'techdoc-flow' }), 'utf8')
+    const got = await call(routes, API.cli, { method: 'POST', body: { token, action: 'get' } })
+    assert.equal(got.status, 200, JSON.stringify(got.body))
+    assert.equal(got.body.item.id, 'techdoc-flow')
+    const rewritten = JSON.parse(await readFile(bridgePath, 'utf8'))
+    assert.match(rewritten.repo, /techdoc-repo-[A-Za-z0-9]+$/, '解析到项目后应回写 bridge 文件，避免下次再扫')
+  } finally {
+    await rm(other, { recursive: true, force: true })
+    await rm(repo, { recursive: true, force: true })
+  }
+})

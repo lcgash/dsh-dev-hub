@@ -1877,6 +1877,31 @@ async function rememberRuntimeUrl(req) {
  * DevHub 重启后内存里的 bridge 映射会丢，但 bridge 文件还在本机 profile 里。
  * 按 token 从磁盘找回映射，避免让用户为了“刷新 token”重新开一次会话。
  */
+/**
+ * 旧版 bridge 文件没写 repo；activeRepo 可能已经切到别的项目。
+ * 按 itemId 扫描 profile 里已登记的项目/本机多库项目，找到真正持有该台账的项目。
+ */
+async function findRepoForItem(profile, itemId, preferred = '') {
+  const id = String(itemId ?? '').trim()
+  if (!id) return null
+  const candidates = []
+  const add = (path) => {
+    const value = String(path ?? '').trim()
+    if (value && !candidates.includes(value)) candidates.push(value)
+  }
+  add(preferred)
+  add(profile?.activeRepo)
+  for (const path of Object.keys(profile?.repos ?? {})) add(path)
+  for (const id of Object.keys(profile?.workspaces ?? {})) add(join(PROFILE_DIR, 'workspaces', id))
+  for (const path of candidates) {
+    try {
+      await access(join(dataDir(path), 'items', `${id}.json`))
+      return path
+    } catch { /* 下一个 */ }
+  }
+  return null
+}
+
 async function bridgeEntryFromDisk(token) {
   const wanted = String(token ?? '').trim()
   if (!wanted) return null
@@ -5923,9 +5948,20 @@ export function apply(ctx) {
           if (!entry) throw new Error('DevHub bridge token 无效：bridge 文件可能已被删除，或流程已被删除；请确认流程仍在（不需要为了刷新 token 重开会话）')
           const profile = await loadProfile()
           if (!entry.repo) entry.repo = await activeRepo(profile)
-          if (!entry.repo) throw new Error('这个 bridge 没有记录项目路径：请重新开启一次开发会话')
-          const item = await readItemLocal(profile, entry.repo, entry.itemId)
-          if (!item) throw new Error(`开发项不存在：${entry.itemId}`)
+          let item = entry.repo ? await readItemLocal(profile, entry.repo, entry.itemId) : null
+          if (!item) {
+            const resolved = await findRepoForItem(profile, entry.itemId, entry.repo)
+            if (resolved) {
+              entry.repo = resolved
+              item = await readItemLocal(profile, resolved, entry.itemId)
+              // 把项目路径写回 bridge 文件：下次不再依赖 activeRepo
+              try {
+                const raw = JSON.parse(await readFile(entry.bridgePath, 'utf8'))
+                await writeFile(entry.bridgePath, JSON.stringify({ ...raw, repo: resolved }, null, 2), 'utf8')
+              } catch { /* 回写失败不影响本次 */ }
+            }
+          }
+          if (!item) throw new Error(`开发项不存在：${entry.itemId}（已检查 ${entry.repo || '当前项目'}；bridge 文件可能指向了旧流程）`)
           const action = String(body.action ?? 'get')
           if (action === 'get') return sendJson(res, 200, { ok: true, item })
           if (action !== 'update') throw new Error(`未知 CLI 动作：${action}`)
