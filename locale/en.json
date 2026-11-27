@@ -1409,6 +1409,9 @@
     "术语": "Glossary",
     "没有新的改动：尝试推送当前已提交的 HEAD…": "No new changes: trying to push the current committed HEAD…",
     "开发引擎": "Developer engine",
+    "用于本项目的扫描、澄清、评审与开发会话": "Used for scanning, clarification, review and dev sessions in this project",
+    "正在保存开发引擎": "Saving development engine",
+    "（未安装）": "(not installed)",
     "开发会话引擎": "Development session engine",
     "决定「开启开发会话」时由谁执行代码开发。切换只影响之后启动的会话；已有流程的代码与历史不变。": "Choose who does the coding when starting a development session. Switching affects only future sessions; existing flow code and history stay unchanged.",
     "DSH 原生会话": "Native DSH session",
@@ -1469,6 +1472,7 @@
     "等待授权/选择": "Waiting for approval/choice"
   },
   "templates": {
+    "{value1}（未安装）": "{value1} (not installed)",
     "方案门禁 {value1}": "Design gate {value1}",
     "{value1} · {value2} 位审核员": "{value1} · {value2} reviewers",
     "成员 {name}": "Member {name}",

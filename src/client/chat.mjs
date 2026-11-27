@@ -29,6 +29,7 @@ import {
   fmtTime,
   IconSeat,
   Pill,
+  Spinner,
   Stat,
   T,
   api,
@@ -97,6 +98,13 @@ function scanEngineLabel(engine) {
 function engineName(engine) {
   return { dsh: 'DSH', 'dsh-llm': 'DSH', claude: 'Claude Code', codex: 'Codex', pi: 'Pi' }[engine] ?? 'AI'
 }
+
+const DEV_ENGINE_OPTIONS = [
+  { id: 'dsh', label: 'DSH' },
+  { id: 'claude', label: 'Claude Code' },
+  { id: 'codex', label: 'Codex' },
+  { id: 'pi', label: 'Pi' },
+]
 
 function clarifyElapsed(ms) {
   const value = Number(ms)
@@ -1219,6 +1227,10 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   const [capabilities, setCapabilities] = useState(null)
   // 当前项目的 AI 引擎：用于进度文案，避免所有阶段都写「dsh」
   const [devEngine, setDevEngine] = useState('dsh')
+  const [automation, setAutomation] = useState(null)
+  const [engineSaving, setEngineSaving] = useState(false)
+  const [engineError, setEngineError] = useState('')
+  const [engineAvailable, setEngineAvailable] = useState({ dsh: true, claude: true, codex: true, pi: true })
   const attachInputRef = useRef(null)
   // 任务归属：发起任务时所在的对话 id + 运行令牌；切到别的对话后，旧任务的结果不能再写进当前界面
   const activeChatIdRef = useRef(null)
@@ -1310,10 +1322,43 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   useEffect(() => {
     let alive = true
     api(API.settings)
-      .then((body) => { if (alive) setDevEngine(body?.automation?.engine ?? 'dsh') })
+      .then((body) => {
+        if (!alive) return
+        setAutomation(body?.automation ?? null)
+        setDevEngine(body?.automation?.engine ?? 'dsh')
+        setEngineAvailable({
+          dsh: true,
+          claude: body?.claudeAvailable !== false,
+          codex: body?.codexAvailable !== false,
+          pi: body?.piAvailable !== false,
+        })
+      })
       .catch(() => { if (alive) setDevEngine('dsh') })
     return () => { alive = false }
   }, [])
+
+  /** 在新建流程时直接改本项目的开发引擎，避免到设置页才想起来。 */
+  async function changeDevEngine(next) {
+    if (!next || next === devEngine || engineSaving) return
+    const previous = devEngine
+    setDevEngine(next)
+    setEngineSaving(true)
+    setEngineError('')
+    try {
+      const current = automation ?? (await api(API.settings))?.automation ?? {}
+      const body = await api(API.settings, {
+        method: 'POST',
+        body: JSON.stringify({ automation: { ...current, engine: next } }),
+      })
+      if (body?.automation) setAutomation(body.automation)
+      setDevEngine(body?.automation?.engine ?? next)
+    } catch (err) {
+      setDevEngine(previous)
+      setEngineError(errorText(err))
+    } finally {
+      setEngineSaving(false)
+    }
+  }
 
   function applyConversation(conversation) {
     const restored = Array.isArray(conversation?.messages) ? conversation.messages : []
@@ -2494,6 +2539,25 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
           ? null
           : h('div', { style: S.footer },
         h('div', { style: S.composer },
+        // 引擎选择放在新建流程的输入区上方：创建时就能确认用哪套 AI，而不是去设置页才想起
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 6 } },
+          h('span', { style: { ...styles.smallMuted, fontSize: T.font.xs } }, '开发引擎'),
+          h('select', {
+            style: { ...styles.input, width: 148, height: 28, padding: '0 8px', fontSize: T.font.xs },
+            value: devEngine,
+            disabled: busy || engineSaving,
+            onChange: (event) => changeDevEngine(event.target.value),
+          },
+          DEV_ENGINE_OPTIONS.map((option) => h('option', {
+            key: option.id,
+            value: option.id,
+            disabled: engineAvailable[option.id] === false,
+          }, `${option.label}${engineAvailable[option.id] === false ? '（未安装）' : ''}`)),
+          ),
+          engineSaving ? h(Spinner, { size: 12, tone: 'accent', title: '正在保存开发引擎' }) : null,
+          engineError ? h('span', { style: styles.smallDanger }, engineError) : null,
+          h('span', { style: styles.smallMuted, fontSize: T.font.xs }, '用于本项目的扫描、澄清、评审与开发会话'),
+        ),
         // 输入框在 confirm/plan 阶段按设计是锁住的；把唯一能推进的按钮放到输入区上方，
         // 避免切走再回来后只看到“灰输入框”，误以为 agent 不响应。
         phase === PHASE.confirm && pending
