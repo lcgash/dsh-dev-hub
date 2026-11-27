@@ -283,6 +283,7 @@
     "澄清进行中…（完成后会直接出下一轮问题或规格）": "Clarifying… (on completion you'll get the next round of questions or the spec directly)",
     "请先确认上面的文件/范围与追问，再点「继续，生成计划」": "Confirm the files/scope and questions above first, then click 「Continue, generate plan」",
     "计划已生成：请确认开工，或点「再调整范围」": "Plan generated: confirm to start, or click 「Adjust scope again」",
+    "确认后点输入框上方的「确认开工」。": "Confirm with \"Start\" above the input, or adjust the scope.",
     "说一句你要做什么（Enter 发送，Shift+Enter 换行）": "Say what you want to do (Enter to send, Shift+Enter for a new line)",
     "详情 ▸": "Details ▸",
     "粘贴截图，或选择日志/代码文件作为需求输入": "Paste a screenshot, or choose a log/code file as requirement input",

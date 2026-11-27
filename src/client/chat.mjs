@@ -1103,15 +1103,8 @@ export function PlanCard({ plan, live, busy, syncBeforeStart = true, onSyncBefor
           }),
           '开工前拉取最新代码（git fetch + merge --ff-only）',
         ),
-        h('div', { style: styles.row },
-          h(Button, {
-            primary: true,
-            disabled: busy,
-            onClick: onStartPlan,
-            children: busy ? '正在开工…' : '按这个计划开工',
-          }),
-          h(Button, { disabled: busy, onClick: onAdjustScope, children: '再调整范围' }),
-        ),
+        // 计划卡只展示内容与同步开关；开工按钮统一放在输入区上方，避免同屏出现两套可点按钮。
+        h('div', { style: styles.smallMuted }, '确认后点输入框上方的「确认开工」。')
       )
       : null,
   )
@@ -2175,12 +2168,14 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       setPendingPlan({ id: card.id, plan })
       push(stationMessage(summarizePlan(plan)), card)
       setPhase(PHASE.plan)
+      setProgress(null)
     } catch (err) {
       if (runIsCurrent(run)) {
         push(stationMessage(`生成计划失败：${errorText(err)}（可补充描述或调整范围后重试）`, { tone: 'danger' }))
         setPhase(PHASE.confirm)
       }
     } finally {
+      if (runIsCurrent(run)) setProgress(null)
       finishRun(run, key)
     }
   }
