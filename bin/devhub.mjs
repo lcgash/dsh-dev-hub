@@ -13,14 +13,18 @@
  */
 import { readFile, writeFile } from 'node:fs/promises'
 import { existsSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { homedir } from 'node:os'
 
 function usage() {
   console.error(`DevHub CLI
 
-  node bin/devhub.mjs get --bridge <bridge.json>
-  node bin/devhub.mjs update --bridge <bridge.json> [options]
+  devhub                        启动本机 Node Server 并打开浏览器
+  devhub serve [--port N] [--no-open] [--host H]
+  devhub doctor                 检查 node/git/claude 能力
+  devhub get --bridge <bridge.json>
+  devhub update --bridge <bridge.json> [options]
 
 Options:
   --task <text>          task text (creates or updates)
@@ -62,7 +66,62 @@ function parse(argv) {
   return out
 }
 
+function openBrowser(url) {
+  try {
+    if (process.platform === 'darwin') spawn('open', [url], { detached: true, stdio: 'ignore' }).unref()
+    else if (process.platform === 'win32') spawn('cmd', ['/c', 'start', '', url], { detached: true, stdio: 'ignore' }).unref()
+    else spawn('xdg-open', [url], { detached: true, stdio: 'ignore' }).unref()
+  } catch { /* 无浏览器环境：URL 已打印，用户可手动打开 */ }
+}
+
+function parseHostArgs(argv) {
+  const out = { port: 0, host: '127.0.0.1', open: true }
+  for (let i = 0; i < argv.length; i += 1) {
+    const value = argv[i]
+    if (value === '--no-open') out.open = false
+    else if (value === '--port') out.port = Number(argv[++i] ?? 0)
+    else if (value === '--host') out.host = String(argv[++i] ?? '127.0.0.1')
+  }
+  if (!Number.isInteger(out.port) || out.port < 0) throw new Error('--port 必须是 0 或正整数')
+  return out
+}
+
+function which(bin) {
+  const command = process.platform === 'win32' ? 'where' : 'which'
+  const result = spawnSync(command, [bin], { encoding: 'utf8' })
+  return result.status === 0 ? String(result.stdout).trim().split(/\r?\n/)[0] : null
+}
+
+async function runHostCommand(argv) {
+  const command = argv[0] === 'serve' || argv[0] === 'open' ? 'serve' : (argv[0] ?? 'serve')
+  if (command === 'doctor') {
+    console.log(`node    ${process.version}`)
+    console.log(`git     ${which('git') ?? '未检测到'}`)
+    console.log(`claude  ${which('claude') ?? '未检测到'}`)
+    console.log(`codex   ${which('codex') ?? '未检测到'}`)
+    console.log(`pi      ${which('pi') ?? '未检测到'}`)
+    return
+  }
+  if (command !== 'serve') throw new Error(`未知命令：${command}`)
+  const options = parseHostArgs(argv.slice(1))
+  const { startStandaloneServer } = await import('../src/standalone/server.mjs')
+  const instance = await startStandaloneServer(options)
+  console.log(`[devhub] ${instance.url}  (${instance.routes.length} routes)`)
+  console.log('[devhub] 关闭：Ctrl+C')
+  if (options.open) openBrowser(instance.url)
+  await new Promise((resolve) => {
+    const stop = () => { instance.close().then(resolve, resolve) }
+    process.once('SIGINT', stop)
+    process.once('SIGTERM', stop)
+  })
+}
+
 async function main() {
+  const argv = process.argv.slice(2)
+  if (!argv.length || ['serve', 'open', 'doctor', '--help', '-h'].includes(argv[0])) {
+    if (argv[0] === '--help' || argv[0] === '-h') { usage(); return }
+    return runHostCommand(argv)
+  }
   let parsed
   try { parsed = parse(process.argv.slice(2)) } catch (error) {
     usage(); throw error

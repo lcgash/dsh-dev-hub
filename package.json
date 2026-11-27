@@ -31,7 +31,9 @@
   "scripts": {
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
-    "test": "node --test test/*.test.mjs"
+    "test": "node --test test/*.test.mjs",
+    "start": "node bin/devhub.mjs serve",
+    "standalone": "npm run build && node bin/devhub.mjs serve"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.4",

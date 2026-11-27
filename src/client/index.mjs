@@ -892,6 +892,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
   // 状态与阶段文案经常同义（开发中/开发中、已完成/已完成）：并排只显示一次，避免重复标签
   const stageLabelText = STAGE_LABELS[stage] ?? stage
   const statusLabelText = STATUS_LABELS[draft.status] ?? draft.status
+  // 流程已完成：外部 CLI 遗留的 blocked 状态只是历史，不再阻塞按钮/恐吓用户
+  const flowDone = draft.status === 'done' || stage === 'done'
   const showStageTag = stageLabelText !== statusLabelText
   // 会话正在跑时当前这步还没完：主按钮不应再给「继续推进」（否则会重复排队一次推进）
   const sessionRunning = Boolean(draft.session?.id)
@@ -3588,6 +3590,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       if (action === 'local-test') { runTest('local'); return }
       if (action === 'env-test') { runTest('environment'); return }
       if (action === 'submit') { setTab('test'); return }
+      if (action === 'open-session') { onOpenSession?.(draft.session?.id ?? boundId); return }
       if (action === 'edit-plan') {
         setTab('plan')
         beginEdit('plan')
@@ -3961,21 +3964,23 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
     const boundId = draft.session?.id ?? null
     const externalEngine = ['claude', 'codex', 'pi'].includes(draft.session?.engine)
     const externalState = String(draft.externalState?.status ?? '').toLowerCase()
+    // 流程已完成：旧外部 CLI 的 blocked 不再阻塞/恐吓用户；只作为历史状态展示
+    const externalBlocked = externalState === 'blocked' && !flowDone
     const live = externalEngine
       ? {
           sessionId: boundId,
           boundAt: draft.session?.boundAt ?? null,
           alive: true,
           external: true,
-          completed: draft.status === 'done' || stage === 'done',
-          blocked: externalState === 'blocked',
+          completed: flowDone,
+          blocked: externalBlocked,
           state: externalState,
-          running: externalState === 'blocked'
+          running: externalBlocked
             ? false
             : (Boolean(draft.running) || externalState === 'working' || externalState === 'running'),
-          reason: externalState === 'blocked'
+          reason: externalBlocked
             ? '等待授权/选择，请打开终端处理'
-            : `${draft.session.engine} 外部会话（状态由 CLI 提供）`,
+            : (flowDone ? '流程已完成：外部会话状态不再参与推进判断' : `${draft.session.engine} 外部会话（状态由 CLI 提供）`),
           lastStage: null,
           turns: null,
         }
@@ -4043,7 +4048,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
       boundId && !externalEngine && live?.alive === false && live?.reason
         ? h('div', { style: styles.sectionHint }, `说明：${live.reason}`)
         : null,
-      boundId && draft.externalState?.status === 'blocked'
+      boundId && !flowDone && draft.externalState?.status === 'blocked'
         ? h('div', { style: styles.warnCard },
           h('div', { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
             h('span', { style: { fontWeight: 600 } }, 'Claude Code 正在等待授权或选择'),
@@ -4120,7 +4125,7 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
             reviewView.status === 'failed' && stage === 'develop'
               ? h(Tag, { tone: 'danger' }, '评审未通过 · 待纠偏')
               : null,
-            draft.externalState?.status === 'blocked'
+            !flowDone && draft.externalState?.status === 'blocked'
               ? h(Tag, { tone: 'warn' }, '等待授权/选择')
               : running
               ? h(Tag, {
@@ -4195,13 +4200,20 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
               },
               // 评审 running（pending）时禁用并显示「评审中」；失败/异常时保持可点，再点即重试派发
               // 评审动作即使开发会话还在跑也允许点击：先确认是否接受“可能审到半成品”
-              disabled: busy || Boolean(launchBusy) || reviewBusy || draft.externalState?.status === 'blocked' || (isAnalysisFlow ? false : advance.disabled) || (sessionRunning && !reviewAction),
-              title: draft.externalState?.status === 'blocked'
-                ? 'Claude Code 正在等待授权/选择：请先在会话卡片里打开终端处理'
+              disabled: busy || Boolean(launchBusy) || reviewBusy || (isAnalysisFlow ? false : advance.disabled) || (sessionRunning && !reviewAction),
+              title: !flowDone && draft.externalState?.status === 'blocked'
+                ? 'Claude Code 正在等待授权/选择：点它打开终端处理'
                 : sessionRunning
                   ? (reviewAction ? '开发会话还在运行：点击会先确认是否现在评审' : '开发会话正在工作：等当前这步结束再继续推进')
                   : (advanceHint || undefined),
               onClick: () => {
+                // 外部会话 blocked 是终端里的授权/选择，不是流程动作；点击先去终端，
+                // 不能让按钮显示“等待授权”却去派评审/继续开发。
+                if (!flowDone && draft.externalState?.status === 'blocked' && draft.session?.id) {
+                  setNotice('Claude Code 正在等待授权/选择：已打开终端，请处理后回来继续')
+                  onOpenSession?.(draft.session.id)
+                  return
+                }
                 if (isAnalysisFlow) {
                   if (draft.session?.id) runLaunch('continue', continueAnalysis)
                   else runLaunch('open', () => onLaunch?.(draft.id))
@@ -4233,8 +4245,8 @@ export function ItemEditor({ item, ctx, pendingQuestions = [], pendingApprovals 
                     ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '正在继续开发会话…']
                     : launchBusy === 'open'
                       ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '正在开启开发会话…']
-                      : draft.externalState?.status === 'blocked'
-                        ? '等待授权/选择'
+                      : !flowDone && draft.externalState?.status === 'blocked'
+                        ? '处理会话授权'
                         : sessionRunning
                         ? [h(Spinner, { key: 'spin', size: 10, tone: 'accent', style: spinnerOnBrand }), '正在开发…']
                         : advance.action === 'wait'
@@ -5552,7 +5564,7 @@ export function switchBodyForTarget(target, member = null) {
   return { repoPath: target?.path ?? null, name: target?.member ?? member ?? null, detect: false }
 }
 
-function DevHubPage({ ctx }) {
+export function DevHubPage({ ctx }) {
   // 页签：恢复上次所在的页面（切走面板再回来、刷新页面都保持）；没有记录才默认「流程」
   const [tab, setTabState] = useState(() => {
     const saved = loadLastTab() ?? 'flows'

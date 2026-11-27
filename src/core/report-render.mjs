@@ -162,9 +162,10 @@ function renderFieldsMarkdown(block) {
 function renderListMarkdown(block) {
   const items = normalizeArray(block.items)
   if (!items.length) return ['_未填写_']
-  return items.map((item) => {
+  return items.map((item, index) => {
     const meta = text(item.meta).trim()
-    return `- ${display(item.text, '')}${meta ? `（${meta}）` : ''}`
+    const prefix = block.ordered === true ? `${index + 1}.` : '-'
+    return `${prefix} ${display(item.text, '')}${meta ? `（${meta}）` : ''}`
   })
 }
 
@@ -477,8 +478,9 @@ code, pre, .mono, .num { font-family: ${MONO_FONT}; }
 .field-value.tone-warn { color: var(--warning); }
 .field-value.tone-info { color: var(--info); }
 .field-value.tone-neutral { color: var(--text-2); }
-.bullet-list { list-style: none; }
-.bullet-list li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; font-size: 13px; line-height: 1.8; color: var(--text-2); }
+.bullet-list, .ordered-list { list-style: none; }
+.ordered-list .item-index { flex: 0 0 auto; min-width: 18px; text-align: right; font-size: 12px; font-weight: 600; color: var(--text-4); font-variant-numeric: tabular-nums; }
+.bullet-list li, .ordered-list li { display: flex; align-items: flex-start; gap: 8px; padding: 8px 0; font-size: 13px; line-height: 1.8; color: var(--text-2); }
 .bullet-dot { width: 6px; height: 6px; flex: 0 0 auto; margin-top: .75em; border-radius: 999px; background: var(--text-4); }
 .bullet-dot.tone-ok { background: var(--success); }
 .bullet-dot.tone-danger { background: var(--danger); }
@@ -594,11 +596,15 @@ function renderFieldsHtml(block) {
 function renderListHtml(block) {
   const items = normalizeArray(block.items)
   if (!items.length) return emptyHtml()
-  return `<ul class="bullet-list">${items
-    .map((item) => {
+  const ordered = block.ordered === true
+  return `<ul class="${ordered ? 'ordered-list' : 'bullet-list'}">${items
+    .map((item, index) => {
       const tone = toneOf(item.tone)
       const meta = text(item.meta).trim()
-      return `<li><span class="bullet-dot tone-${tone}"></span><span class="item-text">${escapeHtml(
+      const marker = ordered
+        ? `<span class="item-index">${index + 1}.</span>`
+        : `<span class="bullet-dot tone-${tone}"></span>`
+      return `<li>${marker}<span class="item-text">${escapeHtml(
         display(item.text, ''),
       )}</span>${meta ? `<span class="item-meta">${escapeHtml(meta)}</span>` : ''}</li>`
     })

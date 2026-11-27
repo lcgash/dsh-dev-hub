@@ -421,21 +421,39 @@ function scopeSection(item, files, workspace, reportSet = reportFileSet(files)) 
 }
 
 /**
+ * 把一条长结论/风险按句号/分号拆成编号要点。
+ * 台账里的结论经常是一大段“；”连写；直接渲染会看不到重点。
+ */
+function splitNarrative(text, max = 10) {
+  const value = textOf(text).replace(/\s+/g, ' ').trim()
+  if (!value) return []
+  const parts = value.split(/(?<=[。；;！？!?])\s*/u).map((part) => part.trim()).filter(Boolean)
+  return (parts.length ? parts : [value]).slice(0, max)
+}
+
+/**
  * 分析流程的产出是结论，不是代码改动：报告用「分析结论」段替换「改动范围」，
  * 不展示 diff 表格，避免把只读排查误读成一次代码提交。
+ * 版式：结论置顶 + 编号要点 + 风险编号 + 排查证据后置，避免“翻半天才看到结论”。
  */
 function analysisSection(item, files, reportSet) {
   const plan = item.workflow?.plan ?? {}
   const conclusions = (item.changePoints ?? [])
     .map((point) => textOf(point?.summary))
     .filter(Boolean)
+  const conclusionParts = conclusions.flatMap((text) => splitNarrative(text))
+  const headline = conclusionParts[0] ?? ''
+  const keyPoints = conclusionParts.slice(1)
+  const riskParts = listOf(item.risks, 50).flatMap((text) => splitNarrative(text))
+  const evidenceParts = listOf(plan.steps, 50).flatMap((text) => splitNarrative(text))
   const blocks = [
     {
       type: 'fields',
+      title: '结论摘要',
       fields: [
-        { label: '分析对象', value: textOf(item.goal) || textOf(item.description) || '未填写' },
-        { label: '排查方式', value: '只读排查（不改代码、不建独立工作区、不产生提交）', tone: 'ok' },
-        { label: '代码改动', value: '无（补丁建议只记录、不落地）', tone: 'ok' },
+        { label: '结论', value: headline || '还没有记录结论', tone: headline ? 'ok' : 'warn' },
+        { label: '关键要点', value: keyPoints.length ? `${keyPoints.length} 条` : '—' },
+        { label: '风险 / 未决', value: riskParts.length ? `${riskParts.length} 条` : '无', tone: riskParts.length ? 'warn' : 'ok' },
         {
           label: '证据完整性',
           value: files?.evidenceComplete === false
@@ -443,21 +461,29 @@ function analysisSection(item, files, reportSet) {
             : (files ? '完整' : '还没有统计排查证据'),
           tone: files?.evidenceComplete === false ? 'warn' : (files ? 'ok' : 'neutral'),
         },
+      ],
+    },
+    ...(keyPoints.length
+      ? [{ type: 'list', title: '关键结论与建议', ordered: true, items: keyPoints.map((text) => ({ text, tone: 'ok' })) }]
+      : []),
+    ...(riskParts.length
+      ? [{ type: 'list', title: '风险与未决', ordered: true, items: riskParts.map((text) => ({ text, tone: 'warn' })) }]
+      : [{ type: 'text', title: '风险与未决', text: '没有登记风险/未决项。' }]),
+    {
+      type: 'fields',
+      title: '分析信息',
+      fields: [
+        { label: '分析对象', value: textOf(item.goal) || textOf(item.description) || '未填写' },
+        { label: '排查方式', value: '只读排查（不改代码、不建独立工作区、不产生提交）', tone: 'ok' },
+        { label: '代码改动', value: '无（补丁建议只记录、不落地）', tone: 'ok' },
         {
           label: '排除的台账文件',
           value: numberOrZero(files?.excludedCount) ? `${files.excludedCount} 个 .dev-hub/ 下的文件不计入` : '无',
         },
       ],
     },
-    { type: 'list', title: '排查路径', items: listOf(plan.steps).map((text) => ({ text })) },
-    {
-      type: 'list',
-      title: '结论与补丁建议',
-      items: conclusions.length
-        ? conclusions.map((text) => ({ text, tone: 'ok' }))
-        : [{ text: '还没有记录结论：在流程里补充结论、证据与影响面后，报告会更新。', tone: 'warn' }],
-    },
-    { type: 'list', title: '风险与未决', items: listOf(item.risks, 50).map((text) => ({ text, tone: 'warn' })) },
+    // 排查路径是证据，放在结论/风险之后，避免结论被长清单淹没
+    { type: 'list', title: '排查路径（证据）', ordered: true, items: evidenceParts.map((text) => ({ text })) },
     {
       type: 'text',
       title: '报告口径',
@@ -474,7 +500,9 @@ function analysisSection(item, files, reportSet) {
   return {
     id: 'conclusion',
     title: '分析结论',
-    summary: conclusions.length ? `${conclusions.length} 条结论 · 只读排查` : '只读排查 · 还没有记录结论',
+    summary: headline
+      ? `${headline.length > 72 ? `${headline.slice(0, 72)}…` : headline}`
+      : '只读排查 · 还没有记录结论',
     blocks,
   }
 }
@@ -942,8 +970,10 @@ export function buildReport({ item, files = null, git = null, workspace = null, 
       workspace: workspace ? { id: textOf(workspace.id), name: textOf(workspace.name) } : null,
     },
     sections: [
-      goalSection(item),
-      isAnalysis ? analysisSection(item, files, reportSet) : scopeSection(item, files, workspace, reportSet),
+      // 分析流程的产出就是结论：结论段放最前，不能让人翻过目标/证据才看到重点
+      ...(isAnalysis
+        ? [analysisSection(item, files, reportSet), goalSection(item)]
+        : [goalSection(item), scopeSection(item, files, workspace, reportSet)]),
       reviewSection(item),
       testSection(item, files),
       planSection(item),

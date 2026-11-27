@@ -30,6 +30,26 @@ export default [
     external: [/^@deepseek-ai\//],
   },
   {
+    name: 'dsh-dev-hub/standalone',
+    entry: { standalone: 'src/client/standalone.mjs' },
+    outDir: 'lib',
+    format: ['iife'],
+    platform: 'browser',
+    target: 'es2022',
+    dts: false,
+    sourcemap: true,
+    clean: false,
+    deps: {
+      alwaysBundle: [/^react($|[-\/])/],
+    },
+    define: {
+      'process.env.NODE_ENV': JSON.stringify('production'),
+    },
+    outputOptions: {
+      entryFileNames: 'standalone.js',
+    },
+  },
+  {
     name: 'dsh-dev-hub/client',
     entry: { client: 'src/client/index.mjs' },
     outDir: 'lib',

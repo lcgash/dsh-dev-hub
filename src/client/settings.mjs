@@ -94,6 +94,7 @@ function NavButton({ active, children, onClick, disabled = false }) {
 export function AutomationSettings({ initialSection = 'automation' } = {}) {
   const [automation, setAutomation] = useState(() => normalizeAutomation(null))
   const [repo, setRepo] = useState(null)
+  const [dshAvailable, setDshAvailable] = useState(!globalThis.__DEVHUB_STANDALONE__)
   const [claudeAvailable, setClaudeAvailable] = useState(false)
   const [codexAvailable, setCodexAvailable] = useState(false)
   const [piAvailable, setPiAvailable] = useState(false)
@@ -107,7 +108,7 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
   useEffect(() => {
     let alive = true
     api(API.settings)
-      .then((body) => { if (alive) { setAutomation(normalizeAutomation(body?.automation)); setRepo(body?.repo ?? null); setClaudeAvailable(Boolean(body?.claudeAvailable)); setCodexAvailable(Boolean(body?.codexAvailable)); setPiAvailable(Boolean(body?.piAvailable)) } })
+      .then((body) => { if (alive) { setAutomation(normalizeAutomation(body?.automation)); setRepo(body?.repo ?? null); setDshAvailable(body?.dshAvailable !== false); setClaudeAvailable(Boolean(body?.claudeAvailable)); setCodexAvailable(Boolean(body?.codexAvailable)); setPiAvailable(Boolean(body?.piAvailable)) } })
       .catch((err) => { if (alive) setLoadError(errorText(err)) })
       .finally(() => { if (alive) setLoading(false) })
     return () => { alive = false }
@@ -201,13 +202,13 @@ export function AutomationSettings({ initialSection = 'automation' } = {}) {
             h('div', { style: styles.sectionHint },
               '决定开发、需求澄清和独立评审由谁执行。切换只影响之后的调用；已有流程的代码与历史不变。'),
             h('div', { style: { display: 'grid', gridTemplateColumns: 'repeat(2, minmax(0, 1fr))', gap: 10 } },
-              h(OptionCard, {
+              dshAvailable ? h(OptionCard, {
                 icon: h(EngineIcon, { id: 'dsh' }),
                 title: 'DSH 原生会话',
                 hint: '用 DSH 原生会话执行开发、澄清和评审；自动化与纠偏衔接最完整。',
                 active: automation.engine === 'dsh',
                 onSelect: () => save({ ...automation, engine: 'dsh' }),
-              }),
+              }) : null,
               h(OptionCard, {
                 icon: h(EngineIcon, { id: 'claude' }),
                 title: 'Claude Code',

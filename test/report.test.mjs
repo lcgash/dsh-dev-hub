@@ -371,13 +371,22 @@ test('buildReport：分析流程展示结论而非代码改动，不渲染改动
   assert.equal(report.intent, 'analysis')
   assert.equal(report.verdict, 'passed')
   assert.match(report.verdictReason, /不进入提交/)
-  assert.deepEqual(report.sections.map((section) => section.id), ['goal', 'conclusion', 'review', 'test', 'plan', 'timeline', 'evidence'])
-  const conclusion = report.sections[1]
+  assert.deepEqual(report.sections.map((section) => section.id), ['conclusion', 'goal', 'review', 'test', 'plan', 'timeline', 'evidence'])
+  const conclusion = report.sections[0]
   assert.equal(conclusion.title, '分析结论')
+  // 结论置顶：第一个块就是结论摘要，而不是先铺排查路径
+  const first = conclusion.blocks[0]
+  assert.equal(first.type, 'fields')
+  assert.equal(first.title, '结论摘要')
+  assert.match(first.fields.find((field) => field.label === '结论').value, /upload\.mjs/)
   assert.ok(conclusion.blocks.some((block) => block.type === 'fields' && block.fields.some((field) => field.label === '代码改动' && /无/.test(field.value))))
-  const list = conclusion.blocks.find((block) => block.type === 'list' && block.title === '结论与补丁建议')
-  assert.equal(list.items.length, 2)
-  assert.match(list.items[0].text, /upload\.mjs/)
+  const keyPoints = conclusion.blocks.find((block) => block.type === 'list' && block.title === '关键结论与建议')
+  assert.equal(keyPoints.ordered, true)
+  assert.equal(keyPoints.items.length, 1)
+  assert.match(keyPoints.items[0].text, /补丁建议/)
+  const pathIndex = conclusion.blocks.findIndex((block) => block.title === '排查路径（证据）')
+  const riskIndex = conclusion.blocks.findIndex((block) => block.title === '风险与未决')
+  assert.ok(riskIndex >= 0 && pathIndex > riskIndex, '排查路径是证据，必须排在结论/风险之后')
   assert.ok(!conclusion.blocks.some((block) => block.type === 'table'))
 })
 

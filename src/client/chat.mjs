@@ -99,6 +99,8 @@ function engineName(engine) {
   return { dsh: 'DSH', 'dsh-llm': 'DSH', claude: 'Claude Code', codex: 'Codex', pi: 'Pi' }[engine] ?? 'AI'
 }
 
+const STANDALONE_CLIENT = Boolean(globalThis.__DEVHUB_STANDALONE__)
+
 const DEV_ENGINE_OPTIONS = [
   { id: 'dsh', label: 'DSH' },
   { id: 'claude', label: 'Claude Code' },
@@ -1227,11 +1229,11 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
   const [attachError, setAttachError] = useState('')
   const [capabilities, setCapabilities] = useState(null)
   // 当前项目的 AI 引擎：用于进度文案，避免所有阶段都写「dsh」
-  const [devEngine, setDevEngine] = useState('dsh')
+  const [devEngine, setDevEngine] = useState(STANDALONE_CLIENT ? 'claude' : 'dsh')
   const [automation, setAutomation] = useState(null)
   const [engineSaving, setEngineSaving] = useState(false)
   const [engineError, setEngineError] = useState('')
-  const [engineAvailable, setEngineAvailable] = useState({ dsh: true, claude: true, codex: true, pi: true })
+  const [engineAvailable, setEngineAvailable] = useState({ dsh: !STANDALONE_CLIENT, claude: true, codex: true, pi: true })
   const attachInputRef = useRef(null)
   // 任务归属：发起任务时所在的对话 id + 运行令牌；切到别的对话后，旧任务的结果不能再写进当前界面
   const activeChatIdRef = useRef(null)
@@ -1326,15 +1328,15 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
       .then((body) => {
         if (!alive) return
         setAutomation(body?.automation ?? null)
-        setDevEngine(body?.automation?.engine ?? 'dsh')
+        setDevEngine(body?.automation?.engine ?? (STANDALONE_CLIENT ? 'claude' : 'dsh'))
         setEngineAvailable({
-          dsh: true,
+          dsh: body?.dshAvailable !== false,
           claude: body?.claudeAvailable !== false,
           codex: body?.codexAvailable !== false,
           pi: body?.piAvailable !== false,
         })
       })
-      .catch(() => { if (alive) setDevEngine('dsh') })
+      .catch(() => { if (alive) setDevEngine(STANDALONE_CLIENT ? 'claude' : 'dsh') })
     return () => { alive = false }
   }, [])
 
@@ -1423,7 +1425,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
           spec: lastCard.spec ?? {},
           ready: Boolean(lastCard.ready),
           missing: [],
-          engine: lastCard.engine ?? 'dsh',
+          engine: lastCard.engine ?? (STANDALONE_CLIENT ? 'claude' : 'dsh'),
         })
       }
     }
@@ -1945,7 +1947,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
         spec: body.spec ?? spec ?? {},
         ready: Boolean(body.ready),
         missing: body.missing ?? [],
-        engine: body.engine ?? 'dsh',
+        engine: body.engine ?? (STANDALONE_CLIENT ? 'claude' : 'dsh'),
         elapsedMs: body.elapsedMs ?? null,
         degraded: Boolean(body.degraded),
         // 需求关联：评审/开发之外，澄清子代理也要能回到这条需求下
@@ -2549,7 +2551,7 @@ export function DevHubChat({ ctx, onFlowsChanged, onRequireSetup, onFlowStarted,
             disabled: busy || engineSaving,
             onChange: (event) => changeDevEngine(event.target.value),
           },
-          DEV_ENGINE_OPTIONS.map((option) => h('option', {
+          DEV_ENGINE_OPTIONS.filter((option) => option.id !== 'dsh' || engineAvailable.dsh !== false).map((option) => h('option', {
             key: option.id,
             value: option.id,
             disabled: engineAvailable[option.id] === false,

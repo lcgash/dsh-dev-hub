@@ -1476,7 +1476,12 @@
     "分析会话：": "Analysis session:",
     "开发会话：": "Development session:",
     "等待授权/选择": "Waiting for approval/choice",
-    "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。": "Claude Code cannot call devhub_get / devhub_update; use the DevHub bridge CLI in the launch message to write back tasks/change points/risks. Review and tests are advanced automatically by the workstation's \"Continue\" action: do not ask the user to trigger them manually, and do not run tests or submit yourself. Do not fabricate baseline diffs."
+    "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。": "Claude Code cannot call devhub_get / devhub_update; use the DevHub bridge CLI in the launch message to write back tasks/change points/risks. Review and tests are advanced automatically by the workstation's \"Continue\" action: do not ask the user to trigger them manually, and do not run tests or submit yourself. Do not fabricate baseline diffs.",
+    "流程已完成：外部会话状态不再参与推进判断": "Flow completed: external session state no longer blocks progress",
+    "Claude Code 正在等待授权/选择：点它打开终端处理": "Claude Code is waiting for authorization/choice: click to open the terminal",
+    "处理会话授权": "Resolve session authorization",
+    "先处理会话授权 / 选择": "Resolve session authorization/choice first",
+    "Claude Code 正在等待终端确认；处理完回来继续开发，返工/评审/测试都要等这一步": "Claude Code is waiting for terminal confirmation; after handling it, continue development here. Rework, review and tests all wait for this step."
   },
   "templates": {
     "你是由 DevHub 开发工作站启动的{value1}开发会话。开发流程：{value2}{value3}。": "You are a {value1}development session started by the DevHub workstation. Flow: {value2}{value3}.",

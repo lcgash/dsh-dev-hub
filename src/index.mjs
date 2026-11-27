@@ -12,7 +12,14 @@ import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { promisify } from 'node:util'
-import { defineTool } from '@deepseek-ai/dsh-tools'
+// DSH tool schema helper is only needed when the host exposes a tools service.
+// Keep it optional so the same Host module can boot in the standalone Node server
+// without installing @deepseek-ai/*.
+let defineTool = (spec) => spec
+try {
+  const dshTools = await import('@deepseek-ai/dsh-tools')
+  if (typeof dshTools.defineTool === 'function') defineTool = dshTools.defineTool
+} catch { /* standalone host: devhub_* tools are not registered */ }
 import { API, STATUS_ORDER } from './shared/api.mjs'
 import { WIZARD_STEPS } from './shared/wizard.mjs'
 import { DEV_HANDOFF_STEP } from './shared/boundaries.mjs'
@@ -937,9 +944,17 @@ function launchEditor(editor, path) {
 }
 
 /** 当前项目的自动化设置：按项目本机保存，缺省完全自动化。 */
+const STANDALONE_HOST = Boolean(globalThis.__DEVHUB_STANDALONE__)
+
 function projectAutomation(profile, repoPath) {
   const key = String(repoPath ?? '').trim()
-  return normalizeAutomation(key ? (profile?.projectAutomation?.[key] ?? profile?.legacyAutomation) : null)
+  const automation = normalizeAutomation(key ? (profile?.projectAutomation?.[key] ?? profile?.legacyAutomation) : null)
+  // 独立 Node Server 没有 DSH 的进程内 agent/LLM；不能沿用旧 profile 里的 dsh，
+  // 否则扫描/评审会落到一个本进程根本不能执行的引擎。只改“本宿主看到的值”，
+  // 不把 claude 写回 profile，DSH 插件下次打开仍按用户原本的选择执行。
+  return STANDALONE_HOST && automation.engine === 'dsh'
+    ? { ...automation, engine: 'claude' }
+    : automation
 }
 
 /**
@@ -4005,8 +4020,8 @@ function sendText(res, status, contentType, body) {
   res.end(body)
 }
 
-export function apply(ctx) {
-  const routes = [
+export function createRoutes(ctx) {
+  return [
     // 多语言词典：运行时读取 locale/*.json 下发给浏览器；新增语言 = 新增文件。
     {
       kind: 'exact',
@@ -7029,6 +7044,7 @@ export function apply(ctx) {
               claudeAvailable: Boolean(claude),
               codexAvailable: Boolean(codex),
               piAvailable: Boolean(pi),
+              dshAvailable: !STANDALONE_HOST,
               engine: currentAutomation.engine,
             })
           }
@@ -7799,6 +7815,10 @@ export function apply(ctx) {
       },
     },
   ]
+}
+
+export function apply(ctx) {
+  const routes = createRoutes(ctx)
 
   ctx.effect(() => {
     const disposers = routes.map((route) => ctx.webServer.register(route))

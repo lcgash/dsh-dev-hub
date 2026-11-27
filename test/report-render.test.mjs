@@ -425,7 +425,7 @@ test('HTML/Markdown：分析流程显示「只读分析」与结论统计，不�
       summary: '只读排查 · 1 条结论',
       blocks: [
         { type: 'fields', fields: [{ label: '代码改动', value: '无（补丁建议只记录、不落地）' }] },
-        { type: 'list', title: '结论与补丁建议', items: [{ text: '结论：调用链在 X 分支提前返回' }] },
+        { type: 'list', title: '结论与补丁建议', ordered: true, items: [{ text: '结论：调用链在 X 分支提前返回' }] },
       ],
     }],
   }
@@ -436,9 +436,12 @@ test('HTML/Markdown：分析流程显示「只读分析」与结论统计，不�
   assert.doesNotMatch(html, /变更文件/)
   assert.doesNotMatch(html, /增删行/)
   assert.match(html, /<h2>分析结论<\/h2>/)
+  assert.match(html, /ordered-list/)
+  assert.match(html, /item-index/)
 
   const md = renderReportMarkdown(report)
   assert.match(md, /流程类型：只读分析/)
   assert.match(md, /## 1\. 分析结论/)
+  assert.match(md, /1\. 结论：调用链在 X 分支提前返回/)
   assert.match(md, /代码改动/)
 })

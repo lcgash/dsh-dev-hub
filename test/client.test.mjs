@@ -888,7 +888,7 @@ test('回归：会话运行中主按钮变成禁用的「正在开发…」，�
   const { readFile } = await import('node:fs/promises')
   const index = await readFile(new URL('../src/client/index.mjs', import.meta.url), 'utf8')
   assert.match(index, /const sessionRunning = Boolean\(draft\.session\?\.id\)[\s\S]{0,160}Boolean\(session\?\.running\) \|\| Boolean\(draft\.running\)/)
-  assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| reviewBusy \|\| draft\.externalState\?\.status === 'blocked' \|\| \(isAnalysisFlow \? false : advance\.disabled\)/)
+  assert.match(index, /disabled: busy \|\| Boolean\(launchBusy\) \|\| reviewBusy \|\| \(!flowDone && draft\.externalState\?\.status === 'blocked'\) \|\| \(isAnalysisFlow \? false : advance\.disabled\)/)
   assert.match(index, /开发会话还在运行。现在开始评审可能读到半成品代码/)
   assert.match(index, /sessionRunning && reviewAction/)
   assert.match(index, /advance\.label \|\| '评审'/)
@@ -2508,4 +2508,37 @@ test('统一上下文目录：有 index 时首条消息只发入口，不重发�
     assert.match(prompt, /评审与测试由工作站「继续推进」自动执行/)
     assert.match(prompt, /不要要求用户手动触发/)
   }
+})
+test('流程已完成：外部 Claude 会话遗留 blocked 不再显示等待授权/阻塞按钮', async () => {
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { ItemEditor } = await import('../src/client/index.mjs')
+  const { sanitizeItem } = await import('../src/core/store.mjs')
+  const item = sanitizeItem({
+    id: 'done-blocked',
+    title: '已完成但会话 blocked',
+    status: 'done',
+    goal: '分析已完成',
+    acceptance: ['完成'],
+    scope: ['src'],
+    tasks: [{ text: '分析', done: true }],
+    workflow: {
+      intent: 'analysis',
+      stage: 'done',
+      plan: { summary: '只读', steps: ['读代码'], estimate: { size: 'S', days: 1 } },
+      tests: { local: { status: 'passed' }, environment: { status: 'not_run' } },
+      review: { status: 'idle', reviewers: [] },
+      techDoc: { decision: 'none' },
+    },
+    session: { id: 'session-old', engine: 'claude', boundAt: '2026-11-27T00:00:00.000Z' },
+  })
+  item.externalState = { engine: 'claude', status: 'blocked', name: '旧会话' }
+  const html = renderToStaticMarkup(h(ItemEditor, {
+    item,
+    ctx: { get: () => undefined },
+    session: { sessionId: 'session-old', alive: true, running: false, blocked: true, completed: true },
+    onBack() {}, onSaved() {}, onContext() {}, onStarted() {}, onLaunch() {}, onOpenSession() {}, onUnbindSession() {},
+  }))
+  assert.doesNotMatch(html, /Claude Code 正在等待授权或选择/)
+  assert.doesNotMatch(html, /等待授权\/选择/)
+  assert.match(html, /流程已完成/)
 })

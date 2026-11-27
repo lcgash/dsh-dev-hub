@@ -1476,7 +1476,12 @@
     "分析会话：": "分析会话：",
     "开发会话：": "开发会话：",
     "等待授权/选择": "等待授权/选择",
-    "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。": "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。"
+    "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。": "Claude Code 无法调用 devhub_get / devhub_update；使用启动消息末尾的 DevHub 联动 CLI 回写任务/变更点/风险。评审与测试由工作站「继续推进」自动执行，不要要求用户手动触发，也不要自行跑测试/提交。不要编造 baseline diff。",
+    "流程已完成：外部会话状态不再参与推进判断": "流程已完成：外部会话状态不再参与推进判断",
+    "Claude Code 正在等待授权/选择：点它打开终端处理": "Claude Code 正在等待授权/选择：点它打开终端处理",
+    "处理会话授权": "处理会话授权",
+    "先处理会话授权 / 选择": "先处理会话授权 / 选择",
+    "Claude Code 正在等待终端确认；处理完回来继续开发，返工/评审/测试都要等这一步": "Claude Code 正在等待终端确认；处理完回来继续开发，返工/评审/测试都要等这一步"
   },
   "templates": {
     "你是由 DevHub 开发工作站启动的{value1}开发会话。开发流程：{value2}{value3}。": "你是由 DevHub 开发工作站启动的{value1}开发会话。开发流程：{value2}{value3}。",

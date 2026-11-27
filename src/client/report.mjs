@@ -178,21 +178,34 @@ function TextBlock({ block }) {
 function ListBlock({ block }) {
   const items = Array.isArray(block?.items) ? block.items : []
   if (!items.length) return h(EmptyHint, null)
+  const ordered = block?.ordered === true
   return h('ul', { style: { margin: 0, padding: 0, listStyle: 'none', display: 'flex', flexDirection: 'column', gap: 4 } },
     items.map((item, index) => h('li', {
       key: index,
       style: { display: 'flex', alignItems: 'baseline', gap: 8, color: T.text2, fontSize: T.font.base, lineHeight: T.line },
     },
-      h('span', {
-        style: {
-          width: 5,
-          height: 5,
-          flex: '0 0 5px',
-          borderRadius: 999,
-          background: toneColor(item?.tone ?? 'neutral') === T.text2 ? T.text4 : toneColor(item?.tone ?? 'neutral'),
-          marginTop: 8,
-        },
-      }),
+      ordered
+        ? h('span', {
+          style: {
+            minWidth: 18,
+            flex: '0 0 18px',
+            textAlign: 'right',
+            fontSize: T.font.sm,
+            fontWeight: 600,
+            color: T.text4,
+            fontVariantNumeric: 'tabular-nums',
+          },
+        }, `${index + 1}.`)
+        : h('span', {
+          style: {
+            width: 5,
+            height: 5,
+            flex: '0 0 5px',
+            borderRadius: 999,
+            background: toneColor(item?.tone ?? 'neutral') === T.text2 ? T.text4 : toneColor(item?.tone ?? 'neutral'),
+            marginTop: 8,
+          },
+        }),
       h('span', { style: { minWidth: 0, wordBreak: 'break-word' } },
         valueText(item?.text),
         item?.meta ? h('span', { style: { ...styles.sectionHint, marginLeft: 8 } }, `· ${item.meta}`) : null,

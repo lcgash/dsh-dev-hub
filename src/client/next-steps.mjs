@@ -88,12 +88,13 @@ export function describeFlow(item, session) {
           id: session.sessionId ?? null,
           bound: Boolean(session.sessionId),
           running: Boolean(session.running),
+          blocked: Boolean(session.blocked || item?.externalState?.status === 'blocked'),
           alive: session.alive ?? null,
           turns: session.turns ?? 0,
           lastText: session.lastText ?? '',
           reason: session.reason ?? null,
         }
-      : { id: null, bound: Boolean(item?.session?.id), running: false, alive: null, turns: 0 },
+      : { id: null, bound: Boolean(item?.session?.id), running: false, blocked: Boolean(item?.externalState?.status === 'blocked'), alive: null, turns: 0 },
   }
 }
 
@@ -130,6 +131,17 @@ export function suggestNextSteps(item, session) {
         ? `逐条勾选「已知晓」后这里的数量会减少（已确认 ${summary.risksAcked}/${summary.risksTotal}）`
         : `风险都已知晓（${summary.risksAcked}/${summary.risksTotal}）；把阻塞原因写清楚，或解除阻塞`,
     )
+  }
+
+  // Claude Code 等外部会话在终端里等待授权/选择：这是当前唯一的阻塞动作。
+  // 不能一边显示“等待授权”，一边建议“重新评审/继续开发”，口径必须统一。
+  if (summary.session.blocked) {
+    steps.unshift({
+      action: 'open-session',
+      title: '先处理会话授权 / 选择',
+      hint: 'Claude Code 正在等待终端确认；处理完回来继续开发，返工/评审/测试都要等这一步',
+    })
+    return { summary, steps: steps.slice(0, 3) }
   }
 
   if (!summary.session.bound) {
